@@ -1,0 +1,74 @@
+# Enterprise `sigma-brain` Architecture (100x Scale)
+
+To scale this from a "cool AI project" to a robust, professionally safe, enterprise-grade architecture that a Tier-2 quantitative firm would respect, we must introduce **Strict Isolation, Governance, Redundancy, and Auditability**. 
+
+The structure below separates the *Brain* (State & Decisions) from the *Nervous System* (Orchestration & Rules) and the *Hands* (Execution). It guarantees that an AI hallucination cannot wipe your codebase, bankrupt your accounts, or execute unapproved Tier-3 trades.
+
+## The Enterprise Directory Structure
+
+```text
+sigma-brain/
+│
+├── 01_vault_obsidian/             # [THE MEMORY] Passive storage. Agents can ONLY Read/Append here.
+│   ├── \_governance/              # Read-only policies (e.g., "NEVER trade during NFP").
+│   ├── alpha_factory/             # Where the Always-On Memory Agent dumps correlations.
+│   ├── execution_ledgers/         # Immutable markdown logs of every trade taken.
+│   └── post_mortems/              # Daily auto-generated analysis of PnL and Max DD.
+│
+├── 02_orchestration_paperclip/    # [THE MANAGEMENT] The single source of truth for assigning tasks.
+│   ├── \_budgets/                 # Hardcoded JSON limits (API tokens, Max Daily USD loss).
+│   ├── active_tickets/            # YAML files representing ongoing jobs (e.g., "Backtest XAUUSD").
+│   └── completed_tickets/         # Archived jobs for performance auditing.
+│
+├── 03_execution_openfang/         # [THE ENGINE ROOM] Where the isolated "Hands" live.
+│   ├── _core_system/              # The OpenFang binary and global environment files.
+│   ├── hands_sandboxed/           # AGENT PROFILES:
+│   │   ├── research_agent/        # Has internet access, but ZERO access to trading APIs.
+│   │   ├── crypto_execution/      # Can execute trades, but ONLY on whitelisted tickers.
+│   │   └── mt5_execution/         # Lives on a secure, separate network layer connected to MT5.
+│   └── always_on_memory/          # The Google Agent. Only has read access to the Vault.
+│
+├── 04_skills_registry/            # [THE CAPABILITIES] The Antigravity Skills.
+│   ├── official_skills/           # Read-only clone of sickn33/antigravity-awesome-skills.
+│   └── custom_sigma_skills/       # Proprietary skills you write (e.g., @b2b_zone_trading).
+│
+├── 05_telemetry_and_logs/         # [COMPLIANCE] The immutable record for security audits.
+│   ├── api_cost_tracker.csv       # Tracks exactly how much LLM compute each agent uses.
+│   ├── system_heartbeats.log      # Proves all agents are alive and running on schedule.
+│   └── security_alerts.log        # Logs any time an agent attempts an unapproved action.
+│
+└── 06_sandbox_environments/       # [THE R&D LAB] Where agents test code safely.
+    ├── backtest_containers/       # Temporary environments where agents run Python backtests.
+    └── generated_code/            # Any script written by an agent goes here for human review FIRST.
+```
+
+## Professional Safety & Governance Mechanisms
+
+When you talk to a Tier 2/3 firm, this is the "MOAT" you emphasize. This isn't just about having AI; it's about chaining it down safely.
+
+### 1. The "Two-Key" Execution Lock (Air-gapped Approval)
+Agents should **never** be allowed to push live Tier-3 execution code directly. 
+- The `Research Agent` writes a strategy hypothesis.
+- The `Backtest Agent` tests it in `06_sandbox_environments` and drops a report in `01_vault_obsidian`.
+- To deploy to live MT5, **YOU** (the human) must review the report and move the script from the Sandbox to `sigma-mt5` manually. 
+- *Interview Pitch:* "I built an asynchronous, air-gapped CI/CD pipeline where AI generates the alpha, but a human holds the deployment keys."
+
+### 2. Principle of Least Privilege (Sandboxed Agents)
+- The **Marketing Agent** (`sigma-linkedin`) is not given the API keys to the Binance account. 
+- The **Execution Agent** (`sigma-crypto`) has API keys, but is blocked from reading the `_budgets` files or changing its own rules. 
+- *Interview Pitch:* "My multi-agent swarm operates on strict Principle of Least Privilege, isolating execution risk from broad internet-research risk."
+
+### 3. Immutable Telemetry & Kill Switches
+- The `05_telemetry_and_logs` folder acts as your Black Box. If an agent goes rogue and starts dumping API tokens, Paperclip (the Orchestrator) monitors `api_cost_tracker.csv`. If it hits a hard limit, Paperclip fires a script that instantly kills the OpenFang process.
+- *Interview Pitch:* "I engineered programmatic hard-stops. If the AI exhibits continuous failure or exceeds token burn-rates, the orchestrator terminates the instance before it can damage PnL."
+
+### 4. Deterministic Capabilities (The Skills Registry)
+Instead of letting the LLMs guess how to do things (which causes varying performance and hallucinations), the agents rely strictly on `04_skills_registry`. If you need the agent to perform a B2B structural analysis, you don't prompt it. You point it to `@b2b_structural_analysis` which contains a rigid, step-by-step Standard Operating Procedure.
+
+---
+
+## Your Next Move
+
+This directory structure gives you a pristine, institutional foundation. We can physically create this skeleton inside the `sigma-brain` folder on your desktop right now. 
+
+Shall I run the commands to provision this 100x Enterprise Architecture on your Desktop?

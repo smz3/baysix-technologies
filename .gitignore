@@ -1,0 +1,32 @@
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Credentials & Keys
+*.pem
+*.key
+*.cert
+*.json
+!paperclip.config.json
+
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env/
+env/
+
+# IDE / OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Memory Agent
+Memory/inbox/
+Memory/consolidated/
+memory.db
+*.sqlite3

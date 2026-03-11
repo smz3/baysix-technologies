@@ -1,0 +1,26 @@
+# The AI Hedge Fund: Open Source Stack
+
+Before we write any code, here is the exact list of the open-source repositories we will be installing into your `sigma-brain` headquarters. 
+
+### 1. The Orchestrator (CEO's Desk)
+*   **Repository:** [paperclipai/paperclip](https://github.com/paperclipai/paperclip)
+*   **Folder:** `C:\Users\User\Desktop\sigma-brain\Management\`
+*   **Purpose:** This is your dashboard. It assigns tasks, monitors agent budgets (API token limits), and ensures your company governance rules are followed. You log in here to manage the firm.
+
+### 2. The Execution Engine (The "Hands")
+*   **Repository:** [RightNow-AI/openfang](https://github.com/RightNow-AI/openfang)
+*   **Folder:** `C:\Users\User\Desktop\sigma-brain\Agents\`
+*   **Purpose:** This is the underlying operating system that wakes up the agents. We will configure specific "Hands" (like the Crypto Execution Agent or the MT5 Execution Agent) using OpenFang. It safely executes your actual trading Python scripts.
+
+### 3. The Active Subconscious (The Memory Synthesizer)
+*   **Repository:** [GoogleCloudPlatform/generative-ai/.../always-on-memory-agent](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/agents/always-on-memory-agent)
+*   **Folder:** `C:\Users\User\Desktop\sigma-brain\Memory\` (Running alongside your Obsidian Vault)
+*   **Purpose:** This agent constantly reads the trade logs dumped by OpenFang. Every 30 minutes, it connects the dots to find new Alpha (e.g., cross-referencing your Crypto and MT5 logs) and writes new insight files into Obsidian without you asking.
+
+### 4. The Capabilities Registry (Standard Operating Procedures)
+*   **Repository:** [sickn33/antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills)
+*   **Folder:** `C:\Users\User\Desktop\sigma-brain\Skills\`
+*   **Purpose:** Instead of relying on random AI hallucinations, we give your OpenFang agents strict, battle-tested markdown files from this repository. When an agent needs to backtest something, it reads the skill file so it knows exactly *how* to do it professionally.
+
+---
+**Note on the "Sandbox" and "Audit" folders:** Those folders don't require external open-source repos. They are just empty directories we use for safely storing generated code (Sandbox) and logging system telemetry (Audit).

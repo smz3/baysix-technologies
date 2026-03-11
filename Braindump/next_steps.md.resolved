@@ -1,0 +1,26 @@
+# Tomorrow's Session Agenda: Phase 2 — Integration
+
+Phase 1 (Installation & Governance) is **COMPLETE**. Tomorrow, we shift from "setup" to "activation."
+
+## 🌅 Morning Routine: Wake Up the Brain
+- **Add API Key**: Securely add your `GOOGLE_API_KEY` to the environment.
+- **Install Memory Deps**: `pip install -r requirements.txt` in the Memory directory.
+- **Start Services**:
+  - Terminal A: `python agent.py` (The Subconscious)
+  - Terminal B: `streamlit run dashboard.py` (The Eyes)
+
+## 🛠️ Task 1: The "Handshake" (Paperclip ↔ OpenFang)
+- Configure Paperclip to use OpenFang as the default execution engine.
+- Run a "Hello World" agent task through the Paperclip UI to verify sandboxed execution.
+
+## 📈 Task 2: Arming the Fund (MT5 Integration)
+- Audit and move the proprietary MQL5/MT5 skills into the active `Skills` directory.
+- Test connection between the Python environment and the MT5 Terminal via the established Junction/Symlink.
+
+## 📚 Task 3: The Library Sync (Obsidian & Workspace)
+- Point the Memory Agent's `inbox` at your Obsidian vault.
+- Verify that the `QueryAgent` can correctly reference your existing research.
+
+---
+> [!TIP]
+> Have your Google AI Studio API key ready tomorrow morning to jump-start the Memory Agent!
