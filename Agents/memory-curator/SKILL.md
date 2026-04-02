@@ -1,3 +1,8 @@
+---
+name: 'memory-curator'
+description: 'Sigma brain agent: memory-curator'
+---
+
 # Memory Curator Agent
 
 ## Role

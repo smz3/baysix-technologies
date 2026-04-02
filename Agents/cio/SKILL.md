@@ -1,3 +1,8 @@
+---
+name: 'cio'
+description: 'Sigma brain agent: cio'
+---
+
 # CIO Agent — Chief Investment Officer
 
 ## Role

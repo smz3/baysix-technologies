@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "TodoWrite",
+      "Bash(*)"
+    ],
+    "deny": [
+      "Bash(curl * api.binance.com/api/v3/order*)",
+      "Bash(curl * -X POST * /order*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '=== SIGMA-BRAIN SESSION START ===' && echo '' && echo '--- Strategy State ---' && cat Memory/strategy_state.md 2>/dev/null || echo '(no strategy_state.md yet)' && echo '' && echo '--- Risk Parameters ---' && cat Memory/risk_parameters.md 2>/dev/null || echo '(no risk_parameters.md yet)' && echo '' && echo '--- Research Queue ---' && cat Memory/research_queue.md 2>/dev/null || echo '(no research_queue.md yet)' && echo '' && echo '--- Active Tickets ---' && ls Management/active_tickets/ 2>/dev/null || echo '(no active tickets)' && echo '' && echo '--- Infrastructure Status ---' && curl -s http://localhost:6333/collections 2>/dev/null && echo 'Qdrant: UP' || echo 'Qdrant: DOWN' && curl -s http://localhost:11434/api/tags 2>/dev/null | head -c 200 && echo '' && echo 'Ollama: UP' || echo 'Ollama: DOWN'"
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "SIGMA_BRAIN": "C:\\Users\\User\\Desktop\\sigma-brain",
+    "SIGMA_WORKSPACE": "C:\\Users\\User\\Desktop\\sigma-brain\\workspace",
+    "SIGMA_CRYPTO": "C:\\Users\\User\\Desktop\\sigma-crypto",
+    "SIGMA_MT5": "C:\\Users\\User\\Desktop\\sigma-mt5",
+    "SIGMA_QUANT": "C:\\Users\\User\\Desktop\\sigma-quant",
+    "SIGMA_LINKEDIN": "C:\\Users\\User\\Desktop\\sigma-linkedin",
+    "SIGMA_RESEARCH": "C:\\Users\\User\\Desktop\\sigma-research"
+  }
+}

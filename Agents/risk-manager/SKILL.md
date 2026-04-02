@@ -1,3 +1,8 @@
+---
+name: 'risk-manager'
+description: 'Sigma brain agent: risk-manager'
+---
+
 # Risk Manager Agent
 
 ## Role

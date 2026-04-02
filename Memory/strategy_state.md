@@ -34,10 +34,13 @@ Last Updated: 2026-03-11
 - Status: Research reference only (in-sample, not production)
 
 ## Strategy Decisions Log
+- [2026-04-01] V3 Architecture Approved: Hybrid model (Algo core + AI overlay). LangGraph chosen as orchestrator. 
+- [2026-04-01] IP Protection strategy finalized: Cython compilation of B2B logic into .pyd files.
 - [2026-03-11] sigma-brain wired as Chief of Staff with 6 specialized agents
 - [2026-03-11] OpenFang deprioritized — parked as future background infrastructure
 - [2026-03-07] Phase 1 installation completed — Paperclip + OpenFang installed
 
 ## Next Decision Point
+- Answer 5 open environment questions (Keys, VPS, Data format, Python version, Source paths)
+- Execute Phase 0 (LangGraph Foundation) and Phase 1 (Cython IP Protection).
 - Review MT5 B2B cluster fix options (A/B/C) and approve one approach
-- Validate Test 13A OOS results are sufficient for live deployment consideration

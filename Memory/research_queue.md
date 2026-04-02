@@ -6,6 +6,8 @@ Owner: Quant Researcher + Memory Curator
 
 | Priority | Task | Assigned To | Status | Added |
 |----------|------|-------------|--------|-------|
+| CRITICAL | Execute Phase 0 Foundation: LangGraph setup, LLM provider routing, env config | Quant Developer | Pending | 2026-04-01 |
+| CRITICAL | Execute Phase 1: Compile B2B Python core via Cython for IP protection | Quant Developer | Pending | 2026-04-01 |
 | HIGH | Evaluate MT5 B2B cluster fix — option A vs B vs C from B2B_CLUSTER_FIX_PLAN.md | Quant Researcher → Quant Developer | Pending | 2026-03-11 |
 | HIGH | Validate Test 13A OOS results for production readiness (slippage, live fills assumption) | Quant Researcher | Pending | 2026-03-11 |
 | MEDIUM | Compare SAMTC performance on BTC vs ETH vs SOL perps | Quant Researcher | Pending | 2026-03-11 |

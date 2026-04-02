@@ -1,3 +1,8 @@
+---
+name: 'quant-trader'
+description: 'Sigma brain agent: quant-trader'
+---
+
 # Quant Trader Agent
 
 ## Role

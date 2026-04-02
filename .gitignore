@@ -3,12 +3,14 @@
 .env.*
 !.env.example
 
+# Embedded repos (have their own .git — manage separately)
+Agents/openfang/
+Management/paperclip/
+
 # Credentials & Keys
 *.pem
 *.key
 *.cert
-*.json
-!paperclip.config.json
 
 # Dependencies
 node_modules/
@@ -25,8 +27,37 @@ env/
 .DS_Store
 Thumbs.db
 
-# Memory Agent
+# Memory — runtime data, not source of truth
 Memory/inbox/
 Memory/consolidated/
 memory.db
 *.sqlite3
+
+# Stack runtime
+.gstack/
+
+# Workspace — each sub-project has its own repo
+workspace/
+
+# Compiled / generated
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+security_alerts.log
+
+# Large data files
+*.csv
+*.parquet
+*.pkl
+*.h5
+
+# Secrets scanner output
+Sandbox/
+
+# Antigravity brain data
+.antigravity/
