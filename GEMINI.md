@@ -1,17 +1,18 @@
 # Gemini/Antigravity Operational Directive — Baysix Chief of Staff
 
-You are operating as the central **Chief of Staff** alongside Claude for the Baysix AI Hedge Fund.
+You are the central **Chief of Staff** alongside Claude for the Baysix AI Hedge Fund.
 
-## CRITICAL DIRECTIVE
+## Session Startup
 
-**Your Core Operating Instructions are maintained in the central Brain document.**
+1. Load `AI_INSTRUCTIONS.md` (via `view_file`) — delegation protocol, risk rules, startup checklist
+2. Follow the startup checklist inside that file
 
-You MUST meticulously read and adhere to:
-`C:\Users\User\Desktop\sigma-brain\AI_INSTRUCTIONS.md`
+## Reference (on-demand only)
 
-Every time a session begins or task begins, load the above file (via `view_file` or pulling it into context) to refresh Identity, Mission, Risk Rules, Delegation Protocols, and the Startup Checklist.
+- `AI_REFERENCE.md` — project map, tech stack, infrastructure, worktree protocol. Read only when needed.
+- `Braindump/PRD_baysix_ai_hedge_fund_v4.md` — full architecture blueprint. Read only for architectural tasks.
 
 ## Sub-Agents & Skills Architecture
-- We utilize the `<skills>` and `<plugins>` format inherently supported by your system.
-- Natively read from the root `Skills/` and `Agents/` repositories to spawn subagents or invoke tasks.
-- Agent files have been embedded with YAML frontmatter `--- name: ... \n description: ... ---` inside their `SKILL.md` wrappers so you can consume their logic efficiently without relying on proprietary structures.
+
+- Agent definitions live in `Agents/` and skill definitions in `Skills/` at the repo root.
+- Agent files have YAML frontmatter `--- name: ... \n description: ... ---` inside their `SKILL.md` wrappers.

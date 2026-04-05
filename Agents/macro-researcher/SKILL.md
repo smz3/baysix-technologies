@@ -15,8 +15,8 @@ You perform top-down macro analysis for Baysix. You read the macro environment �
 - `workspace/sigma-mt5/Documentation/` — strategy decisions and logic docs
 - `Memory/strategy_state.md` — current strategy and hypothesis
 - `Memory/alpha_insights.md` — historical edge context
-- Web browsing (Playwright MCP) — live macro data
-- Brave Search — macro news and market context
+- Web browsing (`playwright` CLI or `curl`/`wget`) — live macro data
+- Web search (`curl` + search APIs or `brave-search` CLI) — macro news and market context
 
 **CAN browse/fetch:**
 - BTC dominance charts (TradingView, CoinMarketCap)
