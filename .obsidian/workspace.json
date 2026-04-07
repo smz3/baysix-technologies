@@ -13,7 +13,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "workspace/sigma-quant/node_modules/eslint-plugin-jsx-a11y/README.md",
+                "file": "workspace/sigma-quant/README.md",
                 "mode": "source",
                 "source": false
               },
@@ -183,8 +183,11 @@
       "bases:Create new base": false
     }
   },
-  "active": "7bab21f1c06844c9",
+  "active": "6826b076828cec05",
   "lastOpenFiles": [
+    "workspace/sigma-quant/DESIGN.md",
+    "workspace/sigma-quant/CLAUDE.md",
+    "workspace/sigma-quant/node_modules/eslint-plugin-jsx-a11y/README.md",
     "workspace/sigma-quant/node_modules/axe-core/README.md"
   ]
 }

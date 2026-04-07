@@ -1,0 +1,103 @@
+# sigma-research data source configuration
+# All sources are free / open-source
+
+fred:
+  description: "Federal Reserve Economic Data"
+  base_url: "https://api.stlouisfed.org"
+  requires_key: true
+  key_env_var: "FRED_API_KEY"
+  refresh_hours: 24
+  series:
+    DTWEXBGS: "US Dollar Index (Trade Weighted)"
+    GS10: "10-Year Treasury Yield"
+    GS2: "2-Year Treasury Yield"
+    CPIAUCSL: "CPI (All Urban Consumers)"
+    PAYEMS: "Nonfarm Payrolls"
+    GDP: "GDP"
+    M2SL: "M2 Money Supply"
+    WALCL: "Fed Balance Sheet"
+    RRPONTSYD: "Reverse Repo (RRP)"
+    TEDRATE: "TED Spread"
+    T10Y2Y: "10Y-2Y Yield Curve Spread"
+    VIXCLS: "VIX (CBOE Volatility Index)"
+
+yahoo_finance:
+  description: "Yahoo Finance (yfinance)"
+  requires_key: false
+  refresh_hours: 1
+  symbols:
+    indices:
+      "^GSPC": "S&P 500"
+      "^VIX": "VIX Volatility"
+      "^DJI": "Dow Jones"
+      "^IXIC": "NASDAQ"
+    forex:
+      "DX-Y.NYB": "US Dollar Index (DXY)"
+    commodities:
+      "GC=F": "Gold Futures"
+      "SI=F": "Silver Futures"
+      "CL=F": "WTI Crude Oil"
+      "HG=F": "Copper Futures"
+    bonds:
+      "^TNX": "10Y Treasury Yield"
+      "^TYX": "30Y Treasury Yield"
+      "^FVX": "5Y Treasury Yield"
+    crypto:
+      "BTC-USD": "Bitcoin"
+      "ETH-USD": "Ethereum"
+    sectors:
+      "XLK": "Technology ETF"
+      "XLF": "Financials ETF"
+      "XLE": "Energy ETF"
+      "XLV": "Healthcare ETF"
+      "XLI": "Industrials ETF"
+
+crypto:
+  description: "Crypto exchange data via CCXT"
+  exchange: "binance"
+  requires_key: false
+  refresh_hours: 1
+  symbols:
+    - "BTC/USDT:USDT"
+    - "ETH/USDT:USDT"
+    - "SOL/USDT:USDT"
+  timeframes:
+    - "1d"
+    - "4h"
+    - "1h"
+  data_types:
+    - ohlcv
+    - funding_rates
+    - open_interest
+
+# Future data sources (uncomment when implemented)
+# sec_edgar:
+#   description: "SEC EDGAR filings"
+#   requires_key: false
+# fixed_income:
+#   description: "Treasury yields, credit spreads"
+# fx_data:
+#   description: "Forex pairs, CoT reports"
+# commodities:
+#   description: "WTI, Gold, Copper, Ag seasonality"
+# news:
+#   description: "Tavily (1000 free/mo) + RSS"
+# sentiment:
+#   description: "Fear & Greed, Google Trends, Reddit"
+
+# Infrastructure
+qdrant:
+  url: "http://localhost:6333"
+  collection: "research"
+  vector_size: 384  # all-MiniLM-L6-v2 dimension
+
+ollama:
+  url: "http://localhost:11434"
+  models:
+    primary: "qwen2.5:7b"     # Sentiment, summarization
+    verify: "mistral:7b"       # Cross-check verification
+
+embeddings:
+  model: "all-MiniLM-L6-v2"
+  dimension: 384
+  device: "cpu"  # CPU is fast enough (~10ms/embed)

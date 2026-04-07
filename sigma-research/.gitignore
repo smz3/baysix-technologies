@@ -1,0 +1,22 @@
+# Environment
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Data (large files, fetched on demand)
+data/raw/
+data/processed/
+data/cache/
+
+# Reports output
+reports/output/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

@@ -20,6 +20,11 @@ __pycache__/
 venv/
 .env/
 env/
+.venv/
+**/.venv/
+**/node_modules/
+**/dist/
+**/build/
 
 # IDE / OS Files
 .vscode/

@@ -1,0 +1,10 @@
+{
+    "generated_at_unix": 1775042722,
+    "macro_regime": "High Inflation / Tightening",
+    "global_risk_multiplier": 0.5,
+    "kill_switch": false,
+    "micro_probabilities": {
+        "EURUSD_Long_Zone_1.08": 0.35,
+        "BTC_Short_Zone_71k": 0.68
+    }
+}
