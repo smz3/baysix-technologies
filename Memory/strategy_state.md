@@ -37,7 +37,6 @@ Last Updated: 2026-03-11
 - [2026-04-01] V3 Architecture Approved: Hybrid model (Algo core + AI overlay). LangGraph chosen as orchestrator. 
 - [2026-04-01] IP Protection strategy finalized: Cython compilation of B2B logic into .pyd files.
 - [2026-03-11] sigma-brain wired as Chief of Staff with 6 specialized agents
-- [2026-03-11] OpenFang deprioritized — parked as future background infrastructure
 - [2026-03-07] Phase 1 installation completed — Paperclip + OpenFang installed
 
 ## Next Decision Point

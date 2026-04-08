@@ -39,12 +39,12 @@ All sub-projects are accessible via `workspace/` junctions from sigma-brain root
 | sigma-linkedin | `workspace/sigma-linkedin/` | AI LinkedIn content manager |
 | sigma_core | `workspace/sigma_core/` | B2B math engine (compiled binary) |
 
-Absolute paths (use if workspace/ junction unavailable):
-- sigma-research: `C:\Users\User\Desktop\sigma-research`
-- sigma-crypto: `C:\Users\User\Desktop\sigma-crypto`
-- sigma-mt5: `C:\Users\User\Desktop\sigma-mt5`
-- sigma-quant: `C:\Users\User\Desktop\sigma-quant`
-- sigma-linkedin: `C:\Users\User\Desktop\sigma-linkedin`
+Absolute paths (use these when working on specific projects; their code is inside `workspace/`):
+- sigma-research: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-research`
+- sigma-crypto: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-crypto`
+- sigma-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5`
+- sigma-quant: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-quant`
+- sigma-linkedin: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-linkedin`
 - sigma_core: `C:\Users\User\Desktop\sigma-brain\workspace\sigma_core`
 
 ---
@@ -88,8 +88,6 @@ After significant work, instruct the memory-curator to update these files.
 | Supabase | API endpoint | IPC bus for sigma-research/sigma-quant inter-project comms (`trading_context.json`, zone outcomes, agent logs) |
 | FRED API | `api.stlouisfed.org` | Macro data (T10Y2Y, Yield Curve Spread; FEDFUNDS, Interest Rates; CPI, Inflation) |
 | Cloudflare Pages | `syafiqmzin-sigma-quant.pages.dev` | Production deploy for Intelligence Centre public portfolio showcase |
-| Paperclip | `Management/paperclip/` (port 3100) | Task board — active_tickets/, completed_tickets/ |
-| OpenFang | `Agents/openfang/` (port 4200) | Future: 24/7 background agents, Telegram alerts |
 | Always-On Memory | `Memory/always-on-memory-agent/` | Reads trade logs every 30 min, writes to memory.db |
 | Skills | `Skills/` | SOPs and single-task operations |
 | Agents | `Agents/` | Contexts for isolated subagent operations |

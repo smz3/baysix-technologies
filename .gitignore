@@ -4,8 +4,6 @@
 !.env.example
 
 # Embedded repos (have their own .git — manage separately)
-Agents/openfang/
-Management/paperclip/
 
 # Credentials & Keys
 *.pem
