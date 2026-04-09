@@ -63,6 +63,19 @@ Notes:
 
 ---
 
+## Session Shutdown & Sleep Protocol
+
+When the user issues the command **"Sleep"** or indicates the session is ending:
+1. **Halt execution** and prioritize context preservation.
+2. Generate a new handover file at `Memory/Session_Handover_[Date]_[Time].md`.
+3. Include the following sections in the handover:
+   - **Accomplished:** What was completed in this session.
+   - **WIP / Blockers:** What is currently broken or pending.
+   - **Next Action:** The explicit first step the next agent should take upon waking up.
+4. Report to the user: "Handover file created. Standing by."
+
+---
+
 ## Output Standards
 
 - Always attribute which agent produced which finding
