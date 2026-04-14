@@ -34,10 +34,12 @@ sigma-brain/              ← this repo (monorepo / brain)
 ├── workspace/
 │   ├── sigma-quant/      ← Cloudflare Pages frontend (deployed)
 │   └── sigma-mt5/        ← MT5 trading system (B2B zone detection)
+├── .claude/
+│   ├── agents/           ← agent definitions (auto-discovered by Claude Code)
+│   ├── skills/           ← skill definitions (auto-discovered by Claude Code)
+│   └── hooks/            ← audio notification system (hooks.py + sounds)
 ├── Braindump/            ← PRDs, build plans
 ├── Memory/               ← session handovers
-├── Agents/               ← agent definitions
-├── Skills/               ← skill definitions
 └── resume/               ← job application materials
 ```
 
@@ -57,8 +59,9 @@ sigma-brain/              ← this repo (monorepo / brain)
 
 ## Sub-Agents & Skills Architecture
 
-- Agent definitions live in `Agents/` and skill definitions in `Skills/` at the repo root.
-- Use your normal skill delegation logic to spawn sub-agents or invoke tasks.
+- Agent definitions live in `.claude/agents/` — auto-discovered by `Agent(subagent_type="name")`.
+- Skill definitions live in `.claude/skills/` — auto-discovered by the `Skill` tool.
+- Use `Agent(subagent_type="<name>")` to spawn agents, or `/skill-name` to invoke skills.
 
 ## Execution Rule — Gemma 4 Delegation
 
