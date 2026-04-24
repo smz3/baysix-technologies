@@ -1,0 +1,60 @@
+# Redesign Plan: Omni-Map & Live News Terminal
+
+I have completed the deep research on free, open-source APIs for real-time AIS (Automatic Identification System) shipping vessel data. 
+
+## Deep Research Findings: Live Shipping Data
+
+The standard players (MarineTraffic, Spire, VesselFinder) charge thousands of dollars a month for API access. However, I found a powerful developer-focused open-source project that gives us exactly what we need for free:
+
+**The Winner: aisstream.io**
+- **What it is:** A free, community-driven real-time global AIS data stream.
+- **How it works:** It uses WebSockets. We can open a WebSocket connection in our Next.js app, define a bounding box (e.g., the Strait of Hormuz, the Red Sea, or global), and it will stream live JSON messages containing the exact coordinates, vessel type (Oil Tanker, Cargo, etc.), and heading of ships in that area.
+- **Why it's perfect:** It costs $0, it's real-time, and we can filter it to only show Oil Tankers and Cargo ships near our Geopolitical Chokepoints.
+
+*Alternative options ruled out:*
+- *AISHub*: Free, but requires us to physically host an AIS receiver antenna and upload data to their network to get an API key.
+- *Datalastic / VesselFinder*: Commercial APIs. They offer "free tiers" but they are heavily rate-limited (e.g., 1000 requests/month), which would break our real-time terminal instantly.
+
+## Proposed Layout Structure (Revised)
+
+As requested, I have ensured the **MAP** gets the dominant real estate. 
+
+```text
+┌─ SIGMA INTELLIGENCE ─── [ TERMINAL ] [ MICRO ] [ AI.DESK ] ──────── RISK-ON 84% ─┐
+├─►► BTC 94,200 ▲+1.2%  ·  ETH 3,140 ▼-0.4%  ·  GOLD 2,341 ▲+0.1% ·················─►┤
+├───────────────────────────────────────────────────────┬──────────────────────────┤
+│ MAP.GLOBAL (Flex-1 / Dominant Space)                  │ LIVE.NEWS (w-350px)      │
+│ ───────────────────────────────────────────────────── │ ──────────────────────── │
+│  [LAYERS] 🟢 LIVE AIS SHIPS (Tankers & Cargo)         │                          │
+│           🟢 INFRASTRUCTURE (AI Nodes)                │ [ Bloomberg TV Embed ]   │
+│           ⚪ MACRO SESSIONS                           │ [ SkyNews Embed ]        │
+│           🟢 RISK RADAR (News & Storms)               │                          │
+│                                                       │                          │
+├──────────────┬────────────────────────────────────────┴─┬────────────────────────┤
+│ AI.BRIEF     │ NEWS.FEED (Monochrome, no AI slop)       │ ACTIVE.RISK.EVENTS     │
+│ ──────────── │ ──────────────────────────────────────── │ ────────────────────── │
+│ BULLISH 84%  │ [CRYPTO] BTC ETF inflows surge         H │ [EQ] M6.2 Japan      H │
+│ ──────────── │ [MACRO] Fed speakers Friday            M │ [WF] Wildfire CA     M │
+│ BTC rallying │ [RISK] Solar storm expected            H │ [CP] Suez Delay      M │
+└──────────────┴──────────────────────────────────────────┴────────────────────────┘
+```
+
+## Action Plan (Execution Steps)
+
+1. **Sidebar Updates**: Update `MainLayout.tsx` so the sidebar defaults to collapsed.
+2. **Live News Component**: Build `LiveTV.tsx` (fixed `350px` width) with standard YouTube embeds for Bloomberg and Al Jazeera.
+3. **Terminal Layout & Cleanup**: 
+   - Remove Macro Pulse.
+   - Move AI Brief to bottom left.
+   - Clean up colors in `MergedNewsFeed` (pure monochrome).
+   - Remove emojis from `ActiveRiskEvents` and use clean bracket tags `[EQ]`.
+4. **The Omni-Map**:
+   - Create the static JSON registries for AI Data Centers.
+   - Set up the Leaflet Map with the Layer Control toggle.
+   - **Integrate WebSocket for `aisstream.io`** to plot live Oil Tankers and Cargo ships on the map.
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. To use `aisstream.io`, we just need a free API key (which you can generate instantly with a GitHub account on their website). Is this acceptable?
+> 2. Are you happy with this final layout and plan? If yes, I will begin coding the implementation immediately.
