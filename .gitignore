@@ -29,6 +29,7 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+.obsidian/
 
 # Memory — runtime data, not source of truth
 Memory/inbox/

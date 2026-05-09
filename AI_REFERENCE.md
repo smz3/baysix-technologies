@@ -20,32 +20,33 @@
 - **IPC Bus**: Supabase (shared with sigma-quant) — `trading_context.json`, zone outcomes, agent logs
 - **Sealed Core**: `sigma_core` `.pyd` binary — B2B engine, never exposed to LLM context
 - **ML Models**: XGBoost (zone scorer), LSTM (regime classifier) — built on accumulated zone outcome data
-- **Local LLMs**: Ollama (localhost:11434) — development and offline testing only (qwen2.5:7b, mistral:7b, others as configured)
 - **Citations**: Every research claim must carry a CitationRecord (source, URL, date, confidence)
 
 ---
 
 ## Project Map
 
-All sub-projects are accessible via `workspace/` junctions from sigma-brain root.
+All sub-projects live as real directories inside `workspace/` — each is an independent git repo.
 
 | Project | Workspace Path | Purpose |
 |---------|---------------|---------|
-| sigma-brain | `.` (this project) | HQ — orchestrator, agents, memory, PRD |
-| sigma-research | `workspace/sigma-research/` | Python research infra (data pipelines, Qdrant, reports, local LLM) |
+| sigma-brain | `.` (this project) | HQ — orchestrator, agents, memory, plans |
 | sigma-crypto | `workspace/sigma-crypto/` | Python SAMTC engine (backtesting + live crypto) |
-| sigma-mt5 | `workspace/sigma-mt5/` | MQL5 Expert Advisor (B2B zones, Forex) |
+| sigma-lean | `workspace/sigma-lean/` | LEAN CLI backtesting — sole backtest engine |
 | sigma-quant | `workspace/sigma-quant/` | Intelligence Centre — public portfolio showcase. Live: syafiqmzin-sigma-quant.pages.dev |
-| sigma-linkedin | `workspace/sigma-linkedin/` | AI LinkedIn content manager |
-| sigma_core | `workspace/sigma_core/` | B2B math engine (compiled binary) |
+| sigma-research | `workspace/sigma-research/` | FastAPI backend — Qdrant vector search, Groq AI briefs |
+| sigma-mt5 | `workspace/sigma-mt5/` | MQL5 Expert Advisor (B2B zones, Forex) |
+| sigma-linkedin | `workspace/sigma-linkedin/` | AI LinkedIn content manager (active) |
+| kronos | `workspace/kronos/` | Time series forecasting — B2B zone survival prediction |
 
 Absolute paths (use these when working on specific projects; their code is inside `workspace/`):
-- sigma-research: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-research`
 - sigma-crypto: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-crypto`
-- sigma-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5`
+- sigma-lean: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-lean`
 - sigma-quant: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-quant`
+- sigma-research: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-research`
+- sigma-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5`
 - sigma-linkedin: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-linkedin`
-- sigma_core: `C:\Users\User\Desktop\sigma-brain\workspace\sigma_core`
+- kronos: `C:\Users\User\Desktop\sigma-brain\workspace\kronos`
 
 ---
 
@@ -83,17 +84,14 @@ After significant work, instruct the memory-curator to update these files.
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| Qdrant | `localhost:6333` (local binary) | Vector DB — semantic search over all research, citations, alpha insights |
-| Ollama | `localhost:11434` (local) | Local LLMs — qwen2.5:7b (sentiment), mistral:7b (cross-check) |
-| Supabase | API endpoint | IPC bus for sigma-research/sigma-quant inter-project comms (`trading_context.json`, zone outcomes, agent logs) |
-| FRED API | `api.stlouisfed.org` | Macro data (T10Y2Y, Yield Curve Spread; FEDFUNDS, Interest Rates; CPI, Inflation) |
+| Qdrant Cloud | `sigma_market` collection (cloud) | Vector DB — 245 docs indexed, powers Vector Context panel |
+| Groq API | cloud | Llama 3.3 70B for AI market briefs in sigma-quant |
+| Supabase | API endpoint | IPC bus for sigma-research/sigma-quant inter-project comms |
+| FRED API | `api.stlouisfed.org` | Macro data (T10Y2Y, Yield Curve Spread; FEDFUNDS; CPI) |
 | Cloudflare Pages | `syafiqmzin-sigma-quant.pages.dev` | Production deploy for Intelligence Centre public portfolio showcase |
-| Always-On Memory | `Memory/always-on-memory-agent/` | Reads trade logs every 30 min, writes to memory.db |
-| Skills | `Skills/` | SOPs and single-task operations |
-| Agents | `Agents/` | Contexts for isolated subagent operations |
-| Audit | `Audit/` | Cost tracker, heartbeats, security alerts |
-| Sandbox | `Sandbox/` | Agent-generated code review area |
-| PRD | `Braindump/PRD_baysix_ai_hedge_fund_v4.md` | Full architecture blueprint — the source of truth |
+| Skills | `.claude/skills/` | SOPs and single-task operations (auto-discovered) |
+| Agents | `.claude/agents/` | Specialized sub-agent definitions (auto-discovered) |
+| Build plans | `Braindump/` | Active PRDs and build plans (3 files max — archive the rest) |
 
 ---
 
@@ -101,9 +99,12 @@ After significant work, instruct the memory-curator to update these files.
 
 All code changes by agents happen in isolated git worktrees — never on main branch.
 
+**Critical**: Each sub-project in `workspace/` is its own independent git repo. Worktrees must be created from **that sub-project's git root**, not from sigma-brain root. Example: to work on sigma-crypto, `cd workspace/sigma-crypto` first, then run `git worktree add`.
+
 **Workflow:**
-1. quant-developer creates worktree: `git worktree add ../<project>-<task> -b baysix/agent/<task>-<date>`
-2. Makes changes in isolation
+1. quant-developer `cd`s into the target sub-project root (e.g. `workspace/sigma-crypto/`)
+2. Creates worktree: `git worktree add ../../<project>-<task> -b baysix/agent/<task>-<date>`
+3. Makes changes in isolation
 3. Submits to code-reviewer → must receive APPROVED verdict
 4. Returns diff + approval to Chief of Staff
 5. Chief of Staff presents to user: `[REQUIRES APPROVAL]` to merge to main
