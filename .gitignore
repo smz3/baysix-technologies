@@ -39,6 +39,15 @@ memory.db
 # Stack runtime
 .gstack/
 
+# Debug artifacts (browser sessions, screenshots, build logs)
+micro-*.png
+micro-*.md
+.playwright-mcp/
+outputs/
+pip_*.txt
+openbb_build*.log
+pip_install.log
+
 # Workspace — each sub-project has its own repo
 workspace/
 

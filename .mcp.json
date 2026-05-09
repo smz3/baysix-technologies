@@ -8,6 +8,11 @@
     "supabase": {
       "command": "npx",
       "args": ["-y", "@supabase/mcp-server"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp", "--headless", "--no-sandbox"]
     }
   }
 }

@@ -25,6 +25,7 @@
       "Bash(git merge*)"
     ]
   },
+  "enabledMcpjsonServers": ["context7", "supabase", "playwright"],
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
     "SIGMA_BRAIN": "C:\\Users\\User\\Desktop\\sigma-brain",
@@ -81,6 +82,16 @@
             "statusMessage": "PreToolUse"
           }
         ]
+      },
+      {
+        "matcher": "mcp__playwright__browser_navigate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/playwright_guard.py",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -92,6 +103,16 @@
             "timeout": 5000,
             "async": true,
             "statusMessage": "PostToolUse"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/edit_watcher.py",
+            "timeout": 5000
           }
         ]
       }

@@ -4,11 +4,11 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 
 ---
 
-## Project State (Updated 2026-04-09)
+## Project State (Updated 2026-05-09)
 
 ### Who You're Talking To
 - **Syafiq** — 7yr Quant Trader transitioning to AI Quant Developer (<1yr). Targets Junior AI Quant Dev roles.
-- Currently applying: AI Quant Developer + AI Market Analyst roles (April 2026).
+- Currently applying: AI Quant Developer + AI Market Analyst roles (May 2026).
 - Actively live trading XAUUSD on MT5 (Just Markets, semi-automated B2B zones).
 - Do NOT suggest rebuilding things from scratch. Syafiq has working deployed products. Check what exists first.
 
@@ -33,13 +33,18 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 sigma-brain/              ← this repo (monorepo / brain)
 ├── workspace/
 │   ├── sigma-quant/      ← Cloudflare Pages frontend (deployed)
-│   └── sigma-mt5/        ← MT5 trading system (B2B zone detection)
+│   ├── sigma-mt5/        ← MT5 trading system (B2B zone detection)
+│   ├── sigma-crypto/     ← SAMTC strategy core + backtester
+│   ├── sigma-lean/       ← LEAN CLI backtesting (primary engine)
+│   ├── sigma-linkedin/   ← LinkedIn automation (active)
+│   ├── sigma-research/   ← FastAPI backend + PDF research pipelines
+│   └── kronos/           ← Time series forecasting (B2B zone survival)
 ├── .claude/
 │   ├── agents/           ← agent definitions (auto-discovered by Claude Code)
 │   ├── skills/           ← skill definitions (auto-discovered by Claude Code)
 │   └── hooks/            ← audio notification system (hooks.py + sounds)
-├── Braindump/            ← PRDs, build plans
-├── Memory/               ← session handovers
+├── Braindump/            ← active PRDs and build plans only
+├── Memory/               ← session handovers (latest 3 in root)
 └── resume/               ← job application materials
 ```
 
@@ -63,24 +68,13 @@ sigma-brain/              ← this repo (monorepo / brain)
 - Skill definitions live in `.claude/skills/` — auto-discovered by the `Skill` tool.
 - Use `Agent(subagent_type="<name>")` to spawn agents, or `/skill-name` to invoke skills.
 
-## Execution Rule — Gemma 4 Delegation
+## Execution Model
 
-For all **execution tasks** (coding, research, backtesting, data analysis, report writing), delegate to Gemma 4 via:
+**Claude Code handles everything by default** — planning, coding, research, file ops, git ops, user communication.
 
-```bash
-ollama run gemma4-baysix "<task prompt>"
-```
+No local model delegation. No external execution engine by default.
 
-**Correct parameters** (per official Gemma 4 README): temperature=1.0, top_p=0.95, top_k=64, context=262144 (256k).
-See `GEMMA4.md` for full model identity, capabilities, and Modelfile spec.
-
-**Claude handles**: planning, task decomposition, prompt construction, output review, file writes, git ops, user communication.
-**Gemma 4 31B handles**: reasoning, code generation, research synthesis, quantitative analysis, chart/image analysis (vision).
-**Gemma 4 8B** (`gemma4:latest`): fast classification, quick summaries only.
-
-**Vision capability**: Gemma 4 31B can process images. For chart analysis, pass image path alongside prompt via Ollama API (`POST localhost:11434/api/chat`).
-
-Do NOT use raw `gemma4:31b` — always use `gemma4-baysix` to ensure correct parameters.
+**Gemini agents** are spawned explicitly when Syafiq invokes one for a specific task — they operate as parallel specialists alongside Claude. `GEMINI_API_KEY` in `.env` belongs to the sigma-quant app; it is not for terminal execution. See `GEMINI.md` for Gemini agent operating instructions.
 
 ## Cloud Deployment Rules
 
@@ -94,6 +88,9 @@ When helping with Google Cloud Run, Cloud Build, or similar:
 
 **sigma-quant Intelligence Centre** is the primary portfolio showcase for AI Quant Developer applications. It aggregates real-time crypto signals, macro data (FRED API), risk events (NASA EONET), and AI-synthesized market briefs via Groq Llama 3.3 70B. Publicly deployed at `syafiqmzin-sigma-quant.pages.dev`.
 
-**Immediate priority**: Get sigma-research backend deployed to Cloud Run so the Vector Context panel stops showing "Vector DB offline".
+**Current priority** (as of 2026-05-09):
+1. Port SAMTC into LEAN CLI (`workspace/sigma-lean/B2BZoneStrategy/`) — FlowState, Storyline Latches, Siege Detection, Gate A/B/C
+2. Cross-validate LEAN backtest vs custom engine Sharpe 1.16 (IS 2020-2022, OOS 2023-2025)
+3. sigma-research backend deployment to Cloud Run (Vector DB offline blocker)
 
-The main hedge fund blueprint is `Braindump/BAYSIX_BUILD_PLAN_v4.md`.
+See `Memory/Session_Handover_2026_05_09_Evening.md` for full build order and blockers.
