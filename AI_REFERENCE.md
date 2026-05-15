@@ -4,8 +4,22 @@
 
 ---
 
-## Research Philosophy (Hybrid — Three Legends)
+## Research Philosophy
 
+### QR Identity (Updated 2026-05-11)
+Syafiq is a **Quant Researcher (deployable)** — not an AI Quant Dev. Every strategy output is framed as alpha research, not engineering.
+
+**Target firms:** Balyasny Asset Management + Millennium Management (Tier C multi-manager pod shops — direct approach). NOT Quantedge/Dymon/GIC.  
+**Career goal chain:** QR Job → Experience → Own Fund → Family Office → Private Family Office.
+
+**Alpha research language (Tier C / pod shop standard):**  
+All strategy outputs must report: IC, ICIR, IC decay profile, factor decomposition (Fama-French), residual alpha, capacity estimate.  
+Do NOT report just Sharpe/Calmar/Max DD — those are Tier B metrics. Tier C wants alpha attribution.
+
+Full QR workflow: **`workspace/baysix-engine/Research/RESEARCH_FRAMEWORK.md`** — 8-gate signal validation pipeline + Tier C memo format. Read this before working on any strategy task.  
+Signal registry and completed memos: **`workspace/baysix-engine/Research/`** folder.
+
+### Investment Layers (Hybrid — Three Legends)
 1. **Ray Dalio layer (Macro Regime)** — Economic machine model (growth/inflation/liquidity) determines the regime. Top-level filter that gates everything below.
 2. **Point72 layer (Sector/Instrument Selection)** — Within the regime, fundamental + quantitative analysis selects which asset classes and instruments have edge.
 3. **Paul Tudor Jones layer (Risk Management)** — Obsessive risk management. Position sizing, stop placement, correlation risk, drawdown limits.
@@ -31,22 +45,24 @@ All sub-projects live as real directories inside `workspace/` — each is an ind
 | Project | Workspace Path | Purpose |
 |---------|---------------|---------|
 | sigma-brain | `.` (this project) | HQ — orchestrator, agents, memory, plans |
-| sigma-crypto | `workspace/sigma-crypto/` | Python SAMTC engine (backtesting + live crypto) |
-| sigma-lean | `workspace/sigma-lean/` | LEAN CLI backtesting — sole backtest engine |
-| sigma-quant | `workspace/sigma-quant/` | Intelligence Centre — public portfolio showcase. Live: syafiqmzin-sigma-quant.pages.dev |
+| **baysix-engine** | `workspace/baysix-engine/` | Unified trading research + execution system |
+| **Research** | `workspace/baysix-engine/Research/` | QR signal validation — 8-gate pipeline, memos, ADRs, signal registry |
+| **sigma-are** | `workspace/baysix-engine/sigma-are/` | Alpha Research Engine + B2B Python (was sigma-crypto). GitHub: smz3/sigma-crypto |
+| **sigma-lean** | `workspace/baysix-engine/sigma-lean/` | LEAN CLI — institutional IS/OOS validation engine |
+| **sigma-mt5** | `workspace/baysix-engine/sigma-mt5/` | MQL5 Expert Advisor (B2B zones, XAUUSD live). GitHub: smz3/sigma-mt5 |
+| sigma-quant | `workspace/sigma-quant/` | Live quantitative research platform. Deployed: syafiqmzin-sigma-quant.pages.dev |
 | sigma-research | `workspace/sigma-research/` | FastAPI backend — Qdrant vector search, Groq AI briefs |
-| sigma-mt5 | `workspace/sigma-mt5/` | MQL5 Expert Advisor (B2B zones, Forex) |
 | sigma-linkedin | `workspace/sigma-linkedin/` | AI LinkedIn content manager (active) |
-| kronos | `workspace/kronos/` | Time series forecasting — B2B zone survival prediction |
+| _archive | `workspace/_archive/` | Archived: kronos, freqtrade-kronos |
 
 Absolute paths (use these when working on specific projects; their code is inside `workspace/`):
-- sigma-crypto: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-crypto`
-- sigma-lean: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-lean`
+- sigma-are (ARE + B2B Python): `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-are`
+- sigma-lean: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-lean`
+- sigma-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-mt5`
+- Research: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\Research`
 - sigma-quant: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-quant`
 - sigma-research: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-research`
-- sigma-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5`
 - sigma-linkedin: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-linkedin`
-- kronos: `C:\Users\User\Desktop\sigma-brain\workspace\kronos`
 
 ---
 
@@ -99,11 +115,11 @@ After significant work, instruct the memory-curator to update these files.
 
 All code changes by agents happen in isolated git worktrees — never on main branch.
 
-**Critical**: Each sub-project in `workspace/` is its own independent git repo. Worktrees must be created from **that sub-project's git root**, not from sigma-brain root. Example: to work on sigma-crypto, `cd workspace/sigma-crypto` first, then run `git worktree add`.
+**Critical**: Each sub-project in `workspace/baysix-engine/` is its own independent git repo (except sigma-lean, which has no own git). Worktrees must be created from **that sub-project's git root**, not from sigma-brain root. Example: to work on sigma-are, `cd workspace/baysix-engine/sigma-are` first, then run `git worktree add`.
 
 **Workflow:**
 1. quant-developer `cd`s into the target sub-project root (e.g. `workspace/sigma-crypto/`)
-2. Creates worktree: `git worktree add ../../<project>-<task> -b baysix/agent/<task>-<date>`
+2. Creates worktree: `git worktree add ../../../<project>-<task> -b baysix/agent/<task>-<date>`
 3. Makes changes in isolation
 3. Submits to code-reviewer → must receive APPROVED verdict
 4. Returns diff + approval to Chief of Staff

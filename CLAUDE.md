@@ -7,10 +7,12 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 ## Project State (Updated 2026-05-09)
 
 ### Who You're Talking To
-- **Syafiq** — 7yr Quant Trader transitioning to AI Quant Developer (<1yr). Targets Junior AI Quant Dev roles.
-- Currently applying: AI Quant Developer + AI Market Analyst roles (May 2026).
+- **Syafiq** — 7yr Quant Trader, now building toward **Quant Researcher (deployable)** role. NOT AI Quant Dev — this was updated 2026-05-10.
+- **Target firms (updated 2026-05-11): Balyasny Asset Management + Millennium Management — Tier C multi-manager pod shops, direct approach.** Do NOT default to Tier B firms (Quantedge, Dymon, GIC) — those are no longer the primary targets.
+- **Long-term goal (explicit):** Get QR Job → Build institutional experience → Launch own fund → Grow to Family Office → Grow to massive Private Family Office.
 - Actively live trading XAUUSD on MT5 (Just Markets, semi-automated B2B zones).
 - Do NOT suggest rebuilding things from scratch. Syafiq has working deployed products. Check what exists first.
+- Frame ALL strategy work in pod shop QR language: IC, ICIR, factor decomposition, alpha attribution, residual alpha. Not "Sharpe 1.16" — "IC of X, ICIR Y, Z% residual alpha after factor decomposition."
 
 ### Plan Tier
 - Claude Code **Pro plan** — sessions can hit rate limits. Deliver the critical artifact FIRST in any session before doing exploration or cleanup work.
@@ -32,13 +34,20 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 ```
 sigma-brain/              ← this repo (monorepo / brain)
 ├── workspace/
+│   ├── baysix-engine/    ← unified trading research + execution system
+│   │   ├── sigma-are/    ← Alpha Research Engine + B2B Python (was sigma-crypto)
+│   │   ├── sigma-lean/   ← LEAN CLI backtesting (validation layer)
+│   │   ├── sigma-mt5/    ← MQL5 Expert Advisor (production layer)
+│   │   └── Research/     ← QR signal validation pipeline (READ THIS)
+│   │       ├── RESEARCH_FRAMEWORK.md  ← 8-gate pipeline — the Baysix research standard
+│   │       ├── _MEMO_TEMPLATE.md      ← reusable research memo template
+│   │       ├── architecture/          ← ADRs (ADR-001 through ADR-005)
+│   │       └── SAMTC/
+│   │           └── memo_test13a.md    ← SAMTC OOS validation memo (Gate 4 PASSED)
 │   ├── sigma-quant/      ← Cloudflare Pages frontend (deployed)
-│   ├── sigma-mt5/        ← MT5 trading system (B2B zone detection)
-│   ├── sigma-crypto/     ← SAMTC strategy core + backtester
-│   ├── sigma-lean/       ← LEAN CLI backtesting (primary engine)
-│   ├── sigma-linkedin/   ← LinkedIn automation (active)
 │   ├── sigma-research/   ← FastAPI backend + PDF research pipelines
-│   └── kronos/           ← Time series forecasting (B2B zone survival)
+│   ├── sigma-linkedin/   ← LinkedIn automation (active)
+│   └── _archive/         ← kronos, freqtrade-kronos (archived)
 ├── .claude/
 │   ├── agents/           ← agent definitions (auto-discovered by Claude Code)
 │   ├── skills/           ← skill definitions (auto-discovered by Claude Code)
@@ -58,6 +67,7 @@ sigma-brain/              ← this repo (monorepo / brain)
 
 ## Reference (on-demand only)
 
+- `workspace/baysix-engine/Research/RESEARCH_FRAMEWORK.md` — **8-gate QR signal validation pipeline. Read for ANY strategy research or backtest task.**
 - `AI_REFERENCE.md` — project map, tech stack, infrastructure, worktree protocol. Read only when needed.
 - `Braindump/PRD_baysix_ai_hedge_fund_v4.md` — full architecture blueprint. Read only for architectural tasks.
 - `DEPLOYMENT_HANDOVER.md` — detailed Cloud Run deployment steps. Read only if the handover references a deployment blocker.
@@ -86,11 +96,24 @@ When helping with Google Cloud Run, Cloud Build, or similar:
 
 ## Current Active Focus
 
-**sigma-quant Intelligence Centre** is the primary portfolio showcase for AI Quant Developer applications. It aggregates real-time crypto signals, macro data (FRED API), risk events (NASA EONET), and AI-synthesized market briefs via Groq Llama 3.3 70B. Publicly deployed at `syafiqmzin-sigma-quant.pages.dev`.
+**Target firms (updated 2026-05-11): Balyasny Asset Management + Millennium Management — direct Tier C approach.**
 
-**Current priority** (as of 2026-05-09):
-1. Port SAMTC into LEAN CLI (`workspace/sigma-lean/B2BZoneStrategy/`) — FlowState, Storyline Latches, Siege Detection, Gate A/B/C
-2. Cross-validate LEAN backtest vs custom engine Sharpe 1.16 (IS 2020-2022, OOS 2023-2025)
-3. sigma-research backend deployment to Cloud Run (Vector DB offline blocker)
+**Career goal chain:** Get QR Job → Build experience → Launch own fund → Family Office → Private Family Office.
 
-See `Memory/Session_Handover_2026_05_09_Evening.md` for full build order and blockers.
+**sigma-quant Intelligence Centre** is the live alpha research platform showcase. Deployed at `syafiqmzin-sigma-quant.pages.dev`.
+
+**Research Stack Build Order** (as of 2026-05-11):
+1. **Alpha Research Engine** — vectorized Python backtester outputting IC/ICIR/IC-decay/factor decomposition (not just equity curves)
+2. **Strategy 1: Cross-sectional momentum** — 11 SPDR ETFs, 12-1/6-1/3-1 signals, FRED macro regime conditioner
+3. **Strategy 2: Statistical arbitrage** — systematic pair selection, cointegration screen, z-score IC analysis
+4. **Strategy 3: Volatility regime classifier** — VIX term structure, applied as alpha conditioner on Strategy 1+2
+5. **Portfolio construction layer** — combine signals, factor exposure control, diversification benefit analysis
+6. **Research memos in Tier C format** — IC analysis, factor decomp, capacity estimate, regime breakdown
+
+**Tier C QR Framing Rule** — Balyasny/Millennium pod shop language:
+- NOT "Sharpe 1.16" → "IC: 0.05, ICIR: 1.2, alpha decays over 12 trading days"
+- NOT "I built a backtest" → "I measured the IC and decay profile of this signal"
+- NOT "the strategy works" → "60 bps/yr residual alpha survives Fama-French 5-factor decomposition"
+- NOT "OOS degradation 27.5%" → "IC is stable IS→OOS, t-stat 2.3, Prob Sharpe 96%"
+
+See `workspace/baysix-engine/Research/RESEARCH_FRAMEWORK.md` for full pipeline including Tier C memo format.

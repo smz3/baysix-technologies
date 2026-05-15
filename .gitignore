@@ -51,6 +51,9 @@ pip_install.log
 
 # Workspace — each sub-project has its own repo
 workspace/
+# Research lives inside baysix-engine — track it in sigma-brain
+!workspace/baysix-engine/Research/
+!workspace/baysix-engine/Research/**
 
 # Compiled / generated
 *.pyc
