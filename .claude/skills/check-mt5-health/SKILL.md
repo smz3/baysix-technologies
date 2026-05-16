@@ -15,18 +15,18 @@ Check the health and status of the sigma-mt5 Expert Advisor system.
 ## Steps
 
 1. Read the current EA version and active development state:
-   - `C:\Users\User\Desktop\sigma-mt5\Documentation\B2B_DETECTION_SYSTEM.md`
-   - Check for any open bug documentation in `Documentation\B2B_CLUSTER_FIX_PLAN.md`
+   - `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5\Documentation\B2B_DETECTION_SYSTEM.md`
+   - Check for any open bug documentation in `workspace\sigma-mt5\Documentation\B2B_CLUSTER_FIX_PLAN.md`
 
 2. Check for any compiled EA binary:
-   - Look for `.ex5` files in `C:\Users\User\Desktop\sigma-mt5\`
+   - Look for `.ex5` files in `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5\`
    - Note the version and last modified date
 
-3. Review the system heartbeat (if available):
-   - `C:\Users\User\Desktop\sigma-brain\Audit\system_heartbeats.log`
+3. Scan the latest research archive for active development notes:
+   - `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5\Include\Sigma_System\V5.0\Data\`
 
-4. Scan the latest research archive for active development notes:
-   - `C:\Users\User\Desktop\sigma-mt5\Include\Sigma_System\V5.0\Data\`
+4. Check current strategy state:
+   - `Memory\strategy_state.md` — active systems and last backtest results
 
 5. Return a health report:
    ```markdown
@@ -37,7 +37,7 @@ Check the health and status of the sigma-mt5 Expert Advisor system.
    **Active Development**: Yes / No
    **Open Issues**: [list from bug docs, or "None"]
    **Last Research Entry**: [file name and date]
-   **System Heartbeat**: [from log or "No heartbeat data"]
+   **System Heartbeat**: [No heartbeat log available — check EA manually in MT5 terminal]
    **Status**: Healthy / Needs Attention / Unknown
    **Recommended Action**: [if any]
    ```

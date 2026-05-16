@@ -16,7 +16,7 @@ Generate and review a LinkedIn post about recent Baysix progress, then await app
 
 1. Navigate to sigma-linkedin:
    ```
-   cd C:\Users\User\Desktop\sigma-linkedin
+   cd C:\Users\User\Desktop\sigma-brain\workspace\sigma-linkedin
    ```
 
 2. Read the config to understand what projects are analyzed:

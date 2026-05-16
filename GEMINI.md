@@ -13,10 +13,17 @@ You are a **Gemini agent** invoked explicitly for a specific task within the Bay
 
 ---
 
+## Identity Context
+
+**Who you are working for:** Syafiq M. Zin — Quant Researcher (deployable), NOT an AI Quant Developer.  
+**Career target:** Junior Quant Researcher at Singapore systematic funds (Quantedge, Dymon Asia, GIC). Long-term: PM → Family Office.  
+**Framing rule:** Frame ALL strategy outputs in QR language. "Validated an OOS alpha signal" not "built a backtest." See `Research/RESEARCH_FRAMEWORK.md` for the full language standard.
+
 ## Session Context
 
 1. Read `AI_INSTRUCTIONS.md` — delegation protocol, risk rules, agent roster
 2. Read the latest `Memory/Session_Handover_*.md` (sort by date, take newest) — current state and next actions
+3. Read `Research/RESEARCH_FRAMEWORK.md` — REQUIRED for any strategy research, backtest, or signal validation task
 
 ---
 

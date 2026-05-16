@@ -1,65 +1,78 @@
 ---
 name: 'run-backtest'
-description: 'Sigma brain skill: run-backtest'
+description: 'Run a LEAN CLI backtest for B2BZoneStrategy and return a structured performance summary. Specify a date range or period label (IS/OOS). Default runs the full OOS period (2023-2025).'
 ---
 
 # Skill: run-backtest
 
-Run a sigma-crypto SAMTC backtest and return a structured performance summary.
+Run a LEAN CLI backtest for the B2BZoneStrategy and return a structured performance summary.
+
+**Note:** LEAN CLI is the sole backtest engine. The old sigma-crypto custom Python backtester is archived.
 
 ## Usage
 ```
-/run-backtest [optional: phase number or date range]
+/run-backtest [optional: IS | OOS | date range e.g. 2023-01-01 to 2025-12-31]
 ```
 
 ## Steps
 
-1. Navigate to the sigma-crypto project:
-   ```
-   cd C:\Users\User\Desktop\sigma-crypto
-   ```
-
-2. Check which backtest script to run:
-   - Default: `scripts/run_phase_4_simulation.py`
-   - If a specific phase is requested, check `scripts/` for the matching script
-
-3. Run the backtest:
+1. **Navigate to sigma-lean:**
    ```bash
-   python scripts/run_phase_4_simulation.py
+   cd C:\Users\User\Desktop\sigma-brain\workspace\sigma-lean
    ```
 
-4. Parse the output — look for these key metrics:
+2. **Confirm Docker is running** (LEAN requires it):
+   ```bash
+   docker info
+   ```
+   If Docker is not running, alert the user — LEAN cannot run without it.
+
+3. **Run the backtest:**
+   ```bash
+   lean backtest "B2BZoneStrategy"
+   ```
+   LEAN will use the date range configured in `B2BZoneStrategy/config.json`. If a specific period is requested, check and update the `startDate` / `endDate` fields in config.json first.
+
+4. **Locate the output:**
+   - LEAN writes results to `B2BZoneStrategy/backtests/<timestamp>/`
+   - HTML tearsheet: `<timestamp>/B2BZoneStrategy.html`
+   - JSON results: `<timestamp>/results.json`
+
+5. **Parse key metrics from results.json:**
+   - Total Return %
    - CAGR %
-   - Sharpe Ratio
-   - Calmar Ratio
+   - Sharpe Ratio (annualized)
    - Max Drawdown %
-   - Sortino Ratio
+   - Calmar Ratio
    - Win Rate %
-   - Payoff Ratio
    - Total Trades
+   - Average Win / Average Loss / Payoff Ratio
 
-5. Check `research/reports/` for any HTML tearsheet or CSV output generated
-
-6. Return a structured report:
+6. **Return a structured report:**
    ```markdown
-   ## Backtest Result
-   **Script**: [which script was run]
-   **Period**: [date range tested]
+   ## LEAN Backtest Result
+   **Strategy**: B2BZoneStrategy
+   **Period**: [start date] to [end date]
+   **Engine**: LEAN CLI (QuantConnect)
    **CAGR**: X%
    **Sharpe**: X.XX
    **Calmar**: X.XX
    **Max DD**: X%
-   **Sortino**: X.XX
    **Win Rate**: X%
    **Payoff**: X.XX
    **Total Trades**: N
-   **Output Files**: [paths to tearsheet/CSV]
-   **vs Baseline**: [comparison to previous approved result if available]
+   **Output**: [path to HTML tearsheet]
+   **vs Gate**: Sharpe [pass/fail vs 2.0 gate] | DD [pass/fail vs 10% gate]
    ```
 
-7. Ask the memory-curator to update `Memory/strategy_state.md` with the result.
+7. **Compare against baseline** if available:
+   - Custom engine Test 13A OOS: Sharpe 1.16, Payoff 1.65, Skew 3.43
+   - Note: LEAN result is the authoritative figure — custom engine result is reference only
+
+8. **Ask the memory-curator to update `Memory/strategy_state.md`** with the new result.
 
 ## Notes
-- Never modify source code as part of this skill — read and run only
-- If the script errors, report the full traceback to the user
-- If tests fail, run `pytest tests/` first and report before running the simulation
+- Never modify strategy source code as part of this skill — run only
+- If `lean backtest` fails, check Docker is running and `lean.json` config is valid
+- For IS vs OOS cross-validation: run twice with different date ranges in config.json, compare Sharpe
+- If Sharpe degrades >30% from IS to OOS, flag as potential overfitting — escalate to mathematician
