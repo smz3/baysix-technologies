@@ -1,0 +1,9 @@
+{
+    "algorithm-language": "Python",
+    "parameters": {},
+    "description": "SIGMA B2B Zone Strategy \u2014 sigma_core B2B detection wrapped as a LEAN QCAlgorithm. Entry on L1 touch, SL at L2, TP at 2R. BTCUSDT H1 Binance.",
+    "organization-id": "",
+    "python-venv": 0,
+    "lean-engine-version": 0,
+    "local-id": 324292137
+}
