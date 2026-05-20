@@ -4,18 +4,21 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 
 ---
 
-## Project State (Updated 2026-05-09)
+## Project State (Updated 2026-05-20)
 
 ### Who You're Talking To
-- **Syafiq** — 7yr Quant Trader, now building toward **Quant Researcher (deployable)** role. NOT AI Quant Dev — this was updated 2026-05-10.
-- **Target firms (updated 2026-05-11): Balyasny Asset Management + Millennium Management — Tier C multi-manager pod shops, direct approach.** Do NOT default to Tier B firms (Quantedge, Dymon, GIC) — those are no longer the primary targets.
-- **Long-term goal (explicit):** Get QR Job → Build institutional experience → Launch own fund → Grow to Family Office → Grow to massive Private Family Office.
+- **Syafiq** — 7yr Quant Trader, building toward **Quant Researcher (deployable)** role. NOT AI Quant Dev.
+- **Target firms: Balyasny Asset Management + Millennium Management — Tier C multi-manager pod shops, direct approach.** Do NOT default to Tier B firms (Quantedge, Dymon, GIC).
+- **Long-term goal:** Get QR Job → Build institutional experience → Launch own fund → Family Office → Private Family Office.
 - Actively live trading XAUUSD on MT5 (Just Markets, semi-automated B2B zones).
-- Do NOT suggest rebuilding things from scratch. Syafiq has working deployed products. Check what exists first.
-- Frame ALL strategy work in pod shop QR language: IC, ICIR, factor decomposition, alpha attribution, residual alpha. Not "Sharpe 1.16" — "IC of X, ICIR Y, Z% residual alpha after factor decomposition."
+- Frame ALL strategy work in pod shop QR language: IC, ICIR, factor decomposition, alpha attribution, residual alpha.
 
 ### Plan Tier
-- Claude Code **Pro plan** — sessions can hit rate limits. Deliver the critical artifact FIRST in any session before doing exploration or cleanup work.
+- Claude Code **Pro plan** — sessions can hit rate limits. Deliver the critical artifact FIRST before exploration or cleanup.
+
+### Writing Style
+- Use simple words and straight forward delivery
+- Always use markdown link syntax for file references: [filename](path) — never backticks — so links are clickable in VS Code
 
 ### Deployed Products (Do Not Suggest Replacing These)
 | App | URL | Status |
@@ -27,50 +30,74 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 - **Qdrant Cloud**: `sigma_market` collection, 245 docs indexed, verified live
 - **Groq API**: Llama 3.3 70B for AI market briefs
 - **FRED API**: Macro data
-- **NASA EONET**: Risk event signals
 - **GitHub**: `smz3/sigma-research` (backend), `smz3/sigma-quant` (frontend via Cloudflare)
 
 ### Workspace Layout
 ```
-sigma-brain/              ← this repo (monorepo / brain)
+sigma-brain/                  ← this repo (brain/orchestration)
 ├── workspace/
-│   ├── baysix-engine/    ← unified trading research + execution system
-│   │   ├── sigma-are/    ← Alpha Research Engine + B2B Python (was sigma-crypto)
-│   │   ├── sigma-lean/   ← LEAN CLI backtesting (validation layer)
-│   │   ├── sigma-mt5/    ← MQL5 Expert Advisor (production layer)
-│   │   └── Research/     ← QR signal validation pipeline (READ THIS)
-│   │       ├── RESEARCH_FRAMEWORK.md  ← 8-gate pipeline — the Baysix research standard
-│   │       ├── _MEMO_TEMPLATE.md      ← reusable research memo template
-│   │       ├── architecture/          ← ADRs (ADR-001 through ADR-005)
-│   │       └── SAMTC/
-│   │           └── memo_test13a.md    ← SAMTC OOS validation memo (Gate 4 PASSED)
-│   ├── sigma-quant/      ← Cloudflare Pages frontend (deployed)
-│   ├── sigma-research/   ← FastAPI backend + PDF research pipelines
-│   ├── sigma-linkedin/   ← LinkedIn automation (active)
-│   └── _archive/         ← kronos, freqtrade-kronos (archived)
+│   ├── baysix-engine/        ← unified trading research + execution system
+│   │   ├── sigma-are/        ← Alpha Research Engine (ARE) — the core research system
+│   │   │   ├── brokers/      ← venue context (darwinex-zero, ibkr, high-leverage, etc.)
+│   │   │   ├── lean-engine/  ← LEAN CLI execution gate (was sigma-lean)
+│   │   │   └── research-engine/ ← data, notebooks, strategies
+│   │   │       └── strategies/b2b-gold/  ← B2B gold signal (b2b-py, b2b-markdowns)
+│   │   └── sigma-mt5/        ← MQL5 Expert Advisor (XAUUSD live production)
+│   ├── sigma-quant/          ← Cloudflare Pages frontend (deployed)
+│   ├── sigma-research/       ← FastAPI backend + Qdrant/Groq AI briefs
+│   └── sigma-linkedin/       ← LinkedIn automation (active)
 ├── .claude/
-│   ├── agents/           ← agent definitions (auto-discovered by Claude Code)
-│   ├── skills/           ← skill definitions (auto-discovered by Claude Code)
-│   └── hooks/            ← audio notification system (hooks.py + sounds)
-├── Braindump/            ← active PRDs and build plans only
-├── Memory/               ← session handovers (latest 3 in root)
-└── resume/               ← job application materials
+│   ├── agents/               ← agent definitions (auto-discovered)
+│   ├── skills/               ← skill definitions (auto-discovered)
+│   └── hooks/                ← audio notification system
+├── vault/                    ← B2B knowledge wiki, strategy docs, research schemas
+│   └── wiki/strategy/        ← B2B detection rules, lifecycle, timeframe hierarchy
+├── Braindump/                ← active PRDs and build plans only
+└── Memory/                   ← session handovers (read newest at startup)
 ```
+
+---
+
+## Three-Venue Deployment Model (Updated 2026-05-20)
+
+Syafiq has three active deployment venues, each with a distinct mandate. The Research Engine serves all three:
+
+| Venue | Broker | Instruments | Mandate |
+|-------|--------|-------------|---------|
+| **Just Markets (MT5)** | Just Markets | XAUUSD, high leverage | Monetize proven B2B gold edge — real money now |
+| **Darwinex Zero** | Darwinex (MT5) | CME/Eurex Futures + ETFs (real exchange, not CFD) | Build allocatable track record → external capital |
+| **IBKR (paper)** | Interactive Brokers | Equities, futures | Demonstrate cross-sectional alpha to BAM/Millennium |
+
+The Research Engine (sigma-are) measures edge. Surviving edges are routed to the appropriate venue adapter.
+
+---
+
+## Architecture — DO NOT REDESIGN (Locked 2026-05-20)
+
+The architecture was reset and locked this session. Do not propose redesigns or rival frameworks.
+
+**sigma-are = the Alpha Research Engine.** Its job is to be a JS-style hypothesis-testing factory:
+- Measurement-first. Every edge ships with IC, ICIR, t-stat, error bars — not a point estimate.
+- Falsification-first. Write the kill condition before measuring.
+- Correctness before sophistication. No lookahead, PIT-correct data, honest OOS split.
+- Many small edges, not one holy grail.
+
+**lean-engine = the execution survival gate.** Event-driven LEAN backtests confirm alpha *captures* (not just alpha *exists*). Run lean-engine only after the Research Engine validates a signal.
+
+**The only thing that can change this plan is a validated measurement result from sigma-are.**
 
 ---
 
 ## Session Startup
 
-1. Read the latest `Memory/Session_Handover_*.md` file (sort by date, take the newest) — current state, blockers, next actions
+1. Read the latest `Memory/Session_Handover_*.md` (sort by date, take newest) — current state and next actions
 2. Brief Syafiq: "Here's where we left off: [summary]" and wait for him to confirm priority
-3. Read `AI_INSTRUCTIONS.md` for delegation protocol and risk rules
 
 ## Reference (on-demand only)
 
-- `workspace/baysix-engine/Research/RESEARCH_FRAMEWORK.md` — **8-gate QR signal validation pipeline. Read for ANY strategy research or backtest task.**
-- `AI_REFERENCE.md` — project map, tech stack, infrastructure, worktree protocol. Read only when needed.
-- `Braindump/PRD_baysix_ai_hedge_fund_v4.md` — full architecture blueprint. Read only for architectural tasks.
-- `DEPLOYMENT_HANDOVER.md` — detailed Cloud Run deployment steps. Read only if the handover references a deployment blocker.
+- `AI_REFERENCE.md` — full directives + project map, tech stack, infrastructure, worktree protocol. Read delegation/risk sections when you need the agent roster or risk rules; rest on-demand.
+- `vault/wiki/` — B2B strategy knowledge base (b2b-overview, lifecycle, timeframe hierarchy, detection rules). Read for any B2B signal or MT5 task.
+- `DEPLOYMENT_HANDOVER.md` — Cloud Run deployment steps. Read only if handover references a deployment blocker.
 
 ## Sub-Agents & Skills Architecture
 
@@ -84,7 +111,7 @@ sigma-brain/              ← this repo (monorepo / brain)
 
 No local model delegation. No external execution engine by default.
 
-**Gemini agents** are spawned explicitly when Syafiq invokes one for a specific task — they operate as parallel specialists alongside Claude. `GEMINI_API_KEY` in `.env` belongs to the sigma-quant app; it is not for terminal execution. See `GEMINI.md` for Gemini agent operating instructions.
+**Gemini agents** are spawned explicitly when Syafiq invokes one for a specific task. `GEMINI_API_KEY` in `.env` belongs to the sigma-quant app — not for terminal execution.
 
 ## Cloud Deployment Rules
 
@@ -94,26 +121,9 @@ When helping with Google Cloud Run, Cloud Build, or similar:
 - Prefer `gcloud` CLI commands over console-click instructions
 - The org policy issue is known: avoid Cloud Build entirely, use Cloud Run's native GitHub integration
 
-## Current Active Focus
+## Tier C QR Framing Rule — Balyasny/Millennium language
 
-**Target firms (updated 2026-05-11): Balyasny Asset Management + Millennium Management — direct Tier C approach.**
-
-**Career goal chain:** Get QR Job → Build experience → Launch own fund → Family Office → Private Family Office.
-
-**sigma-quant Intelligence Centre** is the live alpha research platform showcase. Deployed at `syafiqmzin-sigma-quant.pages.dev`.
-
-**Research Stack Build Order** (as of 2026-05-11):
-1. **Alpha Research Engine** — vectorized Python backtester outputting IC/ICIR/IC-decay/factor decomposition (not just equity curves)
-2. **Strategy 1: Cross-sectional momentum** — 11 SPDR ETFs, 12-1/6-1/3-1 signals, FRED macro regime conditioner
-3. **Strategy 2: Statistical arbitrage** — systematic pair selection, cointegration screen, z-score IC analysis
-4. **Strategy 3: Volatility regime classifier** — VIX term structure, applied as alpha conditioner on Strategy 1+2
-5. **Portfolio construction layer** — combine signals, factor exposure control, diversification benefit analysis
-6. **Research memos in Tier C format** — IC analysis, factor decomp, capacity estimate, regime breakdown
-
-**Tier C QR Framing Rule** — Balyasny/Millennium pod shop language:
 - NOT "Sharpe 1.16" → "IC: 0.05, ICIR: 1.2, alpha decays over 12 trading days"
 - NOT "I built a backtest" → "I measured the IC and decay profile of this signal"
 - NOT "the strategy works" → "60 bps/yr residual alpha survives Fama-French 5-factor decomposition"
 - NOT "OOS degradation 27.5%" → "IC is stable IS→OOS, t-stat 2.3, Prob Sharpe 96%"
-
-See `workspace/baysix-engine/Research/RESEARCH_FRAMEWORK.md` for full pipeline including Tier C memo format.

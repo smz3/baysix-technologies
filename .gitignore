@@ -49,25 +49,10 @@ pip_*.txt
 openbb_build*.log
 pip_install.log
 
-# Workspace — each sub-project has its own git repo, so ignore workspace contents...
-# ...EXCEPT baysix-engine/Research/ (brain-level architecture docs we DO version here).
-# Negation must be staged level-by-level: git cannot re-include a path whose parent
-# directory is excluded, so we exclude *contents* (dir/*) at each level instead of the dir.
+# Workspace — all sub-projects have their own git repos; ignore workspace contents entirely.
 workspace/*
 !workspace/scripts/
 !workspace/scripts/**
-!workspace/baysix-engine/
-workspace/baysix-engine/*
-!workspace/baysix-engine/Research/
-!workspace/baysix-engine/Research/**
-!workspace/baysix-engine/brokers/
-!workspace/baysix-engine/brokers/**
-# sigma-lean: track SOURCE only — backtests/data/storage are regenerable LEAN output
-!workspace/baysix-engine/sigma-lean/
-!workspace/baysix-engine/sigma-lean/**
-workspace/baysix-engine/sigma-lean/data/
-workspace/baysix-engine/sigma-lean/storage/
-workspace/baysix-engine/sigma-lean/B2BZoneStrategy/backtests/
 
 # Compiled / generated
 *.pyc

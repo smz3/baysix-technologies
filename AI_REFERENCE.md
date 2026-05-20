@@ -1,98 +1,164 @@
-# Sigma-Brain — Reference Manual
+# Sigma-Brain — Reference & Directives
 
-> On-demand reference. Read sections as needed — do NOT load this entire file at session start.
-
----
-
-## Research Philosophy
-
-### QR Identity (Updated 2026-05-11)
-Syafiq is a **Quant Researcher (deployable)** — not an AI Quant Dev. Every strategy output is framed as alpha research, not engineering.
-
-**Target firms:** Balyasny Asset Management + Millennium Management (Tier C multi-manager pod shops — direct approach). NOT Quantedge/Dymon/GIC.  
-**Career goal chain:** QR Job → Experience → Own Fund → Family Office → Private Family Office.
-
-**Alpha research language (Tier C / pod shop standard):**  
-All strategy outputs must report: IC, ICIR, IC decay profile, factor decomposition (Fama-French), residual alpha, capacity estimate.  
-Do NOT report just Sharpe/Calmar/Max DD — those are Tier B metrics. Tier C wants alpha attribution.
-
-Full QR workflow: **`workspace/baysix-engine/Research/RESEARCH_FRAMEWORK.md`** — 8-gate signal validation pipeline + Tier C memo format. Read this before working on any strategy task.  
-Signal registry and completed memos: **`workspace/baysix-engine/Research/`** folder.
-
-### Investment Layers (Hybrid — Three Legends)
-1. **Ray Dalio layer (Macro Regime)** — Economic machine model (growth/inflation/liquidity) determines the regime. Top-level filter that gates everything below.
-2. **Point72 layer (Sector/Instrument Selection)** — Within the regime, fundamental + quantitative analysis selects which asset classes and instruments have edge.
-3. **Paul Tudor Jones layer (Risk Management)** — Obsessive risk management. Position sizing, stop placement, correlation risk, drawdown limits.
+> **Non-Claude AI agents:** read this entire file at session start.  
+> **Claude Code:** behavioral sections (Identity through Session Protocol) are always active. Project/infra sections are on-demand.
 
 ---
 
-## Technology Stack
+## Identity & QR Standard
 
-- **Orchestrator**: LangGraph `StateGraph` running in `sigma-research` (local machine → OCI ARM later)
-- **LLM — Speed**: Groq `llama-3.3-70b-versatile` — structured JSON agent outputs
-- **Data**: FRED API, yfinance, CCXT (crypto), NLP news scrapers — all free
-- **IPC Bus**: Supabase (shared with sigma-quant) — `trading_context.json`, zone outcomes, agent logs
-- **Sealed Core**: `sigma_core` `.pyd` binary — B2B engine, never exposed to LLM context
-- **ML Models**: XGBoost (zone scorer), LSTM (regime classifier) — built on accumulated zone outcome data
-- **Citations**: Every research claim must carry a CitationRecord (source, URL, date, confidence)
+**Who you're working for:** Syafiq M. Zin — 7yr Quant Trader, building toward **Quant Researcher (deployable)**. NOT an AI Quant Dev.  
+**Target firms:** Balyasny Asset Management + Millennium Management (Tier C multi-manager pod shops, direct approach). NOT Quantedge, Dymon, or GIC.  
+**Career goal chain:** QR Job → Experience → Launch own fund → Family Office → Private Family Office.
+
+**Tier C QR framing — mandatory for all strategy outputs:**
+- "IC: 0.05, ICIR: 1.2, decay half-life 12 days" — not "Sharpe 1.16"
+- "60 bps residual alpha after Fama-French decomposition" — not "the strategy works"
+- "Signal capacity estimated at $50M before market impact exceeds alpha" — not "it's scalable"
+- "Gate PASSED / FAILED" — not "looks good / doesn't work"
+
+**Research standard:**
+- sigma-are is the hypothesis-testing factory — measurement-first, falsification-first, IC/ICIR/t-stat on every signal
+- lean-engine is the execution survival gate — "can I capture the alpha?" (run after ARE validates a signal)
+- sigma-mt5 is the production layer — MQL5 EA for Just Markets and Darwinex Zero
+- B2B knowledge base: `vault/wiki/strategy/b2b-overview.md`
+
+---
+
+## Three-Venue Deployment Model (Locked 2026-05-20 — DO NOT COLLAPSE)
+
+| Venue | Broker | Instruments | Purpose |
+|-------|--------|-------------|---------|
+| **Just Markets** | MT5 | XAUUSD (high leverage, no holds barred) | Personal live trading — monetize proven B2B edge now |
+| **Darwinex Zero** | MT5 | Futures (real CME/Eurex exchange) + ETFs (IBKR-routed, real exchange) | Allocatable track record → external capital. NOT CFD. |
+| **IBKR Paper** | IBKR API | Cross-sectional equities | Demonstrate pod-shop-grade alpha to BAM/Millennium |
+
+The Research Engine (sigma-are) measures edge. Surviving edges are routed to the appropriate venue adapter.
+
+---
+
+## Delegation Protocol
+
+**Rule #1: Delegate before you do.** If a task belongs to a specialist, spawn that agent.
+
+### Agent Roster
+
+| Task Class | Agent | Notes |
+|-----------|-------|-------|
+| Strategy research, hypothesis testing | `quant-researcher` | Orchestrates full research pipeline |
+| Code changes, backtests, builds | `quant-developer` | Must use worktree + code-reviewer gate |
+| Signal monitoring, trade review | `quant-trader` | Read-only observer |
+| Risk, drawdown, kill switch | `risk-manager` | Blocks unsafe actions |
+| Memory synthesis, insight capture | `memory-curator` | Writes to Memory/ files |
+| Strategic priority, allocation | `cio` | Final strategic call |
+
+### Quality Gates
+
+| Agent | Gate |
+|-------|------|
+| `code-reviewer` | ALL code must be APPROVED before execution |
+| `peer-reviewer` | ALL research must be APPROVED before reaching CIO |
+
+**How to spawn:** `Agent(subagent_type="<name>")`. Pass full context (user request + file paths + prior findings). Synthesize findings for the user.
+
+---
+
+## Risk Rules (Non-Negotiable)
+
+1. **Never authorize live trades without explicit human confirmation**
+2. **Never push to git remotes without user approval**
+3. **Never expose API keys** — read from .env, never print them
+4. **Never delete files** without telling the user first
+5. **Always report drawdown breaches** to the risk-manager before proceeding
+6. **Two-key rule**: Any live execution action requires both your assessment AND user confirmation
+7. **Code gate**: No code runs without code-reviewer APPROVED verdict
+8. **Research gate**: No research reaches CIO without peer-reviewer APPROVED verdict
+
+---
+
+## Session Protocol
+
+### Startup
+1. Read the latest `Memory/Session_Handover_*.md` (sort by date, take newest) — current state and next actions
+2. Brief Syafiq: "Here's where we left off: [summary]" and wait for him to confirm priority
+
+Notes:
+- strategy_state, risk_parameters, research_queue are injected by the SessionStart hook — do NOT re-read them
+- Never read files in `_archive/` directories unless explicitly asked
+
+### Shutdown ("Sleep" command)
+1. Halt execution and prioritize context preservation
+2. Write `Memory/Session_Handover_[Date]_[Time].md` with:
+   - **Accomplished:** what was completed
+   - **WIP / Blockers:** what is broken or pending
+   - **Next Action:** explicit first step for the next agent
+3. Report: "Handover file created. Standing by."
+
+### Output Standards
+- Attribute which agent produced which finding
+- Structure outputs: **Finding → Recommendation → Action Required**
+- Flag anything requiring human approval with: `[REQUIRES APPROVAL]`
 
 ---
 
 ## Project Map
 
-All sub-projects live as real directories inside `workspace/` — each is an independent git repo.
+All sub-projects live inside `workspace/` — each is an independent git repo.
 
-| Project | Workspace Path | Purpose |
-|---------|---------------|---------|
-| sigma-brain | `.` (this project) | HQ — orchestrator, agents, memory, plans |
-| **baysix-engine** | `workspace/baysix-engine/` | Unified trading research + execution system |
-| **Research** | `workspace/baysix-engine/Research/` | QR signal validation — 8-gate pipeline, memos, ADRs, signal registry |
-| **sigma-are** | `workspace/baysix-engine/sigma-are/` | Alpha Research Engine + B2B Python (was sigma-crypto). GitHub: smz3/sigma-crypto |
-| **sigma-lean** | `workspace/baysix-engine/sigma-lean/` | LEAN CLI — institutional IS/OOS validation engine |
+| Project | Path | Purpose |
+|---------|------|---------|
+| sigma-brain | `.` | HQ — orchestrator, agents, memory, vault |
+| **baysix-engine** | `workspace/baysix-engine/` | Unified trading research + execution umbrella |
+| **sigma-are** | `workspace/baysix-engine/sigma-are/` | Alpha Research Engine — Python hypothesis factory. GitHub: smz3/sigma-crypto |
 | **sigma-mt5** | `workspace/baysix-engine/sigma-mt5/` | MQL5 Expert Advisor (B2B zones, XAUUSD live). GitHub: smz3/sigma-mt5 |
-| sigma-quant | `workspace/sigma-quant/` | Live quantitative research platform. Deployed: syafiqmzin-sigma-quant.pages.dev |
+| sigma-quant | `workspace/sigma-quant/` | Intelligence Centre frontend. Deployed: syafiqmzin-sigma-quant.pages.dev |
 | sigma-research | `workspace/sigma-research/` | FastAPI backend — Qdrant vector search, Groq AI briefs |
-| sigma-linkedin | `workspace/sigma-linkedin/` | AI LinkedIn content manager (active) |
-| _archive | `workspace/_archive/` | Archived: kronos, freqtrade-kronos |
+| sigma-linkedin | `workspace/sigma-linkedin/` | LinkedIn automation (active) |
 
-Absolute paths (use these when working on specific projects; their code is inside `workspace/`):
-- sigma-are (ARE + B2B Python): `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-are`
-- sigma-lean: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-lean`
+### sigma-are Internal Structure
+```
+sigma-are/
+├── research-engine/
+│   ├── data/
+│   │   └── quant-data-manager/    ← data fetching + caching
+│   ├── notebooks/                 ← EDA + signal research
+│   └── strategies/
+│       └── b2b-gold/
+│           ├── b2b-pyscripts/     ← B2B Python implementation
+│           └── b2b-markdowns/     ← B2B strategy docs
+├── lean-engine/                   ← LEAN CLI execution gate (was sigma-lean)
+│   ├── lean.json
+│   └── scripts/parquet_to_lean.py
+└── brokers/
+    ├── darwinex-zero/
+    ├── ibkr/
+    ├── high-leverage-broker/
+    ├── moomoo-webull/
+    └── retail-prop-firm/
+```
+
+### Absolute Paths
+- sigma-are: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-are`
+- lean-engine: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-are\lean-engine`
 - sigma-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-mt5`
-- Research: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\Research`
 - sigma-quant: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-quant`
 - sigma-research: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-research`
-- sigma-linkedin: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-linkedin`
+- vault (B2B knowledge): `C:\Users\User\Desktop\sigma-brain\vault`
 
 ---
 
-## Research Sub-Agents (spawned by quant-researcher, NOT by Chief of Staff directly)
+## Technology Stack
 
-| Agent | Role |
-|-------|------|
-| `macro-researcher` | Dalio layer — macro regime detection (DXY, yields, liquidity, cross-asset) |
-| `micro-researcher` | Point72 layer — zone stats, instrument edge, entry precision |
-| `equity-researcher` | Point72 layer — SEC filings, earnings, DCF, peer benchmarking |
-| `fixed-income-researcher` | Point72 layer — duration risk, credit spreads, yield curve |
-| `mathematician` | Statistical validation gatekeeper |
-| `peer-reviewer` | Research quality gate — APPROVED required before CIO |
-| `research-data-agent` | Shared data utility — fetches and caches market data for all researchers |
-
----
-
-## Memory System
-
-State files loaded by SessionStart hook (do NOT re-read manually):
-
-- `Memory/strategy_state.md` — Current SAMTC version, active hypothesis, last backtest result
-- `Memory/risk_parameters.md` — Current risk limits, kill switch conditions, max drawdown
-- `Memory/research_queue.md` — Pending research tasks
-
-On-demand reference files:
-- `Memory/alpha_insights.md` — Discovered edges and pattern notes
-- `Memory/agent_delegation_map.md` — Agent ownership map
-
-After significant work, instruct the memory-curator to update these files.
+| Component | Role |
+|-----------|------|
+| sigma-are | Python ARE — hypothesis factory, IC/ICIR measurement |
+| lean-engine | LEAN CLI — event-driven execution survival validation |
+| sigma-mt5 | MQL5 EA — B2B zones, Just Markets + Darwinex Zero production |
+| sigma-quant | React/Next.js — Intelligence Centre, Cloudflare Pages |
+| sigma-research | FastAPI — Qdrant vector search, Groq AI market briefs |
+| yfinance / FRED API | Market + macro data (free tier) |
+| Groq `llama-3.3-70b-versatile` | AI brief generation in sigma-quant |
+| Qdrant Cloud | Vector DB — `sigma_market` collection, 245 docs |
 
 ---
 
@@ -100,33 +166,34 @@ After significant work, instruct the memory-curator to update these files.
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| Qdrant Cloud | `sigma_market` collection (cloud) | Vector DB — 245 docs indexed, powers Vector Context panel |
-| Groq API | cloud | Llama 3.3 70B for AI market briefs in sigma-quant |
-| Supabase | API endpoint | IPC bus for sigma-research/sigma-quant inter-project comms |
-| FRED API | `api.stlouisfed.org` | Macro data (T10Y2Y, Yield Curve Spread; FEDFUNDS; CPI) |
-| Cloudflare Pages | `syafiqmzin-sigma-quant.pages.dev` | Production deploy for Intelligence Centre public portfolio showcase |
-| Skills | `.claude/skills/` | SOPs and single-task operations (auto-discovered) |
-| Agents | `.claude/agents/` | Specialized sub-agent definitions (auto-discovered) |
-| Build plans | `Braindump/` | Active PRDs and build plans (3 files max — archive the rest) |
+| Qdrant Cloud | `sigma_market` collection | Vector DB — powers Vector Context panel in sigma-quant |
+| Groq API | cloud | Llama 3.3 70B for AI market briefs |
+| FRED API | `api.stlouisfed.org` | Macro data (T10Y2Y, FEDFUNDS, CPI) |
+| Cloudflare Pages | `syafiqmzin-sigma-quant.pages.dev` | Production deploy for Intelligence Centre |
+| `.claude/agents/` | local | Specialized sub-agent definitions (auto-discovered) |
+| `.claude/skills/` | local | SOPs and single-task operations (auto-discovered) |
+| `vault/wiki/` | local | B2B knowledge base, strategy docs |
+| `Braindump/` | local | Active PRDs and build plans (3 files max) |
+| `Memory/` | local | Session handovers — read newest at startup |
 
 ---
 
 ## Worktree Protocol
 
-All code changes by agents happen in isolated git worktrees — never on main branch.
+All agent code changes happen in isolated git worktrees — never on main branch.
 
-**Critical**: Each sub-project in `workspace/baysix-engine/` is its own independent git repo (except sigma-lean, which has no own git). Worktrees must be created from **that sub-project's git root**, not from sigma-brain root. Example: to work on sigma-are, `cd workspace/baysix-engine/sigma-are` first, then run `git worktree add`.
+**Critical:** Each sub-project is its own independent git repo. Always create worktrees from the **sub-project's git root**, not sigma-brain root. lean-engine lives inside sigma-are and is tracked by sigma-are's git.
 
 **Workflow:**
-1. quant-developer `cd`s into the target sub-project root (e.g. `workspace/sigma-crypto/`)
-2. Creates worktree: `git worktree add ../../../<project>-<task> -b baysix/agent/<task>-<date>`
-3. Makes changes in isolation
-3. Submits to code-reviewer → must receive APPROVED verdict
-4. Returns diff + approval to Chief of Staff
-5. Chief of Staff presents to user: `[REQUIRES APPROVAL]` to merge to main
-6. Human confirms → merge happens
+1. `cd` into the target sub-project root (e.g. `workspace/baysix-engine/sigma-are/`)
+2. Create worktree: `git worktree add ../../../<project>-<task> -b baysix/agent/<task>-<date>`
+3. Make changes in isolation
+4. Submit to code-reviewer → must receive APPROVED verdict
+5. Return diff + approval to Chief of Staff
+6. Chief of Staff presents `[REQUIRES APPROVAL]` to user
+7. Human confirms → merge happens
 
 **Branch naming:** `baysix/agent/<task-slug>-<YYYYMMDD>`
 
-**Allowed git ops for agents:** `git worktree add`, `git checkout -b`, `git diff`, `git status`, `git log`
-**Denied git ops:** `git push`, `git merge`, `git reset --hard`
+**Allowed:** `git worktree add`, `git checkout -b`, `git diff`, `git status`, `git log`  
+**Denied:** `git push`, `git merge`, `git reset --hard`
