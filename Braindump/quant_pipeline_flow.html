@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR Pipeline — Interactive Flow</title>
+<style>
+  :root{
+    --paper:#f4f3ef; --card:#fbfbf9; --ink:#1c1c1a; --mute:#6b6b66; --faint:#9a9a93;
+    --line:#dcdbd6; --hair:#e6e5e0; --accent:#2a2a27;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;line-height:1.55;
+    padding:40px 28px 72px;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-family:Georgia,"Times New Roman",serif;font-weight:600;font-size:26px;margin:0 0 4px;letter-spacing:.2px}
+  .sub{color:var(--mute);font-size:13.5px;margin:0 0 24px}
+  hr.hr{height:1px;background:var(--line);border:0;margin:0 0 26px}
+
+  .app{display:flex;gap:42px;align-items:flex-start}
+  @media(max-width:860px){.app{flex-direction:column}}
+
+  /* ---- flow rail ---- */
+  .rail{width:296px;flex:none}
+  @media(max-width:860px){.rail{width:100%}}
+  .sech{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint);margin:0 0 12px}
+
+  .node{
+    position:relative;width:100%;text-align:left;cursor:pointer;
+    background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line);
+    padding:12px 14px;border-radius:2px;transition:border-color .12s,background .12s;
+    display:flex;align-items:baseline;gap:11px;font:inherit;color:inherit;
+  }
+  .node:hover{border-color:var(--faint)}
+  .node.active{border-color:var(--accent);border-left-color:var(--accent);background:#fff}
+  .node .num{font-family:Georgia,serif;font-size:13px;color:var(--faint);min-width:14px}
+  .node.active .num{color:var(--accent)}
+  .node .nm{font-weight:600;font-size:13.5px}
+  .node .rl{display:block;font-weight:400;font-size:11.5px;color:var(--mute);margin-top:2px}
+  .conn{height:18px;width:3px;background:var(--hair);margin:0 0 0 calc(14px + 1px)}
+  .conn::after{content:"";display:block}
+
+  .fgrid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:6px}
+  .fnode{cursor:pointer;background:var(--card);border:1px dashed var(--line);border-radius:2px;
+    padding:10px 13px;font:inherit;color:inherit;text-align:left}
+  .fnode:hover{border-color:var(--faint)}
+  .fnode.active{border-style:solid;border-color:var(--accent);background:#fff}
+  .fnode .nm{font-weight:600;font-size:12.5px}
+  .fnode .rl{display:block;font-size:11px;color:var(--mute);margin-top:2px}
+  .loopnote{font-size:11px;color:var(--faint);margin:14px 0 0;padding-left:2px}
+
+  /* ---- detail panel ---- */
+  .panel{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:3px;
+    padding:28px 32px}
+  @media(max-width:860px){.panel{width:100%}}
+  .ptag{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint)}
+  .ptitle{font-family:Georgia,serif;font-size:22px;margin:6px 0 2px}
+  .pq{color:var(--mute);font-style:italic;font-size:13.5px;margin:0 0 22px}
+  .sec{margin:0 0 18px}
+  .sec h3{font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--faint);
+    margin:0 0 8px;font-weight:600}
+  .sec p{margin:0;font-size:13.5px}
+  .sec ul{margin:0;padding-left:18px}
+  .sec li{font-size:13px;margin:0 0 5px}
+  .io{display:flex;gap:18px;flex-wrap:wrap;margin:0 0 22px}
+  .io .box{flex:1;min-width:200px;border:1px solid var(--hair);border-radius:2px;padding:11px 14px}
+  .io .box .lbl{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--faint)}
+  .io .box .val{font-size:13px;margin-top:3px}
+  .math{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;font-size:12.5px;
+    background:#f0efea;border:1px solid var(--hair);border-radius:2px;padding:10px 13px;margin:0 0 7px;
+    white-space:pre-wrap;color:#33332f}
+  .kill{border-left:3px solid var(--accent);background:#f0efea;padding:10px 14px;border-radius:2px;
+    font-size:13px}
+  .kill b{font-weight:600}
+  .ptable{width:100%;border-collapse:collapse;margin:2px 0 6px;font-size:12.5px}
+  .ptable th{text-align:left;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--faint);
+    font-weight:600;border-bottom:1px solid var(--line);padding:5px 12px 5px 0}
+  .ptable td{border-bottom:1px solid var(--hair);padding:6px 12px 6px 0;vertical-align:top}
+  .ptable td:first-child{font-weight:600}
+  .callout{border-left:3px solid var(--faint);background:#f0efea;border-radius:2px;padding:11px 14px;
+    font-size:13px;margin:0 0 6px}
+  .callout b{font-weight:600}
+  .note{font-size:12px;color:var(--mute);margin:8px 0 0}
+  .note b{color:var(--ink);font-weight:600}
+  .seed{margin:0;padding-left:18px}
+  .seed li{font-size:13px;margin:0 0 6px}
+  .seed b{font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>The QR Pipeline</h1>
+  <p class="sub">Click any step — or a foundation block — to see what's inside it. Each step is a kill-gate: it dies cheaply before the next, more expensive one.</p>
+  <hr class="hr">
+
+  <div class="app">
+    <div class="rail">
+      <p class="sech">Per-idea flow</p>
+      <div id="flow"></div>
+
+      <p class="sech" style="margin-top:26px">Foundation · built once</p>
+      <div id="found" class="fgrid"></div>
+
+      <p class="loopnote">↳ Step 3 ⇄ 4: refine &amp; retry, max 3×<br>↻ Step 7 → Step 1: learnings recycle</p>
+    </div>
+
+    <div id="panel" class="panel"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const steps=[
+    {num:"1",name:"Idea Bank + Triage",role:"Generate & rank testable hypotheses",
+     q:"Is there a reason this edge should exist — and who is on the other side losing?",
+     in:"Papers (arXiv q-fin, SSRN, journals), desk intuition, market-structure observations",
+     out:"A prioritized queue of contract-compliant, falsifiable hypotheses",
+     inside:[
+       "Capture each idea as a <em>hypothesis</em>, never a naked strategy — name who loses and why it persists",
+       "Tag the return driver: <em>risk premium</em> vs <em>inefficiency</em> (sets capacity & decay expectations)",
+       "Write the <em>kill condition first</em> — falsification before measurement",
+       "Conform to the signal contract so the rest of the funnel stays generic",
+       "Triage and work only the top of the queue — research time is the scarce resource"],
+     math:["Triage score = plausibility × capacity-fit × data-availability × your-edge-in-understanding"],
+     extra:[
+       {h:"Organize by return driver, not asset class",
+        html:'<div class="callout"><b>Risk premia</b> — paid to bear risk (carry, VRP, value). Durable, big capacity, crowded → your <b>ballast</b>.<br><b>Inefficiencies</b> — someone errs (momentum, reversal, flow). Decays, small capacity → <b>your hunting ground as an independent</b>.</div><p class="note">Tag every idea as one or the other — it tells you the capacity, the decay, and whether you can even win.</p>'},
+       {h:"Triage decision flow",
+        html:'<svg viewBox="0 0 660 384" style="width:100%;height:auto;margin-top:2px">'+
+          '<defs><marker id="da" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#8a8a84" stroke-width="1.4"/></marker></defs>'+
+          '<g stroke="#b0afa9" stroke-width="1.3" marker-end="url(#da)" fill="none">'+
+          '<path d="M280 42 L280 56"/>'+
+          '<path d="M280 100 L280 116"/>'+
+          '<path d="M280 164 L280 188"/>'+
+          '<path d="M280 224 L280 238"/>'+
+          '<path d="M280 274 L280 288"/>'+
+          '<path d="M280 322 L280 336"/>'+
+          '<path d="M410 141 L472 141"/>'+
+          '<path d="M410 207 L472 207"/>'+
+          '<path d="M410 257 L472 257"/>'+
+          '</g>'+
+          '<g font-size="9.5" fill="#9a9a93">'+
+          '<text x="288" y="182">yes</text><text x="288" y="236">yes</text><text x="288" y="286">yes</text>'+
+          '<text x="438" y="135">no</text><text x="438" y="201">no</text><text x="438" y="251">no</text>'+
+          '</g>'+
+          '<g fill="#fbfbf9" stroke="#cfcec8" stroke-width="1">'+
+          '<rect x="180" y="12" width="200" height="30" rx="2"/>'+
+          '<rect x="130" y="58" width="300" height="42" rx="2"/>'+
+          '<rect x="150" y="118" width="260" height="46" rx="2"/>'+
+          '<rect x="150" y="190" width="260" height="34" rx="2"/>'+
+          '<rect x="150" y="240" width="260" height="34" rx="2"/>'+
+          '<rect x="150" y="290" width="260" height="32" rx="2"/>'+
+          '</g>'+
+          '<g fill="#f0efea" stroke="#cfcec8" stroke-width="1">'+
+          '<rect x="472" y="127" width="156" height="28" rx="2"/>'+
+          '<rect x="472" y="193" width="156" height="28" rx="2"/>'+
+          '<rect x="472" y="243" width="156" height="28" rx="2"/>'+
+          '</g>'+
+          '<rect x="170" y="338" width="220" height="32" rx="2" fill="#2a2a27"/>'+
+          '<g font-size="11" fill="#1c1c1a" text-anchor="middle">'+
+          '<text x="280" y="31">New idea</text>'+
+          '<text x="280" y="84">Specify: family &#183; asset &#183; venue &#183; frequency</text>'+
+          '<text x="280" y="137">Has an economic story?</text>'+
+          '<text x="280" y="211">Data available for this asset / venue?</text>'+
+          '<text x="280" y="261">Triage score &#8805; threshold?</text>'+
+          '<text x="280" y="310">Write the kill condition</text>'+
+          '</g>'+
+          '<text x="280" y="152" font-size="9.5" fill="#6b6b66" text-anchor="middle">who loses + why it persists</text>'+
+          '<g font-size="10.5" text-anchor="middle">'+
+          '<text x="550" y="145" fill="#1c1c1a">Graveyard</text>'+
+          '<text x="550" y="211" fill="#1c1c1a">Park / watchlist</text>'+
+          '<text x="550" y="261" fill="#1c1c1a">Backlog</text>'+
+          '<text x="280" y="358" fill="#fbfbf9">QUEUE &#8594; Step 2</text>'+
+          '</g>'+
+          '</svg>'+
+          '<p class="note">Specify what the idea <em>is</em> (family · asset · venue · frequency) first — that is free description, not a gate. Then the cheapest kills run in order: no story → graveyard · no data → park · low score → backlog. Survivors get a kill condition and flow to Step 2.</p>'},
+       {h:"Core 5 strategy families",
+        html:'<table class="ptable"><tr><th>Family</th><th>Driver</th><th>Who loses</th><th>Cap.</th></tr>'+
+          '<tr><td>1 &#183; Trend / Momentum</td><td>inefficiency</td><td>slow-to-react crowd</td><td>large</td></tr>'+
+          '<tr><td>2 &#183; Mean Reversion / RV</td><td>inefficiency</td><td>panic, forced & uninformed flow</td><td>small</td></tr>'+
+          '<tr><td>3 &#183; Carry</td><td>risk premium</td><td>hedgers buying insurance</td><td>large</td></tr>'+
+          '<tr><td>4 &#183; Volatility (VRP)</td><td>risk premium</td><td>option buyers overpaying</td><td>medium</td></tr>'+
+          '<tr><td>5 &#183; Value / Fair-value</td><td>risk premium</td><td>impatient capital</td><td>large</td></tr></table>'+
+          '<p class="note"><b>Folded in:</b> stat-arb & slow flow (your B2B zones) → #2 Mean Reversion. Event / catalyst → an <em>overlay</em> on any family, not its own bucket. Pure HFT microstructure dropped — not accessible to an independent.</p>'+
+          '<p class="note">The same 5 a Tier-1 multi-strat buckets PMs by. For you: <b>#1, #2, #4</b> are your accessible edge (gold B2B = #2; VRP = #4 = your SME); <b>#3, #5</b> are diversifying ballast. HMM-regime is a conditioning layer, not a family.</p>'},
+       {h:"What each family needs (drives Step 2)",
+        html:'<table class="ptable"><tr><th>Family</th><th>Data it needs</th></tr>'+
+          '<tr><td>1 &#183; Trend / Momentum</td><td>prices only (OHLCV) — cheapest</td></tr>'+
+          '<tr><td>2 &#183; Mean Reversion / RV</td><td>prices; + the related basket for relative value</td></tr>'+
+          '<tr><td>3 &#183; Carry</td><td>prices + carry source (term structure, funding, roll / div yield)</td></tr>'+
+          '<tr><td>4 &#183; Volatility (VRP)</td><td>option chain / IV surface + realized vol</td></tr>'+
+          '<tr><td>5 &#183; Value / Fair-value</td><td>PIT fundamentals, or a macro fair-value anchor (FX / futures)</td></tr></table>'+
+          '<p class="note"><b>Macro, IV, options flow are mostly inputs, not strategies.</b> Macro = conditioning context + regime features. IV = the input for VRP, a feature for others. Options flow = informed-positioning signal source.</p>'},
+       {h:"Plug & play — one contract, not one strategy",
+        html:'<p class="note">There is no universal strategy (the holy-grail trap). There is one universal <b>interface</b> — conform to it and Steps 2–7 stay generic.</p>'+
+          '<div class="math">DECLARE  (= the Idea Bank entry)\n  id, name, family, driver\n  thesis            # who loses + why it persists\n  required_inputs   # prices | IV surface | fundamentals | book | macro\n  asset_class       # FX | metals | equities | futures | crypto\n  venue             # Just Markets MT5 | Darwinex Zero | IBKR\n  universe, frequency, expected_capacity\n  conditioned_by    # default: none | regime | vol_regime | session\n  kill_condition    # written FIRST\n  triage_score, status</div>'+
+          '<div class="math">COMPUTE\n  compute(PIT_data) -> forecast\n  # standardized: centered 0, |avg| ~ 10, capped +/-20</div>'+
+          '<p class="note"><b>Venue is part of the hypothesis.</b> The same idea routes differently — Just Markets MT5 (gold CFD, high leverage) · Darwinex Zero (futures / ETFs) · IBKR (equities) — each with different costs, capacity, leverage, and data. Decide it here, in triage.</p>'+
+          '<p class="note">Same pattern the pros use: pysystemtrade rules are price→forecast; LEAN Alpha Models emit standardized Insights.</p>'},
+       {h:"Recommended seed set",
+        html:'<ol class="seed">'+
+          '<li><b>Gold flow / liquidity</b> (your B2B zones) — formalize as a plugin; evidence already +0.309 R/trade.</li>'+
+          '<li><b>Gold VRP</b> — sell overpriced gold vol; your IV SME, a risk-premium diversifier to #1.</li>'+
+          '<li><b>Regime-conditioned trend</b> — HMM gates a trend signal on/off; proves state-dependent alpha.</li>'+
+          '<li><b>Macro-conditioned carry</b> — ballast, low correlation to the above.</li></ol>'}],
+     kill:"No economic story, or low expected value per research-hour → rejected before any code is written."},
+
+    {num:"2",name:"Load Dataset",role:"Turn the hypothesis into clean, point-in-time data",
+     q:"Can I even get honest data for this?",
+     in:"Step 1 tags (asset class + frequency)",
+     out:"Clean in-sample dataset + sealed out-of-sample vault",
+     inside:[
+       "Pick the connector for the asset class — CFD gold (JustMarkets) ≠ GC futures (CME) ≠ QQQ (equity vendor)",
+       "Point-in-time alignment — stamp every record with <em>when you'd have known it</em>",
+       "Clean: gaps, bad ticks, outliers",
+       "Adjust correctly per class: futures contract rolls / equity corporate actions / CFD spot none",
+       "Split IS vs OOS and <em>seal the OOS</em> — touched once, much later"],
+     math:["No alpha math yet — this stage is about honesty of the inputs"],
+     kill:"Data unavailable, too short, survivorship-biased, or can't be made point-in-time."},
+
+    {num:"3",name:"Rapid Fire",role:"Vectorized coarse screen, in-sample",
+     q:"Does the signal predict forward returns at all?",
+     in:"Clean IS dataset",
+     out:"A short list with measurable in-sample edge",
+     inside:[
+       "Vectorized backtest — fast and cheap, run across many ideas",
+       "Measure <em>predictive power</em>, not PnL (PnL is the most over-fittable number)",
+       "Deliberately ignores costs and fills — that is not this stage's job"],
+     math:[
+       "IC = rank_corr( signal_t , return_{t+h} )",
+       "ICIR = mean(IC) / std(IC)",
+       "t-stat = ICIR × √n      decay = half-life of IC"],
+     kill:"IC ≈ 0 or t-stat < 2. This is the brutal cut — most ideas die here."},
+
+    {num:"4",name:"Rigor Gate",role:"Prove the edge is real, not luck",
+     q:"Would this survive a skeptical PM?",
+     in:"Surviving signals + the sealed OOS",
+     out:"A statistically real, factor-orthogonal signal",
+     inside:[
+       "Deflated Sharpe — discount for the <em>total</em> number of things you've tried (from the Ledger)",
+       "IC stability: in-sample vs out-of-sample",
+       "Decay profile → sets the holding period and rebalance frequency",
+       "Regime-conditional IC — this is where you decide if a regime engine is <em>mandatory</em> or decoration",
+       "Factor decomposition: regress against known factors → is this just momentum/value/carry, or <em>residual</em> alpha?",
+       "Break the OOS seal — one shot, no re-tuning"],
+     math:[
+       "Deflated Sharpe Ratio (Bailey & López de Prado)",
+       "r = α + Σ βₖ·Fₖ + ε   →   keep only if t(α) is significant",
+       "residual alpha = the part not explained by Fₖ"],
+     kill:"Decays fast, IC unstable IS→OOS, explained away by known factors, or fails deflation."},
+
+    {num:"5",name:"LEAN",role:"Execution survival gate (event-driven)",
+     q:"Does the edge survive real trading frictions?",
+     in:"A statistically validated signal",
+     out:"A tradeable signal, net of reality",
+     inside:[
+       "Event-driven backtest — lookahead bias is prevented by construction",
+       "Model spread, slippage and market impact; realistic fills",
+       "Capacity & turnover test; position buffering to cut churn",
+       "Backtest-live parity: the same code path runs in test and live"],
+     math:[
+       "net return = gross return − costs",
+       "market impact ∝ √( order size / ADV )",
+       "capacity = size at which alpha → 0"],
+     kill:"Alpha eaten by costs, turnover too high, or capacity too small to matter."},
+
+    {num:"6",name:"Research Note",role:"Write up the validated edge — the go / no-go evidence",
+     q:"Is the evidence strong enough to justify deploying capital?",
+     in:"A signal that survived LEAN (net of costs)",
+     out:"A publishable research note + an explicit deploy decision",
+     inside:[
+       "Assemble the full evidence: IC, ICIR, decay profile, OOS stability, factor decomposition, cost survival",
+       "Write it in pod-shop language (residual α, ICIR, decay days) — <em>this artifact is what gets you hired</em>",
+       "State the decision explicitly: go / no-go, at what size, on which venue",
+       "<em>Evidence before capital</em> — the note justifies the deploy, not the other way round",
+       "File the note in the Ledger whether it deploys or dies"],
+     math:["Summarise: IC, ICIR, t-stat, decay half-life, residual α after factor decomposition, net-of-cost Sharpe"],
+     kill:"Evidence too weak, or not orthogonal to known factors → no-go, archived in the Ledger."},
+
+    {num:"7",name:"Risk + Deploy",role:"Size, constrain, go live — then attribute",
+     q:"How much, what stops me blowing up, and did it behave as predicted?",
+     in:"A go decision + the research note",
+     out:"Live positions + live attribution that recycles to Step 1",
+     inside:[
+       "Volatility targeting — size to a constant risk budget, not to excitement",
+       "Position & exposure limits; aggregate risk cap <em>after</em> portfolio combination (Risk runs twice)",
+       "Kill switch / hard drawdown limit defined before going live",
+       "Paper trade → staged live ramp",
+       "Live attribution: realised IC vs expected, slippage vs model, drift diagnosis → feeds the Ledger & next ideas"],
+     math:[
+       "vol_scalar = daily_cash_vol_target / instrument_value_vol",
+       "position   = vol_scalar × (forecast / 10)",
+       "size with fractional Kelly (¼–½), never full"],
+     kill:"Breaches a position, exposure or drawdown limit → trip the kill switch. Live drift loops back to Step 1. ↻"}
+  ];
+
+  const found=[
+    {id:"F1",name:"Data Machinery",role:"PIT store · cleaners · adjusters · OOS vault",
+     q:"How do we get honest data, cheaply, every time?",
+     in:"Raw vendor / broker feeds",
+     out:"Clean, point-in-time, served data on demand",
+     inside:[
+       "Built <em>once per asset class</em>, then reused by every idea",
+       "Point-in-time store — no lookahead, no restated data",
+       "Cleaning + adjustment capabilities (rolls, corporate actions)",
+       "IS/OOS splitter and the sealed OOS vault",
+       "A serving interface the backtester calls"],
+     math:["Capability vs instance: build the futures-handling once; loading GC 2015–2025 is then trivial"],
+     kill:"Infrastructure — not part of the per-idea cull. It enables the steps above."},
+
+    {id:"F2",name:"Volatility Estimators",role:"EWMA · realised · Garman-Klass",
+     q:"What is risk, right now, per instrument?",
+     in:"Clean price series",
+     out:"Current σ used everywhere downstream",
+     inside:[
+       "Shared foundation — every signal is normalized by vol, and Risk sizes by vol",
+       "This is the ruler, not a bet — vol-<em>trading</em> (VRP) is a strategy and lives in Step 1/3",
+       "Estimators: EWMA std, realised vol, Garman-Klass from OHLC"],
+     math:["raw_forecast = signal / σ   →   makes edge comparable across gold, bonds, equities"],
+     kill:"Infrastructure — feeds both the Signal stage and the Risk stage."},
+
+    {id:"F3",name:"Research Ledger",role:"Every hypothesis · trial count · graveyard",
+     q:"How many things have we actually tried?",
+     in:"Outcomes from every step, every idea, all time",
+     out:"The global trial count + a searchable graveyard",
+     inside:[
+       "Logs every hypothesis, parameters tried, and why it died",
+       "The global trial count is what makes the Step 4 deflated Sharpe meaningful",
+       "The graveyard stops you re-testing the same dead ideas and reveals over-fitting patterns"],
+     math:["Test 1,000 ideas → ~50 look significant at p<0.05 by luck. The ledger is your defense."],
+     kill:"Infrastructure — the discipline that keeps the whole funnel honest."},
+
+    {id:"F4",name:"Context / State Engine",role:"Regime · macro · vol · session — state, not forecasts",
+     q:"What state is the market in right now?",
+     in:"Shared price / macro / vol data",
+     out:"State variables consumed by signals, combination & risk",
+     inside:[
+       "Emits <em>conditions</em>, not alpha — state variables that modulate a signal (gate it on/off, or scale it)",
+       "Regime (HMM), macro state, volatility regime, session / liquidity, trend-vs-range, correlation regime, event-proximity",
+       "Computed once from shared data, referenced everywhere — same pattern as the Volatility Engine",
+       "Signals gate/scale on it · Combination re-weights families by it · Risk sizes down on it",
+       "Note: volatility wears three hats — estimator (infra), conditioner (vol regime), and signal (VRP)"],
+     math:[
+       "Prefer a continuous scaler (weight 0→1) over a hard on/off gate — avoids the regime-cliff risk",
+       "A condition earns its place only if conditional IC > unconditional IC, out-of-sample"],
+     kill:"Overfitting magnet — <em>default is UNCONDITIONED</em>. Add a condition back only when measurement (Step 4) forces it, and log every trial in the Ledger."}
+  ];
+
+  const flowEl=document.getElementById("flow");
+  const foundEl=document.getElementById("found");
+  const panel=document.getElementById("panel");
+  let active=null;
+
+  steps.forEach((s,i)=>{
+    const b=document.createElement("button");
+    b.className="node"; b.dataset.k="s"+i;
+    b.innerHTML='<span class="num">'+s.num+'</span><span><span class="nm">'+s.name+'</span><span class="rl">'+s.role+'</span></span>';
+    b.onclick=()=>select("s"+i);
+    flowEl.appendChild(b);
+    if(i<steps.length-1){const c=document.createElement("div");c.className="conn";flowEl.appendChild(c);}
+  });
+  found.forEach((f,i)=>{
+    const b=document.createElement("button");
+    b.className="fnode"; b.dataset.k="f"+i;
+    b.innerHTML='<span class="nm">'+f.name+'</span><span class="rl">'+f.role+'</span>';
+    b.onclick=()=>select("f"+i);
+    foundEl.appendChild(b);
+  });
+
+  function data(k){return k[0]==="s"?steps[+k.slice(1)]:found[+k.slice(1)];}
+
+  function render(d,isFound){
+    const insideLis=d.inside.map(x=>"<li>"+x+"</li>").join("");
+    const mathRows=d.math.map(m=>'<div class="math">'+m+'</div>').join("");
+    panel.innerHTML=
+      '<div class="ptag">'+(isFound?"FOUNDATION":"STEP "+d.num)+'</div>'+
+      '<div class="ptitle">'+d.name+'</div>'+
+      '<p class="pq">'+d.q+'</p>'+
+      '<div class="io">'+
+        '<div class="box"><div class="lbl">Input</div><div class="val">'+d.in+'</div></div>'+
+        '<div class="box"><div class="lbl">Output</div><div class="val">'+d.out+'</div></div>'+
+      '</div>'+
+      '<div class="sec"><h3>What\'s inside</h3><ul>'+insideLis+'</ul></div>'+
+      '<div class="sec"><h3>Metrics &amp; math</h3>'+mathRows+'</div>'+
+      (d.extra||[]).map(e=>'<div class="sec"><h3>'+e.h+'</h3>'+e.html+'</div>').join("")+
+      '<div class="sec"><h3>'+(isFound?"Role":"Kill gate")+'</h3><div class="kill">'+d.kill+'</div></div>';
+  }
+
+  function select(k){
+    active=k;
+    document.querySelectorAll(".node,.fnode").forEach(n=>n.classList.toggle("active",n.dataset.k===k));
+    render(data(k),k[0]==="f");
+  }
+
+  select("s0");
+})();
+</script>
+</body>
+</html>
