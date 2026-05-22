@@ -76,3 +76,9 @@ Sandbox/
 
 # Antigravity brain data
 .antigravity/
+
+# Claude Code local artifacts (machine-specific / runtime / temp)
+.claude/worktrees/
+.claude/hooks/logs/
+.claude/settings.local.json
+*.bak
