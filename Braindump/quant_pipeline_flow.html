@@ -574,6 +574,7 @@
        "Gate 2 — IS→OOS degradation: how much of the IS edge survives on unseen data",
        "Gate 3 — decay profile match: same peak lag and shape IS vs OOS confirms the holding period generalizes",
        "Gate 4 — PSR on the OOS equity curve: fat-tail-robust check the curve is not lucky tails",
+       "Gate 5 — Monte Carlo significance: block bootstrap for the IC error bar + a permutation (shuffle) test for the empirical p-value — model-free, makes no Gaussian assumption gold violates",
        "OOS budget: each loop back through here spends a test — tighten the gate per loop, or the seal erodes"],
      math:[
        "OOS IC t-stat — cross-sectional: t = ICIR × √T   ·   time-series: t = IC × √N_eff",
@@ -581,6 +582,8 @@
        "Degradation ratio = metric_OOS / metric_IS   (ICIR ratio cross-sectional · IC ratio time-series)",
        "Minimum detectable IC = 1.65 / √N_eff   (power floor — report alongside every OOS t-stat)",
        "PSR_OOS = Φ( (SR̂ − SR*) · √(T−1) / √(1 − skew·SR̂ + (kurt−1)/4 · SR̂²) )   ·   N = 1 → SR* ≈ 0",
+       "block bootstrap: resample OOS returns in blocks (length ℓ via Politis–White) → empirical 95% CI on IC_OOS",
+       "permutation (shuffle) test: block-shuffle signal vs return B times → p = #(IC_sim ≥ IC_OOS) / B   [null: no edge]",
        "OOS budget: after L loops back here, require t > t_crit(L)   (Šidák / Bonferroni on L tests)"],
      extra:[
        {h:"OOS Rigor Gate flow",
@@ -702,7 +705,15 @@
        {h:"The one-shot rule & the OOS budget",
         html:'<div class="callout"><b>The one-shot rule is per signal — but Step 4 lets a rejected hypothesis revise and loop back (max 3×).</b> If each loop re-tests on the same held-out slice, that is multiple OOS looks, and "N = 1" is a lie by loop 3. The seal erodes every time you peek.</div>'+
           '<p class="note"><b>The fix — an OOS budget:</b> after L trips back through this gate, tighten the t-stat to the Šidák / Bonferroni critical value for L tests. Cheapest discipline: a revised hypothesis must re-clear Step 3 + Step 4 on IS <em>alone</em>, and only the final survivor touches OOS once.</p>'+
-          '<p class="note"><b>The cleanest OOS is forward time</b> — live paper trading at Step 8. A backtest OOS is a proxy for it, never a replacement. That is why a QUALIFIED PASS can still proceed: live-forward will deliver the verdict the short backtest could not.</p>'}],
+          '<p class="note"><b>The cleanest OOS is forward time</b> — live paper trading at Step 8. A backtest OOS is a proxy for it, never a replacement. That is why a QUALIFIED PASS can still proceed: live-forward will deliver the verdict the short backtest could not.</p>'},
+       {h:"Monte Carlo — the model-free significance check (Gate 5)",
+        html:'<div class="callout">The t-stat and PSR are <b>formulas</b> — they assume the data is well-behaved (roughly normal, a known effective N). Gold is not: fat tails and autocorrelation break those assumptions. Monte Carlo throws the formula away and <em>measures</em> the luck distribution directly. Two of the three variations live here; the third — synthetic paths — is a risk tool and lives in Step 8.</div>'+
+          '<table class="ptable" style="margin-top:10px"><tr><th>Variation</th><th>What it does</th><th>Answers</th></tr>'+
+          '<tr><td><b>1 · Permutation (shuffle)</b></td><td>block-shuffle the signal against the returns B times, destroying any real link, and rebuild the IC distribution under "no edge"</td><td>is the OOS IC outside what pure chance produces? → empirical p-value</td></tr>'+
+          '<tr><td><b>2 · Block bootstrap</b></td><td>resample the real OOS returns in blocks (blocks preserve the autocorrelation) B times</td><td>how wide is the error bar on IC_OOS? → empirical 95% CI</td></tr>'+
+          '</table>'+
+          '<p class="note"><b>Why blocks, not single points:</b> shuffling or resampling one bar at a time pretends each hour is independent — gold\'s hours are sticky, so that inflates significance. Block length ℓ via the Politis–White automatic selector, not a hand-picked guess.</p>'+
+          '<p class="note"><b>The gate:</b> permutation p &lt; 0.05 AND the bootstrap 95% CI on IC_OOS excludes zero. Model-free agreement with the analytic t-stat is the confirmation; disagreement means the formula was lying — trust the Monte Carlo.</p>'}],
      kill:"Three outcomes, not two. <b>PASS</b> — all four gates clear → Step 6. <b>QUALIFIED PASS</b> — IC t-stat clears but the OOS is underpowered (min detectable IC &gt; signal IC) → Step 6 with a power flag, Lean Engine becomes load-bearing. <b>REJECT</b> — any gate fails → archive the result (IS IC, OOS IC, degradation, regime) and return to Step 1. A rejected signal is not banned; a genuinely new hypothesis can restart. Forbidden: tuning the rejected signal and re-running the seal."},
 
     {num:"6",name:"LEAN Execution Gate",role:"Does the alpha survive contact with reality?",
@@ -895,6 +906,7 @@
        "Volatility targeting — size to a constant risk budget, not to conviction or excitement",
        "<em>Risk runs twice</em> — size each signal to its vol target, then a portfolio-level cap scales the whole book down after combination (correlated signals stack risk)",
        "Fractional Kelly (¼–½), never full — full Kelly assumes you know the true edge and has brutal drawdowns",
+       "Monte Carlo risk sim (variation 3 — synthetic paths): bootstrap / reshuffle the net trade sequence into thousands of alternate histories → the <em>distribution</em> of max drawdown, recovery time and terminal wealth, not one backtest path",
        "Kill switch / hard drawdown limit defined <em>before</em> going live — pre-commitment beats in-the-moment rationalising",
        "Staged ramp: paper → small live → scale; never backtest-to-full-size",
        "Live attribution closes the loop: realised IC vs expected, slippage vs model, alpha-decay drift → feeds the Ledger &amp; Step 1 ↻"],
@@ -903,6 +915,8 @@
        "position = vol_scalar × (forecast / 10)        [forecast standardized, |avg| ~ 10]",
        "fractional Kelly: f = fraction × (expected_return / variance)        fraction ∈ [¼, ½]",
        "portfolio_scalar = min(1, target_vol / √(wᵀ Σ w))        [the second risk pass]",
+       "MC risk sim: bootstrap the net trade sequence B times → distribution of max drawdown, recovery time, terminal wealth",
+       "risk of ruin = #(paths that hit the −max_dd kill limit) / B        [the kill-switch hit probability]",
        "drift t-stat = (IC_live − IC_expected) × √N_eff        [per-period units rule]"],
      extra:[
        {h:"Risk + Deploy flow",
@@ -971,7 +985,16 @@
           '<tr><td>slippage realised vs model</td><td>Was the Step-6 cost model honest?</td><td>Re-tune the cost model; re-run Step 6</td></tr>'+
           '<tr><td>realised vol vs target</td><td>Did vol targeting hold?</td><td>Recalibrate the vol estimator (Market State Engine · E4)</td></tr>'+
           '<tr><td>drawdown vs kill limit</td><td>Are we inside the risk budget?</td><td>Breach → trip the kill switch, flatten</td></tr></table>'+
-          '<p class="note"><b>Venue framing:</b> Just Markets (real money) → kill-switch discipline is paramount. Darwinex Zero → the audited track record for allocators. IBKR paper → attribution written in residual-α / realised-IC language is the artifact BAM / Millennium read.</p>'}],
+          '<p class="note"><b>Venue framing:</b> Just Markets (real money) → kill-switch discipline is paramount. Darwinex Zero → the audited track record for allocators. IBKR paper → attribution written in residual-α / realised-IC language is the artifact BAM / Millennium read.</p>'},
+       {h:"Monte Carlo — the risk simulation (variation 3 of 3)",
+        html:'<div class="callout">Steps 3–5 ask "is the edge real?" This asks a different question entirely: <b>given the edge is real, how bad can the ride get?</b> A single backtest equity curve is <em>one</em> draw from a distribution. Monte Carlo generates the rest of that distribution, so you size against the bad paths — not the lucky one you happened to backtest.</div>'+
+          '<p class="note"><b>Method:</b> take the strategy\'s net-of-cost trade returns (from Step 6) and either reshuffle their <em>order</em> or block-bootstrap them into B thousands of alternate histories. Each history yields a max drawdown, a recovery time and a terminal wealth. The spread across all B is the risk picture.</p>'+
+          '<table class="ptable" style="margin-top:10px"><tr><th>Output</th><th>What it tells you</th></tr>'+
+          '<tr><td>max-drawdown distribution</td><td>the 95th-percentile drawdown sets the kill-switch level — not the single backtest DD</td></tr>'+
+          '<tr><td>risk of ruin</td><td>fraction of paths that hit the hard drawdown limit — the probability you blow up before the edge pays</td></tr>'+
+          '<tr><td>fractional-Kelly check</td><td>simulate the path at ¼, ½, full Kelly — full Kelly\'s brutal drawdowns are only visible across paths, not in one curve</td></tr>'+
+          '<tr><td>terminal-wealth spread</td><td>separates a real edge from lucky trade <em>ordering</em> — reshuffling kills sequence luck</td></tr></table>'+
+          '<p class="note"><b>Why it can\'t live in Step 5:</b> it needs net-of-cost, position-sized returns — those only exist after the Step-6 cost model and the Step-8 sizing pass. You cannot simulate the drawdown of a strategy you have not yet priced or sized.</p>'}],
      kill:"Breaches a position, exposure or drawdown limit → trip the kill switch and flatten. Live drift (realised IC materially below expected) → loop back to Step 1 to revise the hypothesis. ↻ This is where the pipeline becomes a cycle."}
   ];
 
