@@ -36,13 +36,16 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 ```
 sigma-brain/                  ← this repo (brain/orchestration)
 ├── workspace/
-│   ├── baysix-engine/        ← unified trading research + execution system
-│   │   ├── sigma-are/        ← Alpha Research Engine (ARE) — the core research system
-│   │   │   ├── brokers/      ← venue context (darwinex-zero, ibkr, high-leverage, etc.)
-│   │   │   ├── lean-engine/  ← LEAN CLI execution gate (was sigma-lean)
-│   │   │   └── research-engine/ ← data, notebooks, strategies
-│   │   │       └── strategies/b2b-gold/  ← B2B gold signal (b2b-py, b2b-markdowns)
-│   │   └── sigma-mt5/        ← MQL5 Expert Advisor (XAUUSD live production)
+│   ├── baysix-engine/        ← unified trading research + execution system (ONE git repo · github.com/smz3/baysix-engine)
+│   │   ├── alpha-engine/     ← Alpha Research Engine (was sigma-are) — measures edge
+│   │   │   ├── research-engine/ ← 8-step QR pipeline (step1-idea-bank … step8-risk-deploy)
+│   │   │   │   ├── step6-lean-engine/ ← LEAN CLI execution gate (backtest = step 6, stays in funnel)
+│   │   │   │   └── research-ledger/ ← honesty ledger (research-only; above the steps)
+│   │   │   ├── market-state-engine/ ← measurement layer (5 sub-engines: cross-asset/dealer-gamma/positioning/volatility/order-flow). Was "F2 Volatility"
+│   │   │   └── context-engine/  ← classification layer (regime conditions from market-state readings). Was "F4 context-state"
+│   │   └── execution-engine/ ← deploys surviving edge · venue context. Sibling of alpha-engine, NOT inside it
+│   │       ├── mt5-path/b2b-mt5/ ← MQL5 Expert Advisor (was sigma-mt5; XAUUSD live · junction-linked to MT5 — do not move)
+│   │       └── api-path/     ← IBKR + moomoo/webull venue context
 │   ├── sigma-quant/          ← Cloudflare Pages frontend (deployed)
 │   ├── sigma-research/       ← FastAPI backend + Qdrant/Groq AI briefs
 │   └── sigma-linkedin/       ← LinkedIn automation (active)
@@ -68,7 +71,7 @@ Syafiq has three active deployment venues, each with a distinct mandate. The Res
 | **Darwinex Zero** | Darwinex (MT5) | CME/Eurex Futures + ETFs (real exchange, not CFD) | Build allocatable track record → external capital |
 | **IBKR (paper)** | Interactive Brokers | Equities, futures | Demonstrate cross-sectional alpha to BAM/Millennium |
 
-The Research Engine (sigma-are) measures edge. Surviving edges are routed to the appropriate venue adapter.
+The Research Engine (alpha-engine) measures edge. Surviving edges are routed to the appropriate venue adapter in execution-engine.
 
 ---
 
@@ -76,7 +79,7 @@ The Research Engine (sigma-are) measures edge. Surviving edges are routed to the
 
 The architecture was reset and locked this session. Do not propose redesigns or rival frameworks.
 
-**sigma-are = the Alpha Research Engine.** Its job is to be a JS-style hypothesis-testing factory:
+**alpha-engine (was sigma-are) = the Alpha Research Engine.** Its job is to be a JS-style hypothesis-testing factory:
 - Measurement-first. Every edge ships with IC, ICIR, t-stat, error bars — not a point estimate.
 - Falsification-first. Write the kill condition before measuring.
 - Correctness before sophistication. No lookahead, PIT-correct data, honest OOS split.
@@ -84,7 +87,7 @@ The architecture was reset and locked this session. Do not propose redesigns or 
 
 **lean-engine = the execution survival gate.** Event-driven LEAN backtests confirm alpha *captures* (not just alpha *exists*). Run lean-engine only after the Research Engine validates a signal.
 
-**The only thing that can change this plan is a validated measurement result from sigma-are.**
+**The only thing that can change this plan is a validated measurement result from alpha-engine.**
 
 ---
 

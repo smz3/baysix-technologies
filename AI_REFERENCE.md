@@ -18,9 +18,9 @@
 - "Gate PASSED / FAILED" — not "looks good / doesn't work"
 
 **Research standard:**
-- sigma-are is the hypothesis-testing factory — measurement-first, falsification-first, IC/ICIR/t-stat on every signal
+- alpha-engine is the hypothesis-testing factory — measurement-first, falsification-first, IC/ICIR/t-stat on every signal
 - lean-engine is the execution survival gate — "can I capture the alpha?" (run after ARE validates a signal)
-- sigma-mt5 is the production layer — MQL5 EA for Just Markets and Darwinex Zero
+- b2b-mt5 (execution-engine/mt5-path/) is the production layer — MQL5 EA for Just Markets and Darwinex Zero
 - B2B knowledge base: `vault/wiki/strategy/b2b-overview.md`
 
 ---
@@ -33,7 +33,7 @@
 | **Darwinex Zero** | MT5 | Futures (real CME/Eurex exchange) + ETFs (IBKR-routed, real exchange) | Allocatable track record → external capital. NOT CFD. |
 | **IBKR Paper** | IBKR API | Cross-sectional equities | Demonstrate pod-shop-grade alpha to BAM/Millennium |
 
-The Research Engine (sigma-are) measures edge. Surviving edges are routed to the appropriate venue adapter.
+The Research Engine (alpha-engine) measures edge. Surviving edges are routed to the appropriate venue adapter.
 
 ---
 
@@ -108,39 +108,45 @@ All sub-projects live inside `workspace/` — each is an independent git repo.
 | Project | Path | Purpose |
 |---------|------|---------|
 | sigma-brain | `.` | HQ — orchestrator, agents, memory, vault |
-| **baysix-engine** | `workspace/baysix-engine/` | Unified trading research + execution umbrella |
-| **sigma-are** | `workspace/baysix-engine/sigma-are/` | Alpha Research Engine — Python hypothesis factory. GitHub: smz3/sigma-crypto |
-| **sigma-mt5** | `workspace/baysix-engine/sigma-mt5/` | MQL5 Expert Advisor (B2B zones, XAUUSD live). GitHub: smz3/sigma-mt5 |
+| **baysix-engine** | `workspace/baysix-engine/` | Unified research + execution monorepo (ONE git repo). GitHub: smz3/baysix-engine |
+| **alpha-engine** | `workspace/baysix-engine/alpha-engine/` | Alpha Research Engine — Python hypothesis factory (was sigma-are). Now a folder in the baysix-engine monorepo |
+| **b2b-mt5** | `workspace/baysix-engine/execution-engine/mt5-path/b2b-mt5/` | MQL5 Expert Advisor (B2B zones, XAUUSD live; was sigma-mt5). Junction-linked to MT5. Now a folder in the baysix-engine monorepo |
 | sigma-quant | `workspace/sigma-quant/` | Intelligence Centre frontend. Deployed: syafiqmzin-sigma-quant.pages.dev |
 | sigma-research | `workspace/sigma-research/` | FastAPI backend — Qdrant vector search, Groq AI briefs |
 | sigma-linkedin | `workspace/sigma-linkedin/` | LinkedIn automation (active) |
 
-### sigma-are Internal Structure
+### baysix-engine Internal Structure (monorepo)
 ```
-sigma-are/
-├── research-engine/
-│   ├── data/
-│   │   └── quant-data-manager/    ← data fetching + caching
-│   ├── notebooks/                 ← EDA + signal research
-│   └── strategies/
-│       └── b2b-gold/
-│           ├── b2b-pyscripts/     ← B2B Python implementation
-│           └── b2b-markdowns/     ← B2B strategy docs
-├── lean-engine/                   ← LEAN CLI execution gate (was sigma-lean)
-│   ├── lean.json
-│   └── scripts/parquet_to_lean.py
-└── brokers/
-    ├── darwinex-zero/
-    ├── ibkr/
-    ├── high-leverage-broker/
-    ├── moomoo-webull/
-    └── retail-prop-firm/
+baysix-engine/
+├── alpha-engine/                  ← measures edge (was sigma-are)
+│   ├── research-engine/           ← 8-step QR pipeline
+│   │   ├── step1-idea-bank/
+│   │   ├── step2-dataset/
+│   │   ├── step3-is-rapid-fire/
+│   │   ├── step4-is-validation/
+│   │   ├── step5-oos-rigor-gate/
+│   │   ├── step6-lean-engine/     ← LEAN CLI execution gate (was sigma-lean; backtest = step 6, stays in funnel)
+│   │   ├── step7-research-note/
+│   │   ├── step8-risk-deploy/
+│   │   ├── research-ledger/       ← honesty ledger (research-only)
+│   │   └── notebooks/             ← EDA + signal research
+│   ├── market-state-engine/       ← measurement layer (5 sub-engines, was F2 Volatility)
+│   └── context-engine/            ← classification layer (was F4 context-state)
+└── execution-engine/              ← deploys surviving edge (sibling of alpha-engine, NOT inside it)
+    ├── mt5-path/
+    │   ├── b2b-mt5/               ← MQL5 EA (was sigma-mt5; XAUUSD live, junction-linked to MT5)
+    │   ├── darwinex-zero/
+    │   ├── high-leverage-broker/
+    │   └── retail-prop-firm/
+    └── api-path/
+        ├── ibkr/
+        └── moomoo-webull/
 ```
 
 ### Absolute Paths
-- sigma-are: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-are`
-- lean-engine: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-are\lean-engine`
-- sigma-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\sigma-mt5`
+- alpha-engine: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\alpha-engine`
+- lean-engine: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\alpha-engine\research-engine\step6-lean-engine`
+- b2b-mt5: `C:\Users\User\Desktop\sigma-brain\workspace\baysix-engine\execution-engine\mt5-path\b2b-mt5`
 - sigma-quant: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-quant`
 - sigma-research: `C:\Users\User\Desktop\sigma-brain\workspace\sigma-research`
 - vault (B2B knowledge): `C:\Users\User\Desktop\sigma-brain\vault`
@@ -151,9 +157,9 @@ sigma-are/
 
 | Component | Role |
 |-----------|------|
-| sigma-are | Python ARE — hypothesis factory, IC/ICIR measurement |
+| alpha-engine | Python ARE — hypothesis factory, IC/ICIR measurement |
 | lean-engine | LEAN CLI — event-driven execution survival validation |
-| sigma-mt5 | MQL5 EA — B2B zones, Just Markets + Darwinex Zero production |
+| b2b-mt5 | MQL5 EA — B2B zones, Just Markets + Darwinex Zero production |
 | sigma-quant | React/Next.js — Intelligence Centre, Cloudflare Pages |
 | sigma-research | FastAPI — Qdrant vector search, Groq AI market briefs |
 | yfinance / FRED API | Market + macro data (free tier) |
@@ -182,10 +188,10 @@ sigma-are/
 
 All agent code changes happen in isolated git worktrees — never on main branch.
 
-**Critical:** Each sub-project is its own independent git repo. Always create worktrees from the **sub-project's git root**, not sigma-brain root. lean-engine lives inside sigma-are and is tracked by sigma-are's git.
+**Critical:** Each `workspace/` sub-project is its own independent git repo. Always create worktrees from the **sub-project's git root**, not sigma-brain root. NOTE: `baysix-engine/` is now ONE monorepo — alpha-engine, execution-engine, and step6-lean-engine are all tracked by baysix-engine's single git root (`workspace/baysix-engine/`), not separate repos.
 
 **Workflow:**
-1. `cd` into the target sub-project root (e.g. `workspace/baysix-engine/sigma-are/`)
+1. `cd` into the target sub-project root (e.g. `workspace/baysix-engine/` for any engine work)
 2. Create worktree: `git worktree add ../../../<project>-<task> -b baysix/agent/<task>-<date>`
 3. Make changes in isolation
 4. Submit to code-reviewer → must receive APPROVED verdict
