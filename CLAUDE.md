@@ -107,6 +107,7 @@ The architecture was reset and locked this session. Do not propose redesigns or 
 - Agent definitions live in `.claude/agents/` — auto-discovered by `Agent(subagent_type="name")`.
 - Skill definitions live in `.claude/skills/` — auto-discovered by the `Skill` tool.
 - Use `Agent(subagent_type="<name>")` to spawn agents, or `/skill-name` to invoke skills.
+- **For ANY quant-modelling work** — model choice, signal validation, edge measurement, backtest interpretation, "is this real?", or pre-deployment sign-off — invoke the `/quant-modeller` skill. It is the Tier-1 Senior QR modelling discipline, adversarial by default (tries to kill the signal), and applies to every strategy from IB-001 onward.
 
 ## Execution Model
 
