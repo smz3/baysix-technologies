@@ -11,7 +11,7 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 - **Target firms: Balyasny Asset Management + Millennium Management — Tier C multi-manager pod shops, direct approach.** Do NOT default to Tier B firms (Quantedge, Dymon, GIC).
 - **Long-term goal:** Get QR Job → Build institutional experience → Launch own fund → Family Office → Private Family Office.
 - Actively live trading XAUUSD on MT5 (Just Markets, semi-automated B2B zones).
-- Frame ALL strategy work in pod shop QR language: IC, ICIR, factor decomposition, alpha attribution, residual alpha.
+- Frame strategy work in **strategy-dependent metric language** — match the primary metric to the idea type (see QR Framing Rule below). Do NOT default to IC/ICIR; forcing it on a single-asset timing edge is a category error. Always speak universal survival/validity terms (net Sharpe, Calmar, ruin, OOS/IS, DSR on honest `N_trials`).
 
 ### Plan Tier
 - Claude Code **Pro plan** — sessions can hit rate limits. Deliver the critical artifact FIRST before exploration or cleanup.
@@ -36,16 +36,22 @@ You are the central **Chief of Staff** for the Baysix AI Hedge Fund.
 ```
 sigma-brain/                  ← this repo (brain/orchestration)
 ├── workspace/
-│   ├── baysix-engine/        ← unified trading research + execution system (ONE git repo · github.com/smz3/baysix-engine)
-│   │   ├── alpha-engine/     ← Alpha Research Engine (was sigma-are) — measures edge
-│   │   │   ├── research-engine/ ← 8-step QR pipeline (step1-idea-bank … step8-risk-deploy)
-│   │   │   │   ├── step6-lean-engine/ ← LEAN CLI execution gate (backtest = step 6, stays in funnel)
-│   │   │   │   └── research-ledger/ ← honesty ledger (research-only; above the steps)
-│   │   │   ├── market-state-engine/ ← measurement layer (5 sub-engines: cross-asset/dealer-gamma/positioning/volatility/order-flow). Was "F2 Volatility"
-│   │   │   └── context-engine/  ← classification layer (regime conditions from market-state readings). Was "F4 context-state"
-│   │   └── execution-engine/ ← deploys surviving edge · venue context. Sibling of alpha-engine, NOT inside it
-│   │       ├── mt5-path/b2b-mt5/ ← MQL5 Expert Advisor (was sigma-mt5; XAUUSD live · junction-linked to MT5 — do not move)
-│   │       └── api-path/     ← IBKR + moomoo/webull venue context
+│   ├── baysix-engine/        ← unified research + trading system (ONE git repo · github.com/smz3/baysix-engine)
+│   │   ├── research-engine/  ← BAYSIX_FRAMEWORK Part 1 Research. A 5-step spine (see research-engine/MAPPING.md for the full map + old→new)
+│   │   │   ├── step1_ideation/      ← layers: deployment-profile · hypothesis-metric-lock (ideas/) · data-structure-gate (vr/regime)
+│   │   │   ├── step2_signal/        ← layers: signal-build · sizing
+│   │   │   ├── step3_in-sample/     ← layers: gross-baseline · cost-haircut · event-based
+│   │   │   ├── step4_validation/    ← layers: oos-walkforward-cpcv · full-cost · monte-carlo · snooping-audit
+│   │   │   ├── step5_forward-fit/   ← layers: paper-forward · portfolio-fit-gate
+│   │   │   ├── core/                ← lib/ (corelib·dataset·db·idea_bank·tools) + engines/ (cost-venue·ic·factor-model·lean) — tools the steps CALL
+│   │   │   ├── data/  strategies/  research-note/  research-ledger/  ← shared registry, strategy folders, §F honesty ledger
+│   │   ├── trading-engine/  ← BAYSIX_FRAMEWORK Part 2 Trading. Was execution-engine. Sibling of research-engine, consumes its output
+│   │   │   ├── portfolio-risk/ ← §D     monitoring/ ← §E
+│   │   │   ├── mt5-path/b2b-mt5/ ← MQL5 Expert Advisor (was sigma-mt5; XAUUSD live · junction-linked to MT5 — do not move)
+│   │   │   └── api-path/     ← IBKR + moomoo/webull venue context
+│   │   ├── market-state-engine/ ← measurement layer (cross-asset/dealer-gamma/positioning/volatility/order-flow). SHARED by both engines
+│   │   ├── context-engine/  ← regime classification from market-state readings. SHARED (same code research validates + trading reads — no train/serve skew)
+│   │   └── architecture-decisions/ ← ADRs (was adr/); governs both engines
 │   ├── sigma-quant/          ← Cloudflare Pages frontend (deployed)
 │   ├── sigma-research/       ← FastAPI backend + Qdrant/Groq AI briefs
 │   └── sigma-linkedin/       ← LinkedIn automation (active)
@@ -71,7 +77,7 @@ Syafiq has three active deployment venues, each with a distinct mandate. The Res
 | **Darwinex Zero** | Darwinex (MT5) | CME/Eurex Futures + ETFs (real exchange, not CFD) | Build allocatable track record → external capital |
 | **IBKR (paper)** | Interactive Brokers | Equities, futures | Demonstrate cross-sectional alpha to BAM/Millennium |
 
-The Research Engine (alpha-engine) measures edge. Surviving edges are routed to the appropriate venue adapter in execution-engine.
+The Research Engine (research-engine) measures edge. Surviving edges are routed to the appropriate venue adapter in trading-engine.
 
 ---
 
@@ -79,15 +85,17 @@ The Research Engine (alpha-engine) measures edge. Surviving edges are routed to 
 
 The architecture was reset and locked this session. Do not propose redesigns or rival frameworks.
 
-**alpha-engine (was sigma-are) = the Alpha Research Engine.** Its job is to be a JS-style hypothesis-testing factory:
-- Measurement-first. Every edge ships with IC, ICIR, t-stat, error bars — not a point estimate.
+**The canonical methodology is [BAYSIX_FRAMEWORK.md](BAYSIX_FRAMEWORK.md) (locked 2026-05-24)** — one Research+Trading pipeline, parameterized by a Deployment Profile, agnostic to asset and context (pod/fund/pod-shop). The engine architecture below is unchanged; the framework is the validation discipline that *runs inside* it. research-engine = Part 1 Research; trading-engine = Part 2 Trading. (Restructured 2026-05-24: `alpha-engine` umbrella dissolved, `research-engine` promoted to top level, 5-step spine — see workspace tree above.)
+
+**research-engine (was sigma-are / alpha-engine) = the Alpha Research Engine.** Its job is to be a JS-style hypothesis-testing factory:
+- Measurement-first. Every edge ships with its **idea-appropriate primary metric** (Tier-2), t-stat, and error bars — not a point estimate, and not always IC.
 - Falsification-first. Write the kill condition before measuring.
 - Correctness before sophistication. No lookahead, PIT-correct data, honest OOS split.
 - Many small edges, not one holy grail.
 
-**lean-engine = the execution survival gate.** Event-driven LEAN backtests confirm alpha *captures* (not just alpha *exists*). Run lean-engine only after the Research Engine validates a signal.
+**lean-engine (core/engines/lean-engine) = the execution survival gate.** Event-driven LEAN backtests confirm alpha *captures* (not just alpha *exists*). Run lean-engine only after the Research Engine validates a signal.
 
-**The only thing that can change this plan is a validated measurement result from alpha-engine.**
+**This plan changes only via a validated measurement result from research-engine, or an explicit framework decision logged in memory (as the 2026-05-24 restructure was).**
 
 ---
 
@@ -125,9 +133,13 @@ When helping with Google Cloud Run, Cloud Build, or similar:
 - Prefer `gcloud` CLI commands over console-click instructions
 - The org policy issue is known: avoid Cloud Build entirely, use Cloud Run's native GitHub integration
 
-## Tier C QR Framing Rule — Balyasny/Millennium language
+## QR Framing Rule — strategy-dependent metric language (Updated 2026-05-24)
 
-- NOT "Sharpe 1.16" → "IC: 0.05, ICIR: 1.2, alpha decays over 12 trading days"
-- NOT "I built a backtest" → "I measured the IC and decay profile of this signal"
-- NOT "the strategy works" → "60 bps/yr residual alpha survives Fama-French 5-factor decomposition"
-- NOT "OOS degradation 27.5%" → "IC is stable IS→OOS, t-stat 2.3, Prob Sharpe 96%"
+The framework is **multi-asset, idea-agnostic, and tri-purpose**: it must serve (1) Baysix independent pod, (2) quant hedge funds, (3) quant pod shops. It splits into **Upstream = Research** and **Downstream = Trading**. Canonical docs: [QR_pipeline_v3.md](QR_pipeline_v3.md) (research funnel) + [QT_framework_unified.md](QT_framework_unified.md) (full system map).
+
+**Do NOT default to IC/ICIR.** Forcing IC onto a single-asset timing edge (e.g. XAUUSD B2B) is a category error and reads as a red flag to a real PM — it signals you don't know what IC measures.
+
+- **Match the primary metric to the idea type** (Tier 2 of the pipeline): IC/ICIR/IC-decay *only* for cross-sectional return-prediction; hit rate / predictive accuracy for timing; MAE-MFE / trend consistency for momentum-breakout; half-life / z-score stability for mean reversion; order-flow imbalance / fill rate for microstructure.
+- **Speak in validity + survival terms regardless of idea type:** honest `N_trials`, net Sharpe, Calmar, ruin probability, OOS/IS stability, DSR/PSR. These are universal; the edge metric is not.
+- Fama-French decomposition applies to **equity cross-sections only** — not single-asset gold or futures.
+- CGS application still uses APAC/domain framing, not pod-shop language (see memory).
