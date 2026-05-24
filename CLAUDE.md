@@ -132,19 +132,7 @@ Allowed unprompted: `worktree add`, `checkout -b`, `diff`, `status`, `log`. Need
 
 ## Execution Model
 
-**Claude Code handles everything by default** — planning, coding, research, file ops, git ops, user communication.
-
-No local model delegation. No external execution engine by default.
-
-**Gemini agents** are spawned explicitly when Syafiq invokes one for a specific task. `GEMINI_API_KEY` in `.env` belongs to the sigma-quant app — not for terminal execution.
-
-## Cloud Deployment Rules
-
-When helping with Google Cloud Run, Cloud Build, or similar:
-- **Always read `DEPLOYMENT_HANDOVER.md` first** — the blocker and next steps are documented there
-- Never guess at org policies or service account configs — ask Syafiq to paste error logs
-- Prefer `gcloud` CLI commands over console-click instructions
-- The org policy issue is known: avoid Cloud Build entirely, use Cloud Run's native GitHub integration
+**Claude Code handles everything by default** — planning, coding, research, file/git ops, user comms. No local-model delegation. (`GEMINI_API_KEY` in `.env` is the sigma-quant app's — not for terminal execution.) Cloud Run / sigma-research deployment: read [DEPLOYMENT_HANDOVER.md](DEPLOYMENT_HANDOVER.md) first.
 
 ## QR Framing Rule — strategy-dependent metric language (Updated 2026-05-24)
 
