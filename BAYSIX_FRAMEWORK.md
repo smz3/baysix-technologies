@@ -184,20 +184,22 @@ Left of deployment you are proving an edge at a size; right of it you are runnin
 
 ## AGENT ROUTING — who owns what, and how they know when
 
-**Routing model: Chief-of-Staff-routed.** Agents do not self-trigger or poll. The Chief of Staff holds the strategy state, reads the gate, and dispatches the one owning agent for that gate — handing it the profile + state. Deterministic, single-source-of-truth, cheapest to run.
+**Routing model: Chief-of-Staff-routed.** Agents/skills do not self-trigger or poll. The Chief of Staff holds the strategy state, reads the gate, and dispatches the one owner for that gate — handing it the profile + state. Deterministic, single-source-of-truth, cheapest to run. Owners are either **agents** (spawned, isolated context) or **skills** (`/name`, run inline by the CoS).
 
-| Framework zone | Owning agent | Cross-cutting |
+| Framework zone | Owner | Cross-cutting |
 |---|---|---|
-| Layer 0 profile | Chief of Staff + risk-manager | — |
-| step2 sizing / cost model | risk-manager (size), quant-developer (cost model) | — |
+| Layer 0 profile | Chief of Staff + `/risk-check` | — |
+| step2 sizing / cost model | `/risk-check` (size), quant-developer (cost model) | — |
 | Funnel Tier 0/1/2 | quant-researcher | **/quant-modeller discipline at every measurement** |
-| step4 LEAN backtest run | quant-developer | **code-reviewer signoff required before run** |
-| step5 portfolio-fit gate | risk-manager + quant-researcher | — |
-| Portfolio risk | risk-manager | — |
-| Monitoring | quant-trader (observer only) | escalates → risk-manager |
-| Reloop / ledger | memory-curator + quant-researcher | — |
+| step4 LEAN backtest run | quant-developer + `/run-backtest` | **code-reviewer signoff required before run** |
+| step5 portfolio-fit gate | `/risk-check` + quant-researcher | — |
+| Portfolio risk | `/risk-check` (CoS-run) | — |
+| Monitoring | `/check-mt5-health` + `/check-lean-health` (CoS-run) | escalate anomalies to user |
+| Reloop / ledger | `/update-memory` + quant-researcher | — |
 
-**Two mandatory signoffs on transitions (not gate-owners):** code-reviewer before any code runs; risk-manager before any capital moves.
+**Surviving agents (spawned, isolated):** code-reviewer, quant-researcher, quant-developer. Everything else is a CoS-run skill.
+
+**Two mandatory signoffs on transitions:** code-reviewer (agent) before any code runs; a `/risk-check` pass before any capital moves.
 
 **How an agent knows "when and what":** three artifacts make every move unambiguous —
 1. **Deployment Profile** — the *what-context* (thresholds, legal metrics). `risk_parameters.md`.

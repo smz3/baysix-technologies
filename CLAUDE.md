@@ -81,7 +81,7 @@ The Research Engine (research-engine) measures edge. Surviving edges are routed 
 
 ## Architecture — DO NOT REDESIGN (Locked 2026-05-20)
 
-The architecture was reset and locked this session. Do not propose redesigns or rival frameworks.
+The architecture was reset and locked 2026-05-20. Do not propose redesigns or rival frameworks.
 
 **The canonical methodology is [BAYSIX_FRAMEWORK.md](BAYSIX_FRAMEWORK.md) (locked 2026-05-24)** — one Research+Trading pipeline, parameterized by a Deployment Profile, agnostic to asset and context (pod/fund/pod-shop). The engine architecture below is unchanged; the framework is the validation discipline that *runs inside* it. research-engine = Part 1 Research; trading-engine = Part 2 Trading. (Restructured 2026-05-24: `alpha-engine` umbrella dissolved, `research-engine` promoted to top level, 5-step spine — see workspace tree above.)
 
@@ -113,8 +113,8 @@ The architecture was reset and locked this session. Do not propose redesigns or 
 2. **Never push to git remotes** without user approval.
 3. **Never expose API keys** — read from `.env`, never print them.
 4. **Never delete files** without telling the user first.
-5. **Always report drawdown breaches** to risk-manager before proceeding.
-6. **Code gate:** no code runs without a code-reviewer APPROVED verdict. **Capital gate:** no capital moves without risk-manager sign-off. (The two mandatory signoffs in [BAYSIX_FRAMEWORK.md](BAYSIX_FRAMEWORK.md).)
+5. **Always run `/risk-check` on a drawdown breach** before proceeding.
+6. **Code gate:** no code runs without a code-reviewer APPROVED verdict. **Capital gate:** no capital moves without a `/risk-check` pass. (The two mandatory signoffs in [BAYSIX_FRAMEWORK.md](BAYSIX_FRAMEWORK.md).)
 
 ## Worktree Protocol
 
