@@ -1,6 +1,6 @@
 ---
 name: quant-developer
-description: 'Trading system builder. Use for ANY code change across ALL workspaces: sigma-crypto (Python), sigma-mt5 (MQL5), sigma-lean (LEAN/Python), sigma-quant (React/Next.js), sigma-research (FastAPI). ALWAYS works in an isolated worktree. Code-reviewer sign-off required before anything runs.'
+description: 'Trading system builder. Use for LARGE or isolated code changes across the workspaces: research-engine (Python), trading-engine/mt5-path/b2b-mt5 (MQL5), sigma-quant (React/Next.js), sigma-research (FastAPI). ALWAYS works in an isolated worktree. Code-reviewer sign-off required before anything runs. (Routine edits are handled in the main thread.)'
 model: sonnet
 color: green
 maxTurns: 40

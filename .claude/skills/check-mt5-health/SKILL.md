@@ -1,11 +1,15 @@
 ---
-name: 'check-mt5-health'
-description: 'Sigma brain skill: check-mt5-health'
+name: check-mt5-health
+description: >
+  Check the live XAUUSD B2B MT5 Expert Advisor: current EA version, whether a compiled .ex5 binary
+  exists, open issues, and latest development state. Invoke when asked about MT5/EA health, the live
+  gold system status, or "is the EA up to date". Read-only — never edits MQL5 source.
 ---
 
 # Skill: check-mt5-health
 
-Check the health and status of the sigma-mt5 Expert Advisor system.
+Health check for the live B2B XAUUSD Expert Advisor.
+EA lives at `workspace/baysix-engine/trading-engine/mt5-path/b2b-mt5/` (junction-linked into the MT5 terminal).
 
 ## Usage
 ```
@@ -13,36 +17,24 @@ Check the health and status of the sigma-mt5 Expert Advisor system.
 ```
 
 ## Steps
+1. **EA architecture + state** — read `b2b-mt5/Documentation/mt5-ea-architecture.md`; scan `Documentation/modules/` and `Documentation/samtc-overview.md` for the active design.
+2. **Compiled binary** — look for `.ex5` files under `b2b-mt5/` (esp. `Experts/`); note version + last-modified.
+3. **Source version** — newest version dir under `b2b-mt5/Include/Sigma_System/` (e.g. `V5.0/`).
+4. **Strategy state** — `Memory/strategy_state.md` for active systems + last result.
 
-1. Read the current EA version and active development state:
-   - `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5\Documentation\B2B_DETECTION_SYSTEM.md`
-   - Check for any open bug documentation in `workspace\sigma-mt5\Documentation\B2B_CLUSTER_FIX_PLAN.md`
-
-2. Check for any compiled EA binary:
-   - Look for `.ex5` files in `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5\`
-   - Note the version and last modified date
-
-3. Scan the latest research archive for active development notes:
-   - `C:\Users\User\Desktop\sigma-brain\workspace\sigma-mt5\Include\Sigma_System\V5.0\Data\`
-
-4. Check current strategy state:
-   - `Memory\strategy_state.md` — active systems and last backtest results
-
-5. Return a health report:
-   ```markdown
-   ## MT5 EA Health Report
-
-   **EA Version**: V[X.X]
-   **Compiled Binary**: Found / Not Found — last modified [date]
-   **Active Development**: Yes / No
-   **Open Issues**: [list from bug docs, or "None"]
-   **Last Research Entry**: [file name and date]
-   **System Heartbeat**: [No heartbeat log available — check EA manually in MT5 terminal]
-   **Status**: Healthy / Needs Attention / Unknown
-   **Recommended Action**: [if any]
-   ```
+## Output
+```markdown
+## MT5 EA Health Report
+**EA version**:      V[X]
+**Compiled .ex5**:   Found (modified [date]) / Not Found — EA cannot be running
+**Active dev**:      Yes / No
+**Open issues**:     [from docs, or None]
+**Heartbeat**:       No heartbeat log — verify in the MT5 terminal manually
+**Status**:          Healthy / Needs Attention / Unknown
+**Action**:          [if any]
+```
 
 ## Notes
-- Read-only — never modify MQL5 source files as part of this health check
-- If open issues exist in B2B_CLUSTER_FIX_PLAN.md, summarize the proposed solutions
-- Alert the user if no compiled binary exists (EA cannot be running)
+- Read-only — never modify MQL5 source as part of this check.
+- Alert if no compiled binary exists (the EA cannot be live).
+- You run XAUUSD on Just Markets by hand — this reports state, it does not control the EA.

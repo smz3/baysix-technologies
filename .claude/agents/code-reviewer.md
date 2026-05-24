@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: 'Code quality gate. Use to review all agent-generated code before execution: security scanning, risk parameter compliance, SAMTC spec compliance, logic correctness. Produces APPROVED / REJECTED verdict. Nothing runs without this.'
+description: 'Code quality gate. Use to review agent-generated code before execution: security scanning, risk-parameter compliance, BAYSIX_FRAMEWORK spec compliance, logic correctness. Produces APPROVED / REJECTED verdict. Nothing runs without this.'
 model: opus
 color: red
 maxTurns: 15
