@@ -135,7 +135,7 @@ When helping with Google Cloud Run, Cloud Build, or similar:
 
 ## QR Framing Rule — strategy-dependent metric language (Updated 2026-05-24)
 
-The framework is **multi-asset, idea-agnostic, and tri-purpose**: it must serve (1) Baysix independent pod, (2) quant hedge funds, (3) quant pod shops. It splits into **Upstream = Research** and **Downstream = Trading**. Canonical docs: [QR_pipeline_v3.md](QR_pipeline_v3.md) (research funnel) + [QT_framework_unified.md](QT_framework_unified.md) (full system map).
+The framework is **multi-asset, idea-agnostic, and tri-purpose**: it must serve (1) Baysix independent pod, (2) quant hedge funds, (3) quant pod shops. It splits into **Upstream = Research** and **Downstream = Trading**. Canonical doc: [BAYSIX_FRAMEWORK.md](BAYSIX_FRAMEWORK.md) — the single authoritative spec (funnel, all gate thresholds, system map; absorbed the former QR_pipeline_v3 + QT_framework_unified docs 2026-05-24).
 
 **Do NOT default to IC/ICIR.** Forcing IC onto a single-asset timing edge (e.g. XAUUSD B2B) is a category error and reads as a red flag to a real PM — it signals you don't know what IC measures.
 
