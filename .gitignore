@@ -81,4 +81,6 @@ Sandbox/
 .claude/worktrees/
 .claude/hooks/logs/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/agent-memory/
 *.bak

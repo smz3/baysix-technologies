@@ -59,8 +59,6 @@ sigma-brain/                  ← this repo (brain/orchestration)
 │   ├── agents/               ← agent definitions (auto-discovered)
 │   ├── skills/               ← skill definitions (auto-discovered)
 │   └── hooks/                ← audio notification system
-├── vault/                    ← B2B knowledge wiki, strategy docs, research schemas
-│   └── wiki/strategy/        ← B2B detection rules, lifecycle, timeframe hierarchy
 ├── Braindump/                ← active PRDs and build plans only
 └── Memory/                   ← session handovers (read newest at startup)
 ```
@@ -106,9 +104,24 @@ The architecture was reset and locked this session. Do not propose redesigns or 
 
 ## Reference (on-demand only)
 
-- `AI_REFERENCE.md` — full directives + project map, tech stack, infrastructure, worktree protocol. Read delegation/risk sections when you need the agent roster or risk rules; rest on-demand.
-- `vault/wiki/` — B2B strategy knowledge base (b2b-overview, lifecycle, timeframe hierarchy, detection rules). Read for any B2B signal or MT5 task.
+- B2B strategy knowledge base — `workspace/baysix-engine/research-engine/strategies/b2b-xauusd/b2b-markdowns/b2b-knowledge/` (overview, zone-lifecycle, touch-depth, russian-doll, timeframe-hierarchy, invalidation, open-questions). MT5/EA + SAMTC docs in `workspace/baysix-engine/trading-engine/mt5-path/b2b-mt5/Documentation/`. Read for any B2B signal or MT5 task.
 - `DEPLOYMENT_HANDOVER.md` — Cloud Run deployment steps. Read only if handover references a deployment blocker.
+
+## Risk Rules (non-negotiable)
+
+1. **Never authorize live trades** without explicit human confirmation. Two-key rule: any live execution action needs both your assessment AND user confirmation.
+2. **Never push to git remotes** without user approval.
+3. **Never expose API keys** — read from `.env`, never print them.
+4. **Never delete files** without telling the user first.
+5. **Always report drawdown breaches** to risk-manager before proceeding.
+6. **Code gate:** no code runs without a code-reviewer APPROVED verdict. **Capital gate:** no capital moves without risk-manager sign-off. (The two mandatory signoffs in [BAYSIX_FRAMEWORK.md](BAYSIX_FRAMEWORK.md).)
+
+## Worktree Protocol
+
+Agent code changes happen in isolated git worktrees, never on a live branch. Each `workspace/` sub-project is its own git repo — `baysix-engine/` is ONE monorepo (research-engine, trading-engine, market-state-engine, context-engine all tracked by `workspace/baysix-engine/`). Create worktrees from the **sub-project's git root**, not sigma-brain root.
+
+Workflow: `cd` sub-project root → `git worktree add` on a new branch → make changes → code-reviewer must return APPROVED → return diff + approval → present `[REQUIRES APPROVAL]` to user → human confirms → merge.
+Allowed unprompted: `worktree add`, `checkout -b`, `diff`, `status`, `log`. Needs approval: `push`, `merge`, `reset --hard`.
 
 ## Sub-Agents & Skills Architecture
 
