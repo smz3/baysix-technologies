@@ -84,6 +84,8 @@ Fail any → dead. No idea type is exempt.
 | Mean reversion | Half-life, z-score stability | any |
 | Microstructure | Order-flow imbalance, fill rate | any |
 
+*This table is the human mirror of the single source of truth in code — `METRIC_POLICY` in `research-engine/core/lib/idea_bank/signals.py` (ADR-0003). The Step-1 validator rejects any idea whose `primary_metric` is illegal for its `(idea_type, asset_mode)`, and a drift test fails if this table and the code disagree. The category error is enforced, not just documented.*
+
 **Verdict rule:** a strategy ships only if it passes **Tier 0 (valid) → ALL of Tier 1 (survives) → its Tier 2 metric (has edge).** Never survival without edge; never edge without survival.
 
 ## TWO COUNTERS RUN THE LENGTH OF THE FUNNEL AND NEVER RESET WITHIN A FAMILY
