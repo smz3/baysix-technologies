@@ -1,0 +1,124 @@
+# Just Markets — venue spec (single source of broker truth).
+# Schema: see venues/README.md. Confirmed from JM XAUUSD.s spec + trading
+# conditions page (justmarketsmy.com/markets/commodities), Syafiq 2026-05-25.
+# Anything not confirmed is TO_VERIFY — never guessed (a wrong stop-out or
+# spread silently corrupts the ruin + Kelly math).
+
+venue_id: just_markets_mt5
+name: Just Markets
+platform: MT5
+book_model: hybrid          # internalises small accounts (B-book) → clean fills until you win at size
+regulator: TO_VERIFY
+last_verified: 2026-05-25
+
+# Edge is modelled on Dukascopy ticks (CS-GOLD-DUKAS-TICK, 10yr); executed here.
+# Mid-price dynamics transfer; apply JM spread below, not Dukascopy's.
+data_source_note: model_on_dukascopy_execute_on_jm
+
+# --- ACCOUNT TYPE — DECIDED: model the scalping strategy on PRO -------------
+# Pro (spread-only ~2 pip, no commission). Raw was evaluated: actual XAUUSD avg
+# spread is 1 pip (not the 0.2-pip "from" marketing) + $3.5/lot/side commission,
+# making Raw only ~15% cheaper per round-trip — AND Raw needs a $200 min deposit,
+# so it's unavailable on the $50 account. Pro is the right modelling basis.
+# Raw kept on file (raw_account_reference) for when equity > $200 makes it viable.
+account:
+  active: pro
+  model_on: pro                   # the scalping strategy is modelled + costed on Pro
+  alternatives: [raw, standard]
+
+instruments:
+  XAUUSD.s:                       # note the .s suffix on JM's symbol
+    exchange: XCCY
+    sector: commodities
+    industry: precious_metals
+    digits: 2                     # price to 2 decimals → point = 0.01
+    contract_size_oz: 100         # 1 standard lot = 100 oz (spec: "100 XAU")
+    min_lot: 0.01                 # = 1 oz  → $1 gold move = $1.00 P&L
+    max_lot: 100
+    lot_step: 0.01
+    pip_usd: 0.10                 # 1 pip = $0.10 = 10 points (JM quotes spread in these)
+    point_usd: 0.01
+    pnl_per_pip_per_lot: 10.0     # 100 oz × $0.10
+    pnl_per_point_per_lot: 1.0    # 100 oz × $0.01
+    margin_currency: XAU
+    profit_currency: USD
+    hedging_allowed: true         # spec: "Hedged margin 100"
+    # min-lot risk floor on $50: a 5-pip stop on 0.01 lot risks $0.50 = 1% equity;
+    # a 50-pip stop risks $5 = 10% → min-lot forces tight-stop scalping at micro size.
+
+costs:
+  model: spread_only              # for the ACTIVE pro account
+  swap:
+    status: swap_free             # all JM accounts auto swap-free; XAUUSD eligible
+    long_per_lot_per_night_usd: 0.0
+    short_per_lot_per_night_usd: 0.0
+    note: XAUUSD not in the swap-free exclusion list (XNGUSD/WTI/BRENT). Applied 22:00 GMT+3, tripled Wed — N/A here.
+  spread:
+    type: floating
+    pro_typical_pips: 2.0         # ~2 pips per Syafiq's live experience (no commission)
+    pro_typical_full_usd_per_oz: 0.20
+    low_liquidity_note: widens during daily break (23:58–01:01) and news
+    news_pips: TO_VERIFY
+  commission:
+    pro_per_lot_usd: 0.0
+  account_comparison:             # per 0.01-lot round-trip, with REAL numbers
+    pro_roundtrip_usd: 0.20       # 2-pip spread crossed once, no commission
+    raw_roundtrip_usd: 0.17       # 1-pip spread ($0.10) + $3.5/lot/side comm (0.01 lot = $0.07)
+    finding: Raw is only ~15% cheaper AND needs $200 min deposit — unavailable at $50. Pro it is.
+
+# Raw account kept for reference (viable once equity > $200).
+raw_account_reference:
+  min_deposit_usd: 200
+  xauusd:
+    avg_spread_pips: 1.0
+    commission_per_lot_per_side_usd: 3.5
+    margin_pct: 0.03              # = 1:3000
+    long_swap_points: -71.04      # swap-free status zeroes this; ×$0.01×100oz = -$71.04/lot/night gross
+    short_swap_points: -84.12
+    stop_level_pips: 0
+    extended_swap_free: true
+
+leverage:
+  max_xauusd: 3000                # XAUUSD max 1:3000 (XPTUSD/XPDUSD only 1:100)
+  dynamic: true
+  basis: equity_usd               # tier set by current equity, re-evaluated as it grows
+  ladder:
+    - {equity_min: 0,     equity_max: 999,   max_leverage: 3000}
+    - {equity_min: 1000,  equity_max: 4999,  max_leverage: 2000}
+    - {equity_min: 5000,  equity_max: 29999, max_leverage: 1000}
+    - {equity_min: 30000, equity_max: null,  max_leverage: 500}
+  leverage_reductions:            # max leverage is CUT (margin raised) during:
+    news: from 15min before high-impact news to 5min after — new positions only
+    rollover_weekend_holiday: lower leverage applied; verify magnitude
+    note: you cannot open at full 1:3000 around news — affects any news-window scalp
+
+margin:
+  per_lot_usd: 152.12             # observed initial margin/lot (spec); price+leverage dependent
+  initial_equals_maintenance: true   # initial ≈ maintenance ≈ 152.12/lot — no separate buffer
+  margin_call_level_pct: 40       # confirmed — warning only
+  stop_out_level_pct: 20          # confirmed — auto-close begins here
+  margin_level_formula: equity / used_margin * 100   # NOT balance-based
+  # CRITICAL for ruin math: at 1:3000 used_margin is tiny. 0.01 lot → ~$1.52 used
+  # margin → 20% stop-out triggers at equity ≈ $0.30. You lose ~99% before the
+  # broker acts. => broker stop-out is NOT protection; YOUR stop-loss is the real
+  # ruin boundary. Treat ruin = equity hits ~0 unless margin is heavily used.
+
+execution:
+  mode: market                    # spec: Market execution (no requotes; slips instead)
+  filling: fill_or_kill           # FOK
+  gtc_mode: good_till_cancelled
+  chart_mode: by_bid_price
+  slippage_conditions: [news, weekend_gap]
+  normal_conditions: clean        # tight, no requotes outside news/weekend
+
+constraints:
+  stops_level_points: 0           # min stop distance currently 0 (great for tight scalps)
+  stops_level_note: VARIABLE — JM warns it may NOT be accessible for HFT strategies or EAs. Confirm for the b2b-mt5 EA path.
+  hft_ea_caveat: spec flags HFT/EA may face different stop-level behaviour — validate live before trusting tight stops in the EA.
+
+sessions:                         # server time = GMT+3
+  timezone: GMT+3
+  open: Monday 01:01
+  close: Friday 23:58
+  daily_break: 23:58–01:01
+  closed: [saturday, sunday]

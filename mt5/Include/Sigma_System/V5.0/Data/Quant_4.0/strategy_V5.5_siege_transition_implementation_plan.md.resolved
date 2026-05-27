@@ -1,0 +1,47 @@
+# IMPL PLAN V5.5 - SIEGE TRANSITION (PHASED)
+
+## Goal
+To implement a robust "Structural Brain" that understands when a trend is "Sieging" a level, allowing it to toggle between Counter-Trend Fades and Pro-Trend Breakouts dynamically.
+
+---
+
+## Phase 1: State Memory Expansion
+Track the lifecycle of the Magnet interaction.
+*   **[MODIFY] `FlowState` struct**:
+    *   `bool magnet_fade_active`: Flagged true when an Aggressive Pullback signal is authorized for the current `magnet_id`.
+    *   `bool is_siege_active`: Universal flag that the timeframe is in "Bulldozer Mode".
+    *   `ulong siege_magnet_id`: The ID of the specific magnet currently under siege.
+
+## Phase 2: Transition Detection (The Outpost Reset)
+Implement the "Circuit Breaker" in `UpdateTimeframeFlow`.
+*   **Logic**:
+    *   **Trigger A (Fade Activation)**: If `IsTradeAllowed` fires a Magnet Fade, update `FlowState::magnet_fade_active = true`.
+    *   **Trigger B (The Return)**: Every tick, check if `magnet_fade_active` is true AND `current_price` has successfully touched a **Forward Outpost** or the **Origin**.
+    *   **Action**: Upon Trigger B, set `is_siege_active = true` and `magnet_fade_active = false`.
+    *   **Logic Explanation**: Touching the Outpost proves the "Main Story" has re-established a floor. The fade is over; the siege has begun.
+
+## Phase 3: The "Re-Polarization" Gate
+Kill the noise.
+*   **[MODIFY] `IsTradeAllowed` Aggressive Fade blocks**:
+    *   Add condition: `if (narrative.is_siege_active) return false;`.
+    *   **Reasoning**: Once the Outpost Reset occurs, the system is "Polarized" to the trend. No more selling at the high is allowed, even if price re-enters T2/T3.
+
+## Phase 4: The "Bulldozer" Gate
+Unlock the path.
+*   **[MODIFY] `IsTradeAllowed` Location Filter check**:
+    *   Update `IsInsideOpposingZone` or its call site.
+    *   If `is_siege_active` is true for the specific `roadblock_id` (Magnet), the roadblock is **IGNORED**.
+    *   **Condition**: `if (narrative.is_siege_active && zones[i].zone_id == narrative.siege_magnet_id) continue;`
+    *   **Result**: Fresh Traps forming *inside* the MN1/W1 Magnet are now authorized for Pro-Trend execution.
+
+## Phase 5: Reset/Completion Logic
+Clean up the state.
+*   **Condition**: If a Magnet is "Defeated" (Price breaks L2/T3) or the Origin is "Broken".
+*   **Action**: `FlowState::Reset()` clears `is_siege_active`. The system returns to "Normal Flow".
+
+---
+
+## Verification Strategy
+1.  **Phase 1&2**: Observe logs to confirm `is_siege_active` flips to TRUE only after: `Magnet Touch -> Outpost Touch`.
+2.  **Phase 3**: Confirm CT signals at Magnet are rejected with reason `"RE-POLARIZED: SIEGE ACTIVE"`.
+3.  **Phase 4**: Confirm WT signals inside Magnet L1-L2 are accepted with reason `"BULLDOZER MODE: SIEGE ACTIVE"`.

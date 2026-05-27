@@ -1,0 +1,93 @@
+# ===========================================
+# SIGMA System Anti Gravity - Git Ignore File
+# ===========================================
+
+# --- MQL5 Compiled Files ---
+*.ex5
+*.ex4
+
+# --- MQL5 Generated Files ---
+*.log
+*.csv
+MQL5/Logs/
+MQL5/Files/
+MQL5/Profiles/
+MQL5/Tester/
+
+# --- Backup/Archive Folders ---
+MQL5 Clean Copies/
+MQL5_10122025_skitlagib2b/
+September2025SmartFolder/
+
+# --- IDE/Editor Files ---
+.vscode/
+.vs/
+.windsurf/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+
+# --- OS Generated ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# --- Temporary Files ---
+*.tmp
+# ===========================================
+# SIGMA System Anti Gravity - Git Ignore File
+# ===========================================
+
+# --- MQL5 Compiled Files ---
+*.ex5
+*.ex4
+
+# --- MQL5 Generated Files ---
+*.log
+*.csv
+MQL5/Logs/
+MQL5/Files/
+MQL5/Profiles/
+MQL5/Tester/
+
+# --- Backup/Archive Folders ---
+MQL5 Clean Copies/
+MQL5_10122025_skitlagib2b/
+September2025SmartFolder/
+
+# --- IDE/Editor Files ---
+.vscode/
+.vs/
+.windsurf/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+
+# --- OS Generated ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# --- Temporary Files ---
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# --- Gemini/Agent Artifacts (optional - remove if you want to track) ---
+# .gemini/
+.env
