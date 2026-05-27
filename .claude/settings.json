@@ -28,8 +28,7 @@
   "enabledMcpjsonServers": ["context7", "supabase", "playwright"],
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
-    "SIGMA_BRAIN": "C:\\Users\\User\\Desktop\\sigma-brain",
-    "SIGMA_WORKSPACE": "C:\\Users\\User\\Desktop\\sigma-brain\\workspace",
+    "SIGMA_BRAIN": "C:\\Users\\User\\Desktop\\baysix-technologies",
     "SIGMA_CRYPTO": "C:\\Users\\User\\Desktop\\sigma-crypto",
     "SIGMA_MT5": "C:\\Users\\User\\Desktop\\sigma-mt5",
     "SIGMA_QUANT": "C:\\Users\\User\\Desktop\\sigma-quant",
@@ -42,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '=== SIGMA-BRAIN SESSION START ===' && echo '' && echo '--- Strategy State ---' && cat Memory/strategy_state.md 2>/dev/null || echo '(no strategy_state.md yet)' && echo '' && echo '--- Risk Parameters ---' && cat Memory/risk_parameters.md 2>/dev/null || echo '(no risk_parameters.md yet)' && echo '' && echo '--- Research Queue ---' && cat Memory/research_queue.md 2>/dev/null || echo '(no research_queue.md yet)'",
+            "command": "echo '=== BAYSIX SESSION START ===' && echo '' && echo '--- Strategy State ---' && cat baysix-engine/strategies/DASHBOARD.md 2>/dev/null || echo '(no DASHBOARD.md yet)' && echo '' && echo '--- Risk Parameters (Deployment Profiles) ---' && cat baysix-engine/research/profiles/risk_parameters.md 2>/dev/null || echo '(no risk_parameters.md yet)' && echo '' && echo '--- Research Queue ---' && cat baysix-engine/research/research_queue.md 2>/dev/null || echo '(no research_queue.md yet)'",
             "timeout": 5000,
             "once": true
           },
