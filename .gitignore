@@ -70,6 +70,7 @@ security_alerts.log
 *.parquet
 *.pkl
 *.h5
+*.zip
 
 # Secrets scanner output
 Sandbox/
