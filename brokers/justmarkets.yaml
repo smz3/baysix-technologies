@@ -116,6 +116,35 @@ constraints:
   stops_level_note: VARIABLE — JM warns it may NOT be accessible for HFT strategies or EAs. Confirm for the b2b-mt5 EA path.
   hft_ea_caveat: spec flags HFT/EA may face different stop-level behaviour — validate live before trusting tight stops in the EA.
 
+tcm:                              # TCM-001 standardised cost schema (venue-agnostic math layer reads this)
+  version: "1.0"
+  asset_class: cfd_metal
+  instrument: XAUUSD.s
+  quote_currency: USD
+  spread:
+    type: floating
+    typical_pips: 2.0            # confirmed from live experience
+    stress_pips: TO_VERIFY       # fallback = typical × 3 (6.0 pips) until live-measured
+    pip_usd_per_lot: 0.10        # 1 pip = $0.10 per 0.01 lot (100 oz × $0.01 × 10 points)
+  commission:
+    per_lot_per_side_usd: 0.0    # PRO account: spread-only, no commission
+    per_lot_roundtrip_usd: 0.0
+  swap:
+    status: swap_free
+    long_per_lot_per_night_usd: 0.0
+    short_per_lot_per_night_usd: 0.0
+  slippage:
+    model: negligible            # at 0.01 lot size; upgrade to sqrt_impact at scale
+    alpha_normal: 0.0            # normal regime: size too small to matter
+    beta_stress: 1.0             # stress regime: conservative 1.0-pip default (TO_VERIFY from live fills)
+    stress_vol_multiplier: 2.0   # σ_t > 2× rolling mean triggers stress regime
+  execution:
+    mode: market
+    stress_regime_triggers: [news_window, weekend_gap, session_break]
+  # --- derived constants (used by TCM math layer directly) ---
+  roundtrip_cost_usd_per_min_lot: 0.20   # 2 pips × $0.10/pip, 0.01 lot — confirmed
+  to_verify_fields: [stress_pips, beta_stress]
+
 sessions:                         # server time = GMT+3
   timezone: GMT+3
   open: Monday 01:01

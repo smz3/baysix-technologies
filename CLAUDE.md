@@ -24,14 +24,16 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 ├── b2b/
 │   ├── code/                 ← B2B Python engine (zone detection, trade logic)
 │   └── docs/                 ← B2B knowledge base (overview, zone lifecycle, russian doll, etc.)
-├── brokers/                  ← venue specs: justmarkets.yaml (cost model) + .md per broker
+├── brokers/                  ← venue specs: justmarkets.yaml (TCM-001 cost model) + .md per broker
+├── research/                 ← ideas_log.db (62 ideas · GENERATE) · research_log.db (pipeline · VALIDATE)
 ├── data/
 │   └── parquet/              ← CS-GOLD-DUKAS-TICK · 24GB · 2016→2026 · IS/OOS sealed 2024-05-02
 ├── .claude/
+│   ├── agents/               ← quant-researcher agent definition
 │   ├── hooks/                ← session hooks + audio notifications
 │   └── commands/             ← /handover
 ├── braindump/                ← active PRDs and build plans only
-└── memory/                   ← session handovers (read newest at startup)
+└── memory/                   ← session handovers · _handover_archive/ for older ones
 
 Decoupled repos (Desktop-level, own git remotes):
   ~/Desktop/sigma-quant/      ← Cloudflare Pages frontend (deployed · syafiqmzin-sigma-quant.pages.dev)
