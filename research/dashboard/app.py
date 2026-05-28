@@ -203,7 +203,7 @@ with tab_agents:
             st.info("No agent calls logged yet.")
         else:
             def colour_model(val):
-                return "background-color:#2a1a4a" if str(val).lower() == "claude-opus-4-6" else "background-color:#1a2a3a"
+                return "background-color:#2a1a4a" if str(val).lower() == "opus" else "background-color:#1a2a3a"
 
             def colour_gear(val):
                 return {
