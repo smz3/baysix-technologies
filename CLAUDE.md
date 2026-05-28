@@ -29,11 +29,11 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 │   ├── db/                   ← all SQLite databases
 │   │   ├── ideas_log.db      ← 62 ideas · generate_calls · build_order
 │   │   ├── research_log.db   ← pipeline · pipeline_events (VALIDATE)
-│   │   └── agent_log.db      ← agent_calls (gear · model · papers per QR run)
+│   │   └── agent_log.db      ← agent_calls (gear · model · task) · papers_consulted (normalized paper KB)
 │   ├── code/                 ← shared DB layer (db_init · pipeline · ideas_log · agent_log)
 │   ├── models/               ← one folder per foundational model
 │   │   └── cusum/            ← CUSUM-001 changepoint detection (built · parked)
-│   ├── migrations/           ← DB migration scripts (001–003 applied)
+│   ├── migrations/           ← DB migration scripts (001–004 applied)
 │   ├── dashboard/            ← Streamlit research dashboard (app.py · localhost:8501)
 │   ├── outputs/              ← model plot outputs (Plotly HTML + Seaborn PNG)
 │   └── RESEARCH_CODE_PROTOCOL.md ← code rules for research/models/ and research/code/
@@ -67,9 +67,9 @@ Decoupled repos (Desktop-level, own git remotes):
 8. Don't make things complicated.
 9. Only touch codes that you're supposed to touch.
 10. After every quant-researcher agent call, immediately write to the correct DB before responding to Syafiq. No exceptions.
-    - GENERATE gear → `research/db/ideas_log.db` (generate_calls table)
-    - VALIDATE gear → `research/db/research_log.db` (pipeline_events table)
-    - BOTH gears → `research/db/agent_log.db` (agent_calls table): log idea_id, idea_code, gear, model, task, papers JSON
+    - GENERATE gear → `research/db/ideas_log.db` (generate_calls table) + `research/db/agent_log.db` (agent_calls) + `research/db/agent_log.db` (papers_consulted — one row per paper, dissected=0)
+    - DISSECT gear → `research/db/agent_log.db` (agent_calls) + update matching `papers_consulted` row: set dissected=1, fill key_equations, empirical_findings, context_fit, limitations
+    - VALIDATE gear → `research/db/research_log.db` (pipeline_events table) + `research/db/agent_log.db` (agent_calls)
     - Always tell Syafiq which model was used: "QR agent ran on Opus/Sonnet"
 11. Before touching any file in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
 12. QR agent model selection — pass `model` explicitly on every Agent call:
