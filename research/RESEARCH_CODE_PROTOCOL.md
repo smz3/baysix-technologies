@@ -37,8 +37,8 @@ Each rule exists because a real failure happened. No rule is hypothetical.
 
 ## After a Run Completes
 
-9. **Verify results make sense before logging to DB.** Sanity check: does K fall in a reasonable range? Does R² beat random? If not, debug before committing to `pipeline_events`.
-10. **Only one canonical run logged per idea per stage.** Clear stale/broken entries before re-running.
+9. **Verify results make sense before logging to DB.** Sanity check: does K fall in a reasonable range? Does R² beat random? If not, debug before committing to `step4_results`.
+10. **Multiple attempts are allowed.** Increment the `attempt` field in `step3_gates` — never overwrite a prior gate row. Append new rows to `step4_results` — never delete old ones.
 
 ---
 

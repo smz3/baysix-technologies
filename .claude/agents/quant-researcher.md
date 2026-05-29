@@ -143,7 +143,7 @@ Used to deep-read a specific paper. Your job is to **extract and translate** —
 
 **PDF fallback (orchestrator handles this, not the agent):** If the agent reports "PDF binary-unreadable" or "full text unavailable", the orchestrator (Claude) will use PyMuPDF locally to extract the text and re-run DISSECT with the extracted content passed directly in the brief. The agent does not need to attempt PDF extraction itself.
 
-Output structure for DISSECT:
+Output structure for DISSECT — follow this format exactly, character-for-character on headers:
 
 #### Paper
 - Title: "..."
@@ -152,32 +152,42 @@ Output structure for DISSECT:
 - Full text available: YES (HTML) | PARTIAL (abstract only) | NO
 
 #### Key Equations
-[§ X.X]  confidence: full-text | abstract | unavailable
+
+[§X.X Eq.N]  confidence: full-text | abstract | unavailable
 [equation or mathematical statement — direct quote or close paraphrase with variable definitions]
 
-[Repeat for each key equation. If unavailable, write "not reported."]
+[§X.X]  confidence: full-text | abstract | unavailable
+[equation or mathematical statement]
+
+[Repeat for each key equation. Every entry MUST have a [§X.X] anchor AND a confidence: tag. If unavailable, write "[§X.X] confidence: unavailable — not reported."]
 
 #### Empirical Findings
-[§ X.X / Table X]  confidence: full-text | abstract | unavailable
+
+[§X.X / Table X]  confidence: full-text | abstract | unavailable
 [specific numbers: datasets used, sample period, asset class, t-stats, Sharpe, effect sizes]
 
-[Repeat for each finding. If unavailable, write "not reported."]
+[Repeat for each finding. Every entry MUST have a [§X.X] or [Abstract] anchor AND a confidence: tag. Numbers only — no prose padding.]
 
 #### Limitations
-[§ X.X]  confidence: full-text | abstract | unavailable
+
+[§X.X]  confidence: full-text | abstract | unavailable
 [where the paper's approach breaks, caveats stated by the authors]
 
+[Repeat for each limitation. Every entry MUST have a [§X.X] anchor AND a confidence: tag. Never state a limitation without anchoring it to a specific section — if you cannot anchor it, do not include it.]
+
 #### Context Fit
-```
-Paper asset:              [what asset/data the paper used]
-Paper frequency:          [daily / intraday / tick / etc.]
-Target asset:             [our current target — e.g. XAUUSD daily 2016-2024 IS, or GC futures, etc.]
-Frequency match:          yes / no / partial
-Key deltas:               [specific differences — return distribution, vol level, kurtosis, liquidity]
-Direct applicability:     HIGH / MEDIUM / LOW
-Reason:                   [one sentence]
-Parameters to re-validate: [specific params that need recalibration for the target asset]
-```
+
+**Paper asset:** [what asset/data the paper used]
+**Paper frequency:** [daily / intraday / tick / etc.]
+**Target asset:** XAUUSD daily log-returns IS 2016-2024-05-02
+**Frequency match:** Yes / Partial / No
+**Key deltas:**
+1. [specific difference — return distribution, vol level, kurtosis, liquidity]
+2. [specific difference]
+[add more as needed]
+**Direct applicability:** HIGH / MEDIUM / LOW
+**Reason:** [one sentence]
+**Parameters to re-validate:** (a) [param] (b) [param] [add more as needed]
 
 #### Verdict
 [One paragraph: is this paper actionable for Baysix as-is, with translation, or needs replication first before trusting?]

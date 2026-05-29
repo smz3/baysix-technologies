@@ -1,9 +1,10 @@
 """
-Initialises research.db from scratch.
-Safe to re-run — CREATE TABLE/VIEW IF NOT EXISTS throughout.
-For first-time setup with data migration, run migrations 010 + 011 instead.
+Migration 010 — Create research.db
 
-Run: python research/code/db_init.py
+Single unified DB replacing ideas_log.db + research_log.db + agent_log.db.
+Safe to re-run — CREATE TABLE/VIEW IF NOT EXISTS throughout.
+
+Run: python research/migrations/010_create_research_db.py
 """
 
 import sqlite3
@@ -12,12 +13,13 @@ from pathlib import Path
 DB_PATH = Path(__file__).parents[1] / "db" / "research.db"
 
 
-def init():
+def run():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     cur = conn.cursor()
 
     cur.executescript("""
+        -- ── step1_ideas ─────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS step1_ideas (
             idea_id        TEXT PRIMARY KEY,
             name           TEXT NOT NULL,
@@ -33,6 +35,7 @@ def init():
             updated_at     DATETIME NOT NULL
         );
 
+        -- ── step2_papers ─────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS step2_papers (
             paper_id           INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id            TEXT NOT NULL REFERENCES step1_ideas(idea_id),
@@ -52,6 +55,7 @@ def init():
             dissected_at       DATETIME
         );
 
+        -- ── step3_gates ──────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS step3_gates (
             gate_id       INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id       TEXT NOT NULL REFERENCES step1_ideas(idea_id),
@@ -69,41 +73,41 @@ def init():
             UNIQUE(idea_id, gate_number, attempt)
         );
 
+        -- ── step4_results ────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS step4_results (
-            result_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            idea_id         TEXT NOT NULL REFERENCES step1_ideas(idea_id),
-            gate_number     INTEGER NOT NULL,
-            stage           TEXT NOT NULL
-                            CHECK(stage IN ('IS','walkforward','montecarlo','OOS')),
-            metric_key      TEXT NOT NULL,
-            metric_value    REAL NOT NULL,
-            cost_adjusted   INTEGER NOT NULL DEFAULT 0
-                            CHECK(cost_adjusted IN (0,1)),
-            period          TEXT CHECK(period IN ('per_trade','daily','annualised')),
-            n_obs           INTEGER,
-            n_trials        INTEGER,
+            result_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            idea_id        TEXT NOT NULL REFERENCES step1_ideas(idea_id),
+            gate_number    INTEGER NOT NULL,
+            stage          TEXT NOT NULL
+                           CHECK(stage IN ('IS','walkforward','montecarlo','OOS')),
+            metric_key     TEXT NOT NULL,
+            metric_value   REAL NOT NULL,
+            cost_adjusted  INTEGER NOT NULL DEFAULT 0
+                           CHECK(cost_adjusted IN (0,1)),
+            period         TEXT CHECK(period IN ('per_trade','daily','annualised')),
+            n_obs          INTEGER,
+            n_trials       INTEGER,
             trial_family_id TEXT,
-            instrument      TEXT NOT NULL DEFAULT 'XAUUSD',
-            data_start      DATE,
-            data_end        DATE,
-            parameters      TEXT,
-            git_sha         TEXT,
-            data_hash       TEXT,
-            seed            INTEGER,
-            code_path       TEXT,
-            notes           TEXT,
-            logged_at       DATETIME NOT NULL
+            instrument     TEXT NOT NULL DEFAULT 'XAUUSD',
+            data_start     DATE,
+            data_end       DATE,
+            parameters     TEXT,
+            git_sha        TEXT,
+            data_hash      TEXT,
+            seed           INTEGER,
+            code_path      TEXT,
+            notes          TEXT,
+            logged_at      DATETIME NOT NULL
         );
 
+        -- ── step5_agent_log ──────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS step5_agent_log (
             call_id        INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id        TEXT NOT NULL REFERENCES step1_ideas(idea_id),
             gate_number    INTEGER,
             gear           TEXT NOT NULL
                            CHECK(gear IN ('GENERATE','DISSECT','VALIDATE')),
-            model          TEXT CHECK(model IN ('sonnet','opus')),
-            source         TEXT NOT NULL DEFAULT 'agent'
-                           CHECK(source IN ('agent','human')),
+            model          TEXT NOT NULL CHECK(model IN ('sonnet','opus')),
             task_summary   TEXT,
             output_summary TEXT,
             paper_id       INTEGER REFERENCES step2_papers(paper_id),
@@ -111,6 +115,7 @@ def init():
             created_at     DATETIME NOT NULL
         );
 
+        -- ── VIEW: idea_lifecycle ─────────────────────────────────────────────────
         DROP VIEW IF EXISTS idea_lifecycle;
         CREATE VIEW idea_lifecycle AS
         SELECT
@@ -142,6 +147,7 @@ def init():
             GROUP BY idea_id
         ) g ON g.idea_id = i.idea_id;
 
+        -- ── VIEW: gate_pipeline ──────────────────────────────────────────────────
         DROP VIEW IF EXISTS gate_pipeline;
         CREATE VIEW gate_pipeline AS
         SELECT
@@ -159,6 +165,7 @@ def init():
           AND i.status NOT IN ('killed','graduated')
         ORDER BY days_since_activity DESC;
 
+        -- ── VIEW: papers_queue ───────────────────────────────────────────────────
         DROP VIEW IF EXISTS papers_queue;
         CREATE VIEW papers_queue AS
         SELECT
@@ -180,8 +187,10 @@ def init():
 
     conn.commit()
     conn.close()
-    print(f"research.db ready -> {DB_PATH}")
+    print(f"research.db created -> {DB_PATH}")
+    print("Tables: step1_ideas, step2_papers, step3_gates, step4_results, step5_agent_log")
+    print("Views:  idea_lifecycle, gate_pipeline, papers_queue")
 
 
 if __name__ == "__main__":
-    init()
+    run()
