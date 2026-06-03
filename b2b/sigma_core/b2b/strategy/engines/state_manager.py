@@ -1,13 +1,13 @@
 import pandas as pd
 from typing import List, Dict
-from ...models.structures import B2BZoneInfo, SignalDirection, FlowState
-from .fracture_engine import FractureEngine
+from sigma_core.b2b.models.structures import B2BZoneInfo, SignalDirection, FlowState
+from sigma_core.b2b.strategy.engines.fracture_engine import FractureEngine
 
 class StateManager:
     """
     Manages the persistent states and latches for each timeframe.
     """
-    
+
     def __init__(self, engines: Dict):
         self.fracture = engines.get('fracture', FractureEngine())
 
@@ -27,13 +27,13 @@ class StateManager:
                     outpost_id = self.fracture.get_latest_outpost(tf, state.origin_dir, current_price, curr.zone_created_time, zones)
                     state.outpost_id = outpost_id or ""
                     anchor = self.fracture.get_zone_by_id(outpost_id, zones) if outpost_id else curr
-                    
+
                     if outpost_id:
                         state.outpost_touch_time = anchor.L1_touch_time or pd.Timestamp.min
-                    
+
                     state.anchor_is_traded = anchor.L1_touched
                     self.fracture.update_magnet_info(tf, state, current_price, zones)
-                    
+
                     # Siege Logic
                     self._process_siege_state(state, zones)
 
@@ -41,7 +41,7 @@ class StateManager:
                     if state.magnet_L2_touched:
                         if self._promote_successor(tf, state, curr, zones, current_price):
                             return # Narrative Shifted
-                    
+
                     return
 
         # 2. Origin Search (When old origin is dead or none exists)
@@ -54,7 +54,7 @@ class StateManager:
             if magnet_zone and magnet_zone.L1_touched:
                 op_time = state.outpost_touch_time if state.outpost_touch_time is not None else pd.Timestamp.min
                 mg_time = magnet_zone.L1_touch_time if magnet_zone.L1_touch_time is not None else pd.Timestamp.min
-                
+
                 if op_time > mg_time:
                     state.is_siege_active = True
                 else:
@@ -84,20 +84,20 @@ class StateManager:
         best_origin = None
         for z in zones:
             if z.timeframe != tf or not z.is_valid: continue
-            
+
             is_broken = (z.direction == SignalDirection.BULLISH and current_price < z.L2_price) or \
                          (z.direction == SignalDirection.BEARISH and current_price > z.L2_price)
             if is_broken: continue
-            
+
             # In Media Res check
             is_ahead = (z.direction == SignalDirection.BULLISH and current_price > z.L1_price) or \
                         (z.direction == SignalDirection.BEARISH and current_price < z.L1_price)
-            
+
             if not z.L1_touched and not is_ahead: continue
-            
+
             if not best_origin or z.zone_created_time > best_origin.zone_created_time:
                 best_origin = z
-        
+
         if not best_origin:
             state.is_valid = False
             return
@@ -108,15 +108,15 @@ class StateManager:
         state.details_origin_L2 = best_origin.L2_price
         state.origin_touch_time = best_origin.L1_touch_time or best_origin.zone_created_time
         state.is_valid = True
-        
+
         # V6.7 Storyline Latch: Lock the memory
         state.latch_dir = best_origin.direction
-        
+
         # Initial Anchor Status
         outpost_id = self.fracture.get_latest_outpost(tf, state.origin_dir, current_price, best_origin.zone_created_time, zones)
         state.outpost_id = outpost_id or ""
         anchor = self.fracture.get_zone_by_id(outpost_id, zones) if outpost_id else best_origin
-        if outpost_id: 
+        if outpost_id:
             state.outpost_touch_time = anchor.L1_touch_time or pd.Timestamp.min
 
         state.anchor_is_traded = anchor.L1_touched

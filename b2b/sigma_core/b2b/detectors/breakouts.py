@@ -4,7 +4,7 @@ Port of RawBreakoutDetector.mqh → Python.
 Scans bars left-to-right, checks if each bar's close breaks any unbroken swing.
 """
 import pandas as pd
-from core.models.structures import (
+from sigma_core.b2b.models.structures import (
     SwingPointInfo, RawBreakoutInfo, SwingType,
     SignalDirection, DetectionConfig,
 )

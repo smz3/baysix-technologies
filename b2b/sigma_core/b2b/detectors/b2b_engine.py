@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import hashlib
 from datetime import datetime
-from core.models.structures import (
+from sigma_core.b2b.models.structures import (
     SwingPointInfo, RawBreakoutInfo, B2BZoneInfo,
     SwingType, SignalDirection, DetectionConfig, generate_zone_id
 )
@@ -182,13 +182,51 @@ def detect_b2b_zones(
         })
 
     # =========================================================================
-    # PASS 2: GENERATE B2B ZONE OBJECTS (NO GLOBAL SELECTION)
+    # PASS 2: SELECT WINNERS (Freshest Pattern per P5)
+    # Port of B2BDetector.mqh DetectB2B_5Pointer PASS 2: group candidates by the
+    # P5 anchor, keep only the newest (highest P1 bar_index) per anchor.
+    # =========================================================================
+    winners_by_p5 = {}
+    for c in candidates:
+        key = c['p5'].bar_index
+        best = winners_by_p5.get(key)
+        if best is None or c['p1'].bar_index > best['p1'].bar_index:
+            winners_by_p5[key] = c
+    # Oldest -> newest so earlier zones claim swings first (greedy dedup in PASS 3)
+    winners = sorted(winners_by_p5.values(), key=lambda c: c['p1'].bar_index)
+
+    # =========================================================================
+    # PASS 3: CREATE ZONES + DEDUP (IsSwingUsedInZones)
+    # Port of B2BDetector.mqh PASS 3: a swing already used by an existing
+    # same-direction zone cannot be reused (greedy, oldest zone wins).
     # =========================================================================
     zones = []
-    for c in candidates:
+
+    def _swing_used(direction, *pts):
+        for z in zones:
+            if z.direction != direction:
+                continue
+            zpts = (
+                (z.first_barrier_price, z.first_barrier_time),
+                (z.swing_between_price, z.swing_between_time),
+                (z.second_barrier_price, z.second_barrier_time),
+            )
+            for price, time in pts:
+                for zp, zt in zpts:
+                    if zt == time and abs(zp - price) < 1e-9:
+                        return True
+        return False
+
+    for c in winners:
         p1, p2, p3, p5 = c['p1'], c['p2'], c['p3'], c['p5']
         direction = c['direction']
         
+        # PASS 3 dedup: skip if any of P1/P2/P3/P5 is already used by a same-direction zone
+        if _swing_used(direction,
+                       (p1.price, p1.time), (p2.price, p2.time),
+                       (p3.price, p3.time), (p5.price, p5.time)):
+            continue
+
         # Calculate L2 (The Stop level)
         l2_price = max(p1.price, p3.price) if direction == SignalDirection.BEARISH else min(p1.price, p3.price)
         l2_time = p1.time if (direction == SignalDirection.BEARISH and p1.price >= p3.price) or \

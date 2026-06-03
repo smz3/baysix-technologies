@@ -4,7 +4,7 @@ Port of SwingPointDetector.mqh → Vectorized Python.
 Uses CLOSE prices (not high/low) — this is the SIGMA doctrinal rule.
 """
 import pandas as pd
-from core.models.structures import SwingPointInfo, SwingType, DetectionConfig
+from sigma_core.b2b.models.structures import SwingPointInfo, SwingType, DetectionConfig
 
 
 def detect_swings(df: pd.DataFrame, config: DetectionConfig = None) -> list[SwingPointInfo]:

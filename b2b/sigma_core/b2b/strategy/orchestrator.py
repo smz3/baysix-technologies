@@ -1,16 +1,16 @@
 import pandas as pd
 from typing import List, Dict, Optional
-from ..models.structures import B2BZoneInfo, SignalDirection, FlowState
-from .engines.fracture_engine import FractureEngine
-from .engines.state_manager import StateManager
-from .engines.efficiency_governor import EfficiencyGovernor
+from sigma_core.b2b.models.structures import B2BZoneInfo, SignalDirection, FlowState
+from sigma_core.b2b.strategy.engines.fracture_engine import FractureEngine
+from sigma_core.b2b.strategy.engines.state_manager import StateManager
+from sigma_core.b2b.strategy.engines.efficiency_governor import EfficiencyGovernor
 
 class StrategyOrchestrator:
     """
     The BRAIN of the SIGMA Strategy.
     V6.7: Inertial Flow (Structural Memory) + Modular Engines.
     """
-    
+
     def __init__(self, tf_state=None, symbol: str = "BTCUSDT"):
         self.tf_state = tf_state
         self.symbol = symbol
@@ -20,11 +20,11 @@ class StrategyOrchestrator:
         self.blacklisted_origins: Dict[str, set] = {
             tf: set() for tf in ["MN1", "W1", "D1", "H4", "H1", "M30"]
         }
-        
+
         # Engines
         self.fracture = FractureEngine()
         self.manager = StateManager({'fracture': self.fracture})
-        
+
     def blacklist_origin(self, origin_id: str, tf: str):
         if tf in self.blacklisted_origins and origin_id:
             self.blacklisted_origins[tf].add(origin_id)
@@ -33,18 +33,18 @@ class StrategyOrchestrator:
         for tf in self.states.keys():
             old_origin = self.states[tf].origin_id
             self.manager.update_timeframe_flow(tf, self.states[tf], tf_zones.get(tf, []), current_price)
-            
+
             # Phase 12B: Safety Interrupt - Reset cooldown on new structure idea
             if self.states[tf].origin_id != old_origin and self.states[tf].origin_id != "":
                 EfficiencyGovernor.reset_cooldown(self.symbol, tf, self.states[tf].origin_dir)
 
             # Update roadblocks using the global context
             self.states[tf].roadblock_id = self.fracture.is_inside_opposing_zone(
-                tf, self.states[tf].origin_dir, current_price, 
+                tf, self.states[tf].origin_dir, current_price,
                 [z for zones_list in tf_zones.values() for z in zones_list],
                 siege_magnet_id=self.states[tf].magnet_id if self.states[tf].is_siege_active else ""
             )
-            
+
         if current_time.minute % 30 == 0 and current_time.second == 0:
             self._print_heartbeat(current_time)
 
@@ -55,7 +55,7 @@ class StrategyOrchestrator:
         """
         if not is_fader and trap.direction != narrative.origin_dir: return False
         if is_fader and trap.direction == narrative.origin_dir: return False
-        
+
         # 1. Freshness Check
         if is_fader:
             freshness_baseline = narrative.magnet_touch_time
@@ -66,10 +66,10 @@ class StrategyOrchestrator:
                      freshness_baseline = narrative.outpost_touch_time
                 else:
                      return False # Untouched Outpost blocks traps
-        
+
         if trap.zone_created_time <= freshness_baseline:
             return False
-            
+
         # 2. Roadblock check
         # V6.7: In Liberated Flow (Inertial), we bypass roadblocks as we are "Bulldozing".
         if not is_flow_liberated and narrative.roadblock_id != "":
@@ -83,7 +83,7 @@ class StrategyOrchestrator:
             # D1 is the Primary Driver in V6.7
             if d1.latch_dir != SignalDirection.NONE and trap.direction != d1.latch_dir:
                 return False
-            
+
             # W1 Veto: Only blocks if we are NOT in Liberated Flow (Strict Sniper Mode)
             # In Liberated Flow (2022 Waterfall), we allow D1 to lead even if W1 is slow.
             if not is_flow_liberated:
@@ -105,7 +105,7 @@ class StrategyOrchestrator:
                          # If we are above the resistance (L2), we plowed through it.
                          if trap.L2_price > narrative.details_magnet_L2:
                              is_bulldozing = True
-                 
+
                  if not is_bulldozing:
                      return False
         else:
@@ -118,22 +118,23 @@ class StrategyOrchestrator:
                  if trap.L1_price <= narrative.details_origin_price + epsilon: is_origin_nested = True
              else:
                  if trap.L1_price >= narrative.details_origin_price - epsilon: is_origin_nested = True
-             
+
              if not is_origin_nested and narrative.outpost_id != "" and narrative.anchor_is_traded:
                  if trap.direction == SignalDirection.BULLISH:
                      if trap.L1_price <= narrative.details_outpost_price + epsilon: is_outpost_nested = True
                  else:
                      if trap.L1_price >= narrative.details_outpost_price - epsilon: is_outpost_nested = True
-             
+
              if not is_origin_nested and not is_outpost_nested:
                  return False
-            
+
         return True
 
-    def is_trade_allowed(self, signal_tf: str, direction: SignalDirection, zone: B2BZoneInfo, current_price: float, current_time: pd.Timestamp, probe_price: Optional[float] = None, trigger_type: str = "T1") -> tuple[bool, str, float, str]:
+    def is_trade_allowed(self, signal_tf: str, direction: SignalDirection, zone: B2BZoneInfo, current_price: float, current_time: pd.Timestamp, probe_price: Optional[float] = None, trigger_type: str = "T1") -> tuple:
         """
         V6.7 ASYMMETRIC GATEKEEPER.
         Uses Storyline Latches to provide structural memory and inertia.
+        Returns: (allowed: bool, reason: str, score: float, context_id: str)
         """
         eval_price = probe_price if probe_price is not None else current_price
 
@@ -149,7 +150,6 @@ class StrategyOrchestrator:
         # H4 Veto is currently deactivated to maximize CAGR (Restoring 10C Alpha).
         # See Logic_Vault_V6.md if re-activation is required.
 
-
         # [VAULTED]: 0.6 Pillar 2: Temporal Muter (Phase 12B/D/E)
         # Structural Memory muting is currently deactivated (Restoring 10C Alpha).
         # if not EfficiencyGovernor.is_temporally_clean(signal_tf, self.symbol, direction, current_time):
@@ -164,20 +164,20 @@ class StrategyOrchestrator:
         mn1 = self.states['MN1']
         w1 = self.states['W1']
         d1 = self.states['D1']
-        
+
         # 2. Identify the Narrative State
         # Flow Agreement: Is the signal moving with the "Upstream" storyline?
         is_mn1_confluent = (mn1.latch_dir == SignalDirection.NONE or direction == mn1.latch_dir)
         is_w1_confluent = (w1.latch_dir == SignalDirection.NONE or direction == w1.latch_dir)
         is_d1_confluent = (d1.latch_dir == SignalDirection.NONE or direction == d1.latch_dir)
-        
+
         # WE ARE IN FLOW if we match the D1 storyline (Primary Driver)
         # V6.7 FIX: W1 Latch is too slow to turn. D1 Latch leads the reversal.
         is_downstream_flow = is_d1_confluent
-        
+
         # If D1 is conflicted with W1 (Civil War), we still allow D1 if it has latched firmly.
         # Strict Consensus (Old Logic) blocked 2022 Shorts because W1 was late to flip.
-        
+
         # 3. GATE A: ANTI-TREND FADERS (Reversal Sieges)
         # These are HIGH FRICTION trades. Only allowed at major Magnets.
         if not is_downstream_flow:
@@ -188,11 +188,11 @@ class StrategyOrchestrator:
                     mag_fifty = ref.details_magnet_price + (ref.details_magnet_L2 - ref.details_magnet_price) * 0.5
                     core_high = max(ref.details_magnet_L2, mag_fifty)
                     core_low = min(ref.details_magnet_L2, mag_fifty)
-                    
+
                     if core_low <= eval_price <= core_high and direction != ref.origin_dir:
                         if self._validate_trap(zone, ref, signal_tf, is_fader=True):
                             return True, f"{tf_name} Magnet Fade (Storyline Reversal)", 0.0, ref.magnet_id
-            
+
             return False, "Blocked: Fighting the Storyline without a Fortress", 0.0, ""
 
         # 4. GATE B: INERTIAL FLOW (Continuation)
@@ -200,7 +200,7 @@ class StrategyOrchestrator:
         # We target the nearest HTF magnet for the current flow.
         target_tf = 'D1' if d1.is_valid and d1.origin_dir == direction else 'W1'
         narrative = self.states[target_tf]
-        
+
         if narrative.is_valid and narrative.origin_dir == direction:
              # Check for Siege Block (Don't join a crowded trade)
              if narrative.is_siege_active:
@@ -213,10 +213,10 @@ class StrategyOrchestrator:
                      elif narrative.origin_dir == SignalDirection.BULLISH: # Longing into Resistance
                          if zone.L2_price > narrative.details_magnet_L2:
                              is_bulldozing = True
-                 
+
                  if not is_bulldozing:
                      return False, f"Siege Active on {target_tf}", 0.0, ""
-             
+
              # INERTIAL FLOW LIBERATION: is_flow_liberated = True
              if self._validate_trap(zone, narrative, signal_tf, is_flow_liberated=True):
                  return True, f"{target_tf} Inertial Flow (Liberated)", 0.0, narrative.origin_id
@@ -231,7 +231,7 @@ class StrategyOrchestrator:
 
         return False, "No Strategy Alignment", 0.0, ""
 
-    def report_trade_failure(self, tf: str, direction: str | SignalDirection, current_time: pd.Timestamp):
+    def report_trade_failure(self, tf: str, direction, current_time: pd.Timestamp):
         """Exposes the failure reporting to the backtest engine."""
         dir_enum = direction if isinstance(direction, SignalDirection) else SignalDirection(direction)
         EfficiencyGovernor.report_trade_failure(self.symbol, tf, dir_enum, current_time)
@@ -239,7 +239,7 @@ class StrategyOrchestrator:
     def _print_heartbeat(self, current_time: pd.Timestamp):
         mn, w1, d1 = self.states['MN1'], self.states['W1'], self.states['D1']
         h4, h1, m3 = self.states['H4'], self.states['H1'], self.states['M30']
-        
+
         print(f"\n[{current_time}] === V6.7 ORCHESTRATOR HEARTBEAT ===")
         print(f"MN1 Tide: {mn.latch_dir.value} | Origin: #{mn.origin_id[:4]} -> Magnet: #{mn.magnet_id[:4]}")
         print(f"W1 Wind:  {w1.latch_dir.value} | Origin: #{w1.origin_id[:4]} -> Magnet: #{w1.magnet_id[:4]}")

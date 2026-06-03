@@ -5,7 +5,7 @@ Handles T1 (L1), T2 (50%), T3 (L2) touch tracking and structural invalidation.
 """
 import numpy as np
 import pandas as pd
-from core.models.structures import B2BZoneInfo, SignalDirection
+from sigma_core.b2b.models.structures import B2BZoneInfo, SignalDirection
 
 def update_active_zones(current_low: float, current_high: float, current_close: float, current_time: pd.Timestamp, active_zones: list[B2BZoneInfo]):
     """
