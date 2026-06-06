@@ -41,7 +41,8 @@ EOD_CUTOFF_HOUR = 21  # flat by 21:00 UTC, fixed (end of US session, no overnigh
 
 def _simulate_day(ts: np.ndarray, mid: np.ndarray,
                   day0: np.ndarray, n_minutes: int,
-                  spread_price: float = 0.0) -> dict | None:
+                  spread_price: float = 0.0,
+                  target_R: float | None = 2.0) -> dict | None:
     """
     ts:   int64 ns timestamps for ONE calendar day (sorted ascending)
     mid:  float mid prices aligned with ts
@@ -89,28 +90,32 @@ def _simulate_day(ts: np.ndarray, mid: np.ndarray,
     i_dn = int(np.argmax(dn)) if dn.any() else None
     if i_up is None and i_dn is None:
         return None
+    # target_R=None -> no fixed target: ride the 1R stop until EOD (let winners run).
+    has_target = target_R is not None
     if i_dn is None or (i_up is not None and i_up <= i_dn):
         direction, i_entry, entry = "long", i_up, or_hi          # filled at ask=or_hi
-        stop, target = or_lo, or_hi + 2 * range_w
+        stop = or_lo
+        target = or_hi + target_R * range_w if has_target else None
     else:
         direction, i_entry, entry = "short", i_dn, or_lo         # filled at bid=or_lo
-        stop, target = or_hi, or_lo - 2 * range_w
+        stop = or_hi
+        target = or_lo - target_R * range_w if has_target else None
 
     # walk ticks from entry; exits resolve on the opposite quote:
     #   long  -> sell side (BID=mid-half): target when mid>=target+half, stop when mid<=or_lo+half
     #   short -> buy side  (ASK=mid+half): target when mid<=target-half, stop when mid>=or_hi-half
     ets, emid = pts[i_entry:], pmid[i_entry:]
     if direction == "long":
-        hit_t = emid >= target + half
+        hit_t = (emid >= target + half) if has_target else np.zeros(len(emid), bool)
         hit_s = emid <= stop + half
     else:
-        hit_t = emid <= target - half
+        hit_t = (emid <= target - half) if has_target else np.zeros(len(emid), bool)
         hit_s = emid >= stop - half
     i_t = int(np.argmax(hit_t)) if hit_t.any() else None
     i_s = int(np.argmax(hit_s)) if hit_s.any() else None
 
     if i_t is not None and (i_s is None or i_t <= i_s):
-        outcome, R, i_exit = "target", 2.0, i_t        # payoff clean +2R
+        outcome, R, i_exit = "target", float(target_R), i_t   # payoff clean +target_R
     elif i_s is not None:
         outcome, R, i_exit = "stop", -1.0, i_s         # payoff clean -1R
     else:  # timeout -> flat at last tick before EOD, exit on the opposite quote
@@ -161,9 +166,13 @@ def run_backtest(year_months: list[tuple[int, int]] | None,
 
 def run_backtest_multi(year_months: list[tuple[int, int]] | None,
                        n_list: list[int], is_only: bool = True,
-                       spread_price: float = 0.0) -> dict[int, pd.DataFrame]:
+                       spread_price: float = 0.0,
+                       target_R: float | None = 2.0,
+                       oos_only: bool = False) -> dict[int, pd.DataFrame]:
     """Read each tick partition ONCE and simulate every N per day (avoids 3x I/O).
-    spread_price: JM round-trip spread in price units (0.0 = raw mid)."""
+    spread_price: JM round-trip spread in price units (0.0 = raw mid).
+    target_R: fixed target in R, or None for EOD-close (let winners run, 1R stop).
+    oos_only: keep only ts >= IS_END (the sealed 2024-05-02+ holdout)."""
     from tqdm import tqdm
 
     files = _tick_files(year_months)
@@ -175,7 +184,9 @@ def run_backtest_multi(year_months: list[tuple[int, int]] | None,
     trades = {N: [] for N in n_list}
     for f in tqdm(files, desc=f"backtest N={n_list}"):
         df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
-        if is_only:
+        if oos_only:
+            df = df[df["ts_utc"].values >= is_cut]
+        elif is_only:
             df = df[df["ts_utc"].values < is_cut]
         if df.empty:
             continue
@@ -186,7 +197,8 @@ def run_backtest_multi(year_months: list[tuple[int, int]] | None,
             m = day_key == d
             tsd, midd, day0 = ts_all[m], mid_all[m], int(d) * NS_D
             for N in n_list:
-                tr = _simulate_day(tsd, midd, day0, N, spread_price=spread_price)
+                tr = _simulate_day(tsd, midd, day0, N,
+                                   spread_price=spread_price, target_R=target_R)
                 if tr is not None:
                     tr["date"] = pd.Timestamp(day0).date()
                     trades[N].append(tr)
