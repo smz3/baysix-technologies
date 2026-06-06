@@ -56,7 +56,7 @@ Decoupled repos (Desktop-level, own git remotes):
 
 ## Rules
 
-1. No git push without user approval.
+1. Auto commit + push: at natural completion points, stage all work, commit with a real message, and push to master — no need to ask first (Syafiq standing authorization 2026-06-06). GUARDRAILS: (a) `.gitignore` is the safety net — secrets (.env/keys), data (parquet/csv/pkl), logs, and binaries/installers are all ignored; keep it airtight. (b) Still pause and ask if something sensitive or a large binary looks like it would slip through, or before any history rewrite/force-push.
 2. No destructive actions (rm -rf, reset --hard) without telling the user first.
 3. Never print API keys — read from `.env` only.
 4. Brevity — lead with the answer, cut the padding.

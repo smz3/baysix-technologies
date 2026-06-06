@@ -61,6 +61,21 @@ dist/
 build/
 *.egg-info/
 
+# Binaries / installers / native artifacts — never belong in the repo
+# (guardrail for auto-commit+push: keeps blind `add -A` from committing junk)
+*.exe
+*.msi
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.winmd
+*.dll
+*.so
+*.dylib
+*.iso
+*.bin
+
 # Logs
 *.log
 security_alerts.log
