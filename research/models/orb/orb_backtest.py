@@ -11,8 +11,21 @@ Trade definition (per Gate 1, step5 call_id=9/10):
   short : entry=or_low,  stop=or_high, target=or_low  - 2*range_w
   exit  : first of {stop, target} touched, else flat at EOD cutoff (no overnight).
 
-Costs are NOT applied here — Gate 3 tests the RAW edge (mid prices). TCM-001 +
-min-lot survival enter at Gate 5. London anchor = 08:00 UTC fixed (see orb_core).
+Spread is applied via `spread_price` (0.0 = raw mid, Gate 3). See _simulate_day
+for the model. London anchor = 08:00 UTC fixed (see orb_core).
+
+NOTARIZATION — spread-cost model change (2026-06-06)
+----------------------------------------------------
+ORIGINAL (gate5_cost.py, now superseded): treated JM spread as a flat payoff
+deduction, net_R = raw_R - spread/range_w. WRONG mechanism — it shrank the 2:1
+payoff, implying smaller wins and bigger losses.
+CORRECTED (here): on a B-book/swap-free account, spread does NOT debit on entry
+and does NOT change the 2:1 payoff on the levels (Syafiq, 2026-06-06). It is
+embedded in fills: buy-stop on ASK, target/stop on BID -> the barriers shift by
+half a spread in true (mid) terms, so the spread is a WIN-RATE drag, not a payoff
+cut. Same ~1-spread/round-trip magnitude, correct mechanism. Spread is the ONLY
+cost (swap-free + intraday EOD-flat = $0 swap; Pro = $0 commission; leverage
+irrelevant to edge). Synthetic bid/ask = Dukascopy mid +/- half the JM spread.
 """
 from __future__ import annotations
 
@@ -27,15 +40,28 @@ EOD_CUTOFF_HOUR = 21  # flat by 21:00 UTC, fixed (end of US session, no overnigh
 
 
 def _simulate_day(ts: np.ndarray, mid: np.ndarray,
-                  day0: np.ndarray, n_minutes: int) -> dict | None:
+                  day0: np.ndarray, n_minutes: int,
+                  spread_price: float = 0.0) -> dict | None:
     """
     ts:   int64 ns timestamps for ONE calendar day (sorted ascending)
     mid:  float mid prices aligned with ts
     day0: int64 ns of that day's 00:00 UTC
+    spread_price: JM round-trip spread in price units (0.0 = raw mid, Gate 3).
+
+    SPREAD MODEL (corrected 2026-06-06, step5 call_id below — see notarization note
+    in module header): spread is NOT a payoff deduction. The R:R payoff stays a
+    clean 2:1 on the levels; spread shows up as a lower WIN RATE because fills are
+    on bid/ask, not mid. A buy-stop fills on the ASK and the target/stop resolve on
+    the BID, so in true (mid) terms the target sits a half-spread FARTHER and the
+    stop a half-spread NEARER -> you hit the stop slightly more often. We synthesise
+    bid/ask from Dukascopy mid +/- half the JM spread (yaml: model on Dukascopy mid,
+    apply JM's spread, not Dukascopy's tight ECN spread).
+
     Returns a trade dict, or None if no valid setup.
     """
     NS_H = 3_600_000_000_000
     NS_M = 60_000_000_000
+    half = spread_price * 0.5     # ask = mid + half, bid = mid - half
     anchor = day0 + LONDON_ANCHOR_HOUR * NS_H
     win_end = anchor + n_minutes * NS_M
     eod = day0 + EOD_CUTOFF_HOUR * NS_H
@@ -55,40 +81,41 @@ def _simulate_day(ts: np.ndarray, mid: np.ndarray,
         return None
     pts, pmid = ts[post], mid[post]
 
-    # entry: first tick crossing either range level
-    up = pmid >= or_hi
-    dn = pmid <= or_lo
+    # entry: buy-stop fills on ASK (mid+half) reaching or_hi -> mid >= or_hi-half;
+    #        sell-stop fills on BID (mid-half) reaching or_lo -> mid <= or_lo+half.
+    up = pmid >= or_hi - half
+    dn = pmid <= or_lo + half
     i_up = int(np.argmax(up)) if up.any() else None
     i_dn = int(np.argmax(dn)) if dn.any() else None
     if i_up is None and i_dn is None:
         return None
     if i_dn is None or (i_up is not None and i_up <= i_dn):
-        direction, i_entry, entry = "long", i_up, or_hi
+        direction, i_entry, entry = "long", i_up, or_hi          # filled at ask=or_hi
         stop, target = or_lo, or_hi + 2 * range_w
     else:
-        direction, i_entry, entry = "short", i_dn, or_lo
+        direction, i_entry, entry = "short", i_dn, or_lo         # filled at bid=or_lo
         stop, target = or_hi, or_lo - 2 * range_w
 
-    # walk ticks from entry to resolve stop vs target first
+    # walk ticks from entry; exits resolve on the opposite quote:
+    #   long  -> sell side (BID=mid-half): target when mid>=target+half, stop when mid<=or_lo+half
+    #   short -> buy side  (ASK=mid+half): target when mid<=target-half, stop when mid>=or_hi-half
     ets, emid = pts[i_entry:], pmid[i_entry:]
     if direction == "long":
-        hit_t = emid >= target
-        hit_s = emid <= stop
+        hit_t = emid >= target + half
+        hit_s = emid <= stop + half
     else:
-        hit_t = emid <= target
-        hit_s = emid >= stop
+        hit_t = emid <= target - half
+        hit_s = emid >= stop - half
     i_t = int(np.argmax(hit_t)) if hit_t.any() else None
     i_s = int(np.argmax(hit_s)) if hit_s.any() else None
 
     if i_t is not None and (i_s is None or i_t <= i_s):
-        outcome, R, exit_px = "target", 2.0, target
-        i_exit = i_t
+        outcome, R, i_exit = "target", 2.0, i_t        # payoff clean +2R
     elif i_s is not None:
-        outcome, R, exit_px = "stop", -1.0, stop
-        i_exit = i_s
-    else:  # timeout -> flat at last available tick before EOD
-        exit_px = emid[-1]
-        R = ((exit_px - entry) if direction == "long" else (entry - exit_px)) / range_w
+        outcome, R, i_exit = "stop", -1.0, i_s         # payoff clean -1R
+    else:  # timeout -> flat at last tick before EOD, exit on the opposite quote
+        exit_fill = (emid[-1] - half) if direction == "long" else (emid[-1] + half)
+        R = ((exit_fill - entry) if direction == "long" else (entry - exit_fill)) / range_w
         outcome, i_exit = "eod", len(emid) - 1
 
     return {
@@ -133,8 +160,10 @@ def run_backtest(year_months: list[tuple[int, int]] | None,
 
 
 def run_backtest_multi(year_months: list[tuple[int, int]] | None,
-                       n_list: list[int], is_only: bool = True) -> dict[int, pd.DataFrame]:
-    """Read each tick partition ONCE and simulate every N per day (avoids 3x I/O)."""
+                       n_list: list[int], is_only: bool = True,
+                       spread_price: float = 0.0) -> dict[int, pd.DataFrame]:
+    """Read each tick partition ONCE and simulate every N per day (avoids 3x I/O).
+    spread_price: JM round-trip spread in price units (0.0 = raw mid)."""
     from tqdm import tqdm
 
     files = _tick_files(year_months)
@@ -157,7 +186,7 @@ def run_backtest_multi(year_months: list[tuple[int, int]] | None,
             m = day_key == d
             tsd, midd, day0 = ts_all[m], mid_all[m], int(d) * NS_D
             for N in n_list:
-                tr = _simulate_day(tsd, midd, day0, N)
+                tr = _simulate_day(tsd, midd, day0, N, spread_price=spread_price)
                 if tr is not None:
                     tr["date"] = pd.Timestamp(day0).date()
                     trades[N].append(tr)
