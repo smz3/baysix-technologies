@@ -2,6 +2,9 @@
 Pipeline interface for research.db.
 All writes go through here — no raw SQL elsewhere.
 
+Idea functions:
+  add_idea()          — insert a new idea (status=ideation)
+
 Gate functions:
   open_gate()         — create a gate row (status=open)
   pass_gate()         — mark gate passed
@@ -44,6 +47,29 @@ def _conn():
 
 def _now() -> str:
     return datetime.now(MYT).strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ── Idea functions ─────────────────────────────────────────────────────────────
+
+def add_idea(
+    idea_id: str,
+    name: str,
+    description: str,
+    category: str,
+    parent_idea_id: str | None = None,
+) -> str:
+    """Insert a new idea into step1_ideas at status='ideation'. Returns idea_id."""
+    now = _now()
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO step1_ideas
+                (idea_id, name, description, category, parent_idea_id,
+                 status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'ideation', ?, ?)
+        """, (idea_id, name, description, category, parent_idea_id, now, now))
+        conn.commit()
+    print(f"[pipeline] idea added: {idea_id} ({category})")
+    return idea_id
 
 
 # ── Gate functions ─────────────────────────────────────────────────────────────

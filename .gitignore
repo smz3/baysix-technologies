@@ -85,3 +85,6 @@ Sandbox/
 .claude/scheduled_tasks.lock
 .claude/agent-memory/
 *.bak
+
+# ORB backtest run logs
+research/models/orb/_*.log
