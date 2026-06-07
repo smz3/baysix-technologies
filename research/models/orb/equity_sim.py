@@ -106,3 +106,93 @@ def simulate_equity(trades: pd.DataFrame, start: float = 50.0,
         "risk_cap_pct": risk_cap_pct,
     }
     return {"curve": curve_df, "summary": summary}
+
+
+def daily_returns(curve: pd.DataFrame, start: float) -> pd.Series:
+    """Per-trade-day fractional returns from the equity curve (for quantstats)."""
+    eq = curve[curve["action"] != "skip"].copy()
+    eq["date"] = pd.to_datetime(eq["date"])
+    eq = eq.set_index("date")["equity"]
+    prev = eq.shift(1)
+    prev.iloc[0] = start
+    return (eq / prev - 1.0).rename("returns")
+
+
+def load_oos_trades(n_minutes: int = 5, target_R: float = 3.0) -> pd.DataFrame:
+    """Run the frozen ORB config on the sealed OOS slice -> trade DataFrame."""
+    from research.models.orb.orb_backtest import run_backtest_multi
+    months = [(y, m) for y in range(2024, 2027) for m in range(1, 13) if (y, m) >= (2024, 5)]
+    runs = run_backtest_multi(months, n_list=[n_minutes], is_only=False,
+                              spread_price=2.0 * 0.10, target_R=target_R, oos_only=True)
+    return runs[n_minutes]
+
+
+def sweep_caps(trades: pd.DataFrame, caps=(5.0, 10.0, 15.0, 20.0, None),
+               start: float = 50.0) -> pd.DataFrame:
+    """Run the sim across survival-cap settings; one summary row per cap."""
+    rows = []
+    for cap in caps:
+        s = simulate_equity(trades, start=start, risk_cap_pct=cap)["summary"]
+        rows.append(s)
+    return pd.DataFrame(rows)
+
+
+def write_outputs(curve: pd.DataFrame, start: float, out_dir: Path, tag: str) -> None:
+    """quantstats tearsheet (HTML) + custom plotly equity/drawdown curve."""
+    import plotly.graph_objects as go
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rets = daily_returns(curve, start)
+
+    try:
+        import quantstats as qs
+        qs.reports.html(rets, output=str(out_dir / f"orb001_equity_{tag}_tearsheet.html"),
+                        title=f"ORB-001 $50 survival — {tag}")
+    except Exception as e:  # quantstats can be brittle on tiny/edge series
+        print(f"[warn] quantstats tearsheet skipped: {e}")
+
+    eq = curve[curve["action"] != "skip"].copy()
+    eq["date"] = pd.to_datetime(eq["date"])
+    peak = eq["equity"].cummax()
+    dd = (eq["equity"] - peak) / peak * 100.0
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=eq["date"], y=eq["equity"], name="Equity ($)", yaxis="y1"))
+    fig.add_trace(go.Scatter(x=eq["date"], y=dd, name="Drawdown (%)", yaxis="y2",
+                             line=dict(dash="dot")))
+    fig.update_layout(
+        title=f"ORB-001 $50 equity & drawdown — {tag}",
+        yaxis=dict(title="Equity ($)"),
+        yaxis2=dict(title="Drawdown (%)", overlaying="y", side="right"),
+    )
+    fig.write_html(str(out_dir / f"orb001_equity_{tag}_curve.html"))
+
+
+def main() -> None:
+    out_dir = Path(__file__).resolve().parents[3] / "research" / "outputs"
+    print("=" * 84)
+    print("ORB-001 $50 EQUITY SIMULATOR — OOS survival (min-lot, Mode A)")
+    print("=" * 84)
+    trades = load_oos_trades()
+    print(f"OOS trades: {len(trades)}  ({trades['date'].min()} -> {trades['date'].max()})\n")
+
+    sweep = sweep_caps(trades)
+    cols = ["risk_cap_pct", "terminal_equity", "return_pct", "max_drawdown_pct",
+            "worst_losing_streak", "n_taken", "n_skipped", "blew_up"]
+    print(sweep[cols].to_string(index=False, float_format=lambda x: f"{x:,.2f}"))
+
+    # write outputs for the no-cap baseline + best surviving cap
+    base = simulate_equity(trades, start=50.0, risk_cap_pct=None)
+    write_outputs(base["curve"], 50.0, out_dir, tag="nocap")
+    survivors = sweep[~sweep["blew_up"]].sort_values("terminal_equity", ascending=False)
+    if len(survivors):
+        best_cap = survivors.iloc[0]["risk_cap_pct"]
+        best = simulate_equity(trades, start=50.0, risk_cap_pct=best_cap)
+        write_outputs(best["curve"], 50.0, out_dir, tag=f"cap{best_cap:g}")
+        print(f"\nBest surviving cap: {best_cap}%  -> terminal ${best['summary']['terminal_equity']:,.2f}")
+    else:
+        print("\nNo cap setting survived — $50 cannot trade this edge at min-lot.")
+    print(f"\noutputs -> {out_dir}")
+
+
+if __name__ == "__main__":
+    main()

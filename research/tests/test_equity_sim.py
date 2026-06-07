@@ -54,3 +54,12 @@ def test_survival_filter_skips_oversized_risk():
     assert out["summary"]["n_taken"] == 0
     assert out["summary"]["n_skipped"] == 1
     assert out["summary"]["terminal_equity"] == pytest.approx(50.0)
+
+
+def test_daily_returns_from_curve():
+    df = _df([(3.0, 1.0, 2000.0, "2024-05-02"), (-1.0, 1.0, 2000.0, "2024-05-03")])
+    out = es.simulate_equity(df, start=50.0)
+    rets = es.daily_returns(out["curve"], start=50.0)
+    # day1: 50->53 (+6%), day2: 53->52 (-1.886%)
+    assert rets.iloc[0] == pytest.approx(0.06, abs=1e-4)
+    assert rets.iloc[1] == pytest.approx(-1.0 / 53.0, abs=1e-4)
