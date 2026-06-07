@@ -167,7 +167,7 @@ def plot(close: pd.Series, labels: pd.Series):
         title="XAUUSD D1 — 5%/20-day Rule-Based Markov States (IS)",
         xaxis_title="Date", yaxis_title="Price (USD)",
         template="plotly_dark", height=600)
-    out = "research/outputs/hmm_gate2_markov_baseline.html"
+    out = "research/outputs/hmm/hmm_gate2_markov_baseline.html"
     fig.write_html(out)
     print(f"\nChart saved: {out}")
 

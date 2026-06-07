@@ -225,7 +225,7 @@ def plot(rows):
     fig.update_layout(title="HMM-001 Gate 4 — Lookback window sweep (out-of-fold)",
                       xaxis_title="Lookback window (days)", yaxis_title="metric",
                       template="plotly_dark", height=520)
-    out = "research/outputs/hmm_gate4_window_sweep.html"
+    out = "research/outputs/hmm/hmm_gate4_window_sweep.html"
     fig.write_html(out)
     print(f"\n  Chart saved: {out}")
 

@@ -61,7 +61,7 @@ def plot(close, labels, thr_bear, thr_bull):
         title=f"HMM-001 Gate 4 — HMM-derived asymmetric regimes "
               f"(bear {thr_bear:+.1%}, bull {thr_bull:+.1%})",
         xaxis_title="Date", yaxis_title="Price (USD)", template="plotly_dark", height=600)
-    out = "research/outputs/hmm_gate4_relabel.html"
+    out = "research/outputs/hmm/hmm_gate4_relabel.html"
     fig.write_html(out)
     print(f"\nChart saved: {out}")
 

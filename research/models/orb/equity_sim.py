@@ -168,7 +168,7 @@ def write_outputs(curve: pd.DataFrame, start: float, out_dir: Path, tag: str) ->
 
 
 def main() -> None:
-    out_dir = Path(__file__).resolve().parents[3] / "research" / "outputs"
+    out_dir = Path(__file__).resolve().parents[3] / "research" / "outputs" / "orb"
     print("=" * 84)
     print("ORB-001 $50 EQUITY SIMULATOR — OOS survival (min-lot, Mode A)")
     print("=" * 84)

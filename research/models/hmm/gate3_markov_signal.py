@@ -106,7 +106,7 @@ def plot(df: pd.DataFrame, bh: np.ndarray):
     fig.update_layout(title="HMM-001 Gate 3 — 5%/20d Markov Signal, Walk-Forward (IS)",
                       xaxis_title="Date", yaxis_title="Equity (×)",
                       template="plotly_dark", height=600)
-    out = "research/outputs/hmm_gate3_walkforward.html"
+    out = "research/outputs/hmm/hmm_gate3_walkforward.html"
     fig.write_html(out)
     print(f"\nChart saved: {out}")
 

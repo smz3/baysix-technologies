@@ -201,7 +201,7 @@ def plot(close, alpha, state_names):
     fig.update_layout(title="HMM-001 Gate 4 — Gaussian HMM K=3, Filtered Regimes (IS)",
                       xaxis_title="Date", yaxis_title="Price (USD)",
                       template="plotly_dark", height=600)
-    out = "research/outputs/hmm_gate4_regimes.html"
+    out = "research/outputs/hmm/hmm_gate4_regimes.html"
     fig.write_html(out)
     print(f"\nChart saved: {out}")
 

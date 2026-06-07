@@ -288,7 +288,7 @@ def plot(close, idx, cum20, results):
     fig.update_layout(title="HMM-001 Gate 4 — Regime-change forecast reliability (test)",
                       xaxis_title="Predicted P(change)", yaxis_title="Observed frequency",
                       template="plotly_dark", height=550)
-    out = "research/outputs/hmm_gate4_reliability.html"
+    out = "research/outputs/hmm/hmm_gate4_reliability.html"
     fig.write_html(out)
     print(f"Chart saved: {out}")
 
