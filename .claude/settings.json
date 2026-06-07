@@ -20,7 +20,6 @@
     "ask": [
       "Bash(rm *)",
       "Bash(rmdir *)",
-      "Bash(git push*)",
       "Bash(git reset --hard*)",
       "Bash(git merge*)"
     ]
