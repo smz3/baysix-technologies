@@ -37,6 +37,12 @@ Memory/consolidated/
 memory.db
 *.sqlite3
 
+# Dead legacy research DBs (superseded by research.db via migrations 010/011).
+# Migration 011_migrate_data.py re-creates these 0-byte husks if run/imported — ignore so they never reappear in git.
+research/db/ideas_log.db
+research/db/research_log.db
+research/db/agent_log.db
+
 # Stack runtime
 .gstack/
 
