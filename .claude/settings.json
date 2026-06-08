@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '=== BAYSIX SESSION START ===' && echo '' && echo '--- Strategy State ---' && cat baysix-engine/strategies/DASHBOARD.md 2>/dev/null || echo '(no DASHBOARD.md yet)' && echo '' && echo '--- Risk Parameters (Deployment Profiles) ---' && cat baysix-engine/research/profiles/risk_parameters.md 2>/dev/null || echo '(no risk_parameters.md yet)' && echo '' && echo '--- Research Queue ---' && cat baysix-engine/research/research_queue.md 2>/dev/null || echo '(no research_queue.md yet)'",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/session_brief.py\"",
             "timeout": 5000,
             "once": true
           },
