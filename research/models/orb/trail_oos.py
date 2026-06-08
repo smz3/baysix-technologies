@@ -45,7 +45,7 @@ _OUT         = REPO / "research" / "outputs" / "orb" / "trail_oos"
 # Per-day simulation — verbatim from structures.py _exit_R (arm=trail_1R)
 # ---------------------------------------------------------------------------
 
-def _simulate_day(ts, mid, day0, slip_extra=0.0):
+def _simulate_day(ts, mid, day0, slip_extra=0.0, gap_fill=False):
     """
     Simulate one day, return (base_trade, trail_trade) or (None, None).
 
@@ -53,6 +53,12 @@ def _simulate_day(ts, mid, day0, slip_extra=0.0):
       0.0 = structures.py verbatim (exit at bid/ask, continuous trail).
       k   = exit_fill uses (1+k)*half instead of half, modelling gap/slippage.
     base_3R resolves at clean level fills (+3R/-1R) so slippage is inapplicable.
+
+    gap_fill: if True, book the trail exit at the NEXT observed tick after the
+      trail level is breached (i_x+1), not at the trigger tick itself. Models the
+      real-money case where a stop order is sent on observing the breach and fills
+      at the next available price (latency + price gapping THROUGH the level).
+      This is the task-12 fill-realism guard for the trail exit specifically.
     """
     half   = SPREAD * 0.5
     anchor = day0 + LONDON_ANCHOR_HOUR * NS_H
@@ -114,14 +120,18 @@ def _simulate_day(ts, mid, day0, slip_extra=0.0):
     peak_g = np.maximum.accumulate(g)
     rel    = g <= peak_g - rw + half
     i_x    = first(rel)
-    R_trail = float(ef_adj_trail[i_x]) if i_x is not None else float(ef_adj_trail[-1])
+    if i_x is not None:
+        i_fill  = min(i_x + 1, len(ef_adj_trail) - 1) if gap_fill else i_x
+        R_trail = float(ef_adj_trail[i_fill])
+    else:
+        R_trail = float(ef_adj_trail[-1])
 
     direction = "long" if pdir > 0 else "short"
     meta = {"direction": direction, "range_w": rw, "entry_px": e}
     return ({**meta, "R": R_base}, {**meta, "R": R_trail})
 
 
-def _run_slice(files, is_slice, oos_slice, slip_extra=0.0, desc=""):
+def _run_slice(files, is_slice, oos_slice, slip_extra=0.0, gap_fill=False, desc=""):
     is_cut = np.datetime64(IS_END_TS)
     base_rows, trail_rows = [], []
     for f in tqdm(files, desc=desc or "scan"):
@@ -137,7 +147,7 @@ def _run_slice(files, is_slice, oos_slice, slip_extra=0.0, desc=""):
         day_key = ts_all // NS_D
         for d in np.unique(day_key):
             mk  = day_key == d
-            b, t = _simulate_day(ts_all[mk], mid_all[mk], int(d) * NS_D, slip_extra)
+            b, t = _simulate_day(ts_all[mk], mid_all[mk], int(d) * NS_D, slip_extra, gap_fill)
             date = pd.Timestamp(int(d) * NS_D).date()
             if b is not None:
                 b["date"] = date; base_rows.append(b)
@@ -362,6 +372,19 @@ def main():
     print(f"  => {pct_s:.0f}% of trail increment survives worst-case fill")
     print("  base_3R resolves at level fills -- comparison is conservative.")
 
+    # 3b GAP-THROUGH fill test (task-12 guard): book trail exit at NEXT tick
+    print("\n[3b/5] Gap-through fill test (trail exit at next tick after breach) ...")
+    _, gap_trail = _run_slice(
+        files_oos, is_slice=False, oos_slice=True,
+        slip_extra=0.0, gap_fill=True, desc="OOS gap-fill")
+    gap_st = _stats(gap_trail, "OOS trail_1R gap-fill")
+    er_g = gap_st["E_R"]; t_g = gap_st["t_stat"]; w_g = gap_st["win_rate"]; dp_g = gap_st["dollar_per_trade"]
+    inc_gap = gap_st["E_R"] - oos_base_st["E_R"]
+    pct_gap = inc_gap / inc_0 * 100.0 if inc_0 != 0 else float("nan")
+    print(f"  gap-fill : E[R] {er_g:+.4f}  t {t_g:+.2f}  win {w_g:.1%}  dp {dp_g:+.4f}")
+    print(f"  ideal-fill increment: {inc_0:+.4f}R   gap-fill increment: {inc_gap:+.4f}R")
+    print(f"  => {pct_gap:.0f}% of trail increment survives realistic next-tick fill")
+
     # 4 Regime split
     print("\n[4/5] Regime split (200d+50d SMA, IS+OOS) ...")
     print("  Building daily close (~30s) ...")
@@ -432,6 +455,8 @@ def main():
         "slip_scenarios":  slip_stats,
         "trail_inc_slip0": inc_0,  "trail_inc_worst": inc_w,
         "pct_survived":    pct_s,
+        "OOS_trail_gapfill": gap_st,
+        "trail_inc_gapfill": inc_gap, "pct_survived_gapfill": pct_gap,
         "regime":          all_regime_rows,
         "mc":              mc,
         "trend_beta_increment": tb,
@@ -444,6 +469,7 @@ def main():
     print(f"  OOS trail_1R  : E[R]={er_ot:+.4f}  t={t_ot:+.2f}  win={w_ot:.1%}  n={n_ot}")
     ws_e = slip_stats[-1]["E_R"]; ws_t = slip_stats[-1]["t_stat"]
     print(f"  Worst-slip 2x : E[R]={ws_e:+.4f}  t={ws_t:+.2f}  ({pct_s:.0f}% of increment survived)")
+    print(f"  Gap-fill      : E[R]={er_g:+.4f}  t={t_g:+.2f}  ({pct_gap:.0f}% of increment survived)")
     print(f"  Trend-beta on trail increment: {tb}  (IS 200d up={is_up_d:+.4f} dn={is_dn_d:+.4f})")
     print(f"  Trail MC (IS-derated) median DD={dmd:.1f}%  vs base frozen 33%")
     print(f"  Outputs -> {_OUT}")

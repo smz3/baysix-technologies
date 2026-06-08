@@ -80,6 +80,7 @@ Decoupled repos (Desktop-level, own git remotes):
 16. **Pre-QR-agent check** — Before briefing any QR agent, query `step1_ideas` and `step5_agent_log` for that `idea_id` (targeted columns only — see rule 14). Never re-surface already-resolved decisions or repeat logged work.
 17. **Long-running commands → new terminal** — Any command taking >10s (model fits, data loads, migrations) must be launched in a new PowerShell window via `Start-Process`. Never `run_in_background`. Syafiq needs live output.
 18. **Log human architecture decisions** — Key human-Claude architecture/methodology decisions must be logged immediately via `agent_log.log_human_decision(idea_id, gate_number, task_summary, output_summary)`. This is the `generate_calls` replacement. Not just QR agent calls — human decisions too.
+19. **Always end with a Dumb Summary** — Close every substantive reply with a `## 🧠 Dumb Summary` section: 2–4 sentences in plain English, zero jargon (no R-multiples, t-stats, regime/trend-beta, etc.), explaining what we found/did and what it means like you're telling a smart friend who doesn't trade. The technical answer stays on top; the dumb summary is the floor. Set 2026-06-08.
 
 ---
 

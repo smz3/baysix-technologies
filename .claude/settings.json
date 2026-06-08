@@ -11,7 +11,8 @@
       "Agent(*)",
       "TodoWrite",
       "Bash(*)",
-      "mcp__*"
+      "mcp__*",
+      "Bash(powershell.exe -Command:*)"
     ],
     "deny": [
       "Bash(curl * api.binance.com/api/v3/order*)",
