@@ -237,16 +237,24 @@ def _walk_modea(R, rw, entry, start, cap):
     return eq, max_dd * 100.0, blew
 
 
-def run_trail_mc(trail_rows, n_paths=N_PATHS, seed=SEED, start=START, cap=CAP_PCT):
+def run_trail_mc(trail_rows, is_trail_R=None, n_paths=N_PATHS, seed=SEED, start=START, cap=CAP_PCT):
     """
-    Bootstrap MC on trail_1R OOS R-distribution.
+    Bootstrap MC on the trail_1R R-distribution. Three scenarios bracket forward DD:
 
-    Trail exits are continuous (not binary +3R/-1R), so we cannot flip discrete
-    winners as equity_sim_honest does. Instead we bootstrap-resample the OOS
-    trade sequence and run two scenarios:
-      realized : use realized OOS E[R] (already < IS because IS was the design period)
-      derated  : additive shift so E[R] = IS_TRAIL_REF (+0.7910) — the conservative bound
-    Sampling preserves the range_w / entry_px joint distribution.
+      realized      : OOS R as-is (E[R]=+1.73). ROSY upper bound — assumes the
+                      inflated 2024-26 trend regime repeats. DD too low.
+      derated_floor : OOS R additively shifted to E[R]=+0.79 (IS edge), but each
+                      loss FLOORED at -1R (the trail's structural stop). Fixes the
+                      old harsh derate that manufactured impossible <-1R losses.
+      forward_isedge: *** CENTRAL ESTIMATE *** sizing (range_w/entry) bootstrapped
+                      from OOS trades = current ~$3300 price regime / $50 sizing,
+                      but each trade's R drawn from the IS trail distribution =
+                      conservative +0.79 edge with its REAL shape and natural -1R
+                      floor. No artificial shifting. Decouples 'what edge' (IS,
+                      conservative) from 'what sizing' (OOS, current prices).
+                      Caveat: R drawn independently of range_w (weak correlation).
+
+    All preserve the Mode-A min-lot / 5%-cap walk.
     """
     df    = pd.DataFrame(trail_rows).sort_values("date").reset_index(drop=True)
     R0    = df["R"].to_numpy(dtype=float)
@@ -255,18 +263,23 @@ def run_trail_mc(trail_rows, n_paths=N_PATHS, seed=SEED, start=START, cap=CAP_PC
     n     = len(R0)
     realized_er = float(R0.mean())
     shift       = realized_er - IS_TRAIL_REF
-    R0_derated  = R0 - shift
+    R0_derated  = np.maximum(R0 - shift, -1.0)        # FLOOR at structural -1R stop
     print(f"  n={n}  realized OOS E[R]={realized_er:+.4f}  IS ref={IS_TRAIL_REF:+.4f}  shift={shift:+.4f}")
+    print(f"  derated_floor E[R]={float(R0_derated.mean()):+.4f} (floored at -1R)")
+    if is_trail_R is not None:
+        is_pool = np.asarray(is_trail_R, dtype=float)
+        print(f"  IS trail pool: n={len(is_pool)}  E[R]={float(is_pool.mean()):+.4f}")
     print(f"  paths={n_paths}  cap={cap}%  start=${start:.0f}")
 
     child = np.random.SeedSequence(seed).spawn(n_paths)
 
-    def _run(R_src, label):
+    def _run(R_src, label, R_pool=None):
         terms, dds, blows = [], [], []
         for i in tqdm(range(n_paths), desc=label, leave=False):
             rng_i = np.random.default_rng(child[i])
             idx   = rng_i.choice(n, size=n, replace=True)
-            term, dd, blew = _walk_modea(R_src[idx], rw0[idx], ent0[idx], start, cap)
+            R_used = rng_i.choice(R_pool, size=n, replace=True) if R_pool is not None else R_src[idx]
+            term, dd, blew = _walk_modea(R_used, rw0[idx], ent0[idx], start, cap)
             terms.append(term); dds.append(dd); blows.append(blew)
         T, D, B = np.array(terms), np.array(dds), np.array(blows)
         return {"label":          label,
@@ -278,12 +291,15 @@ def run_trail_mc(trail_rows, n_paths=N_PATHS, seed=SEED, start=START, cap=CAP_PC
                 "p90_dd":          float(np.percentile(D, 90)),
                 "p_blowup":        float(np.mean(B)) * 100.0}
 
-    return {"n_trades":         n,
-            "realized_OOS_ER": realized_er,
-            "IS_trail_ref_ER": IS_TRAIL_REF,
-            "shift":           shift,
-            "realized":        _run(R0,        "MC realized"),
-            "derated":         _run(R0_derated, "MC IS-derated")}
+    out = {"n_trades":         n,
+           "realized_OOS_ER": realized_er,
+           "IS_trail_ref_ER": IS_TRAIL_REF,
+           "shift":           shift,
+           "realized":        _run(R0,         "MC realized"),
+           "derated_floor":   _run(R0_derated, "MC derated-floor")}
+    if is_trail_R is not None:
+        out["forward_isedge"] = _run(None, "MC forward IS-edge", R_pool=is_pool)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -427,22 +443,20 @@ def main():
     print(f"  IS 200d increment: up={is_up_d:+.4f}  down={is_dn_d:+.4f}")
     print(f"  Trend-beta on trail INCREMENT (up>+0.05 AND down<-0.05): {tb}")
 
-    # 5 MC
-    print("\n[5/5] Survival/DD MC (OOS trail_1R, Mode-A 5% cap) ...")
-    mc = run_trail_mc(oos_trail_rows)
-    rea = mc["realized"]; der = mc["derated"]
+    # 5 MC — three scenarios bracket forward DD; forward_isedge is the central estimate
+    print("\n[5/5] Survival/DD MC (Mode-A 5% cap, three scenarios) ...")
+    is_trail_R = [r["R"] for r in is_trail_rows]
+    mc = run_trail_mc(oos_trail_rows, is_trail_R=is_trail_R)
     rmc = mc["realized_OOS_ER"]
-    rmt = rea["median_terminal"]; rp5 = rea["p5_terminal"]; rp9 = rea["p90_terminal"]
-    rmd = rea["median_dd"]; rpd = rea["p90_dd"]; rbl = rea["p_blowup"]
-    dmt = der["median_terminal"]; dp5 = der["p5_terminal"]; dp9 = der["p90_terminal"]
-    dmd = der["median_dd"]; dpd = der["p90_dd"]; dbl = der["p_blowup"]
-    print(f"\nRealized OOS E[R]={rmc:+.4f}:")
-    print(f"    med terminal ${rmt:>8,.2f}  p5 ${rp5:>7,.2f}  p90 ${rp9:>8,.2f}")
-    print(f"    median DD {rmd:>5.1f}%  p90 DD {rpd:>5.1f}%  ruin {rbl:.1f}%")
-    print(f"\nIS-derated (+0.7910R, conservative):")
-    print(f"    med terminal ${dmt:>8,.2f}  p5 ${dp5:>7,.2f}  p90 ${dp9:>8,.2f}")
-    print(f"    median DD {dmd:>5.1f}%  p90 DD {dpd:>5.1f}%  ruin {dbl:.1f}%")
-    print("\nBase_3R frozen ref: median DD~33%  ruin~0%  (dd_sizing_study)")
+    def _show(d, header):
+        print(f"\n{header}:")
+        print(f"    med terminal ${d['median_terminal']:>8,.2f}  p5 ${d['p5_terminal']:>7,.2f}  p90 ${d['p90_terminal']:>8,.2f}")
+        print(f"    median DD {d['median_dd']:>5.1f}%  p90 DD {d['p90_dd']:>5.1f}%  ruin {d['p_blowup']:.1f}%")
+    _show(mc["realized"],       f"Realized OOS E[R]={rmc:+.4f} (ROSY upper bound)")
+    _show(mc["derated_floor"],  "Derated-to-IS-edge, losses floored at -1R (conservative)")
+    fwd = mc["forward_isedge"]
+    _show(fwd,                  ">>> FORWARD IS-edge + current-price sizing (CENTRAL ESTIMATE)")
+    print("\nBase_3R frozen ref: median DD~6%  p90 DD~33%  ruin~0%  (dd_sizing_study)")
 
     # Outputs
     pd.DataFrame([is_base_st, is_trail_st, oos_base_st, oos_trail_st]
@@ -471,7 +485,7 @@ def main():
     print(f"  Worst-slip 2x : E[R]={ws_e:+.4f}  t={ws_t:+.2f}  ({pct_s:.0f}% of increment survived)")
     print(f"  Gap-fill      : E[R]={er_g:+.4f}  t={t_g:+.2f}  ({pct_gap:.0f}% of increment survived)")
     print(f"  Trend-beta on trail increment: {tb}  (IS 200d up={is_up_d:+.4f} dn={is_dn_d:+.4f})")
-    print(f"  Trail MC (IS-derated) median DD={dmd:.1f}%  vs base frozen 33%")
+    print(f"  Trail MC FORWARD (central): median DD={fwd['median_dd']:.1f}%  p90 DD={fwd['p90_dd']:.1f}%  ruin={fwd['p_blowup']:.1f}%  vs base p90 ~33%")
     print(f"  Outputs -> {_OUT}")
     print("=" * 88)
 
