@@ -1,9 +1,11 @@
-"""SessionStart handover sweep — moves any handover older than today into
-memory/_handover_archive/ so memory/ only ever holds the current day's handovers.
+"""SessionStart handover sweep — keeps the most recent day's handover(s) in
+memory/ and moves everything strictly older into memory/_handover_archive/.
 
-Rule (confirmed 2026-06-09): keep every Session_Handover dated *today*; git mv
-anything older to the archive. Preserves same-day narrative (Morning/Afternoon/...)
-while keeping memory/ from accumulating. Wired into the SessionStart hook
+Rule (revised 2026-06-10): keep every Session_Handover dated on the *latest date
+present* (not today); git mv anything older to the archive. This always leaves
+the current handover in memory/ for easy tracking — even on the first session of
+a new day, when nothing is dated 'today' yet — while preserving same-day
+narrative (Morning/Afternoon/...). Wired into the SessionStart hook
 (.claude/settings.json). Quiet on no-op; never blocks a session."""
 import re
 import subprocess
@@ -47,13 +49,18 @@ def main():
     if not MEM.exists():
         return
     ARCHIVE.mkdir(exist_ok=True)
-    today = date.today()
+
+    files = sorted(MEM.glob("Session_Handover_*.md"))
+    dates = [d for d in (_file_date(f.name) for f in files) if d is not None]
+    if not dates:
+        return  # nothing parseable -> nothing to sweep
+    keep = max(dates)  # latest day present -> always stays in memory/
 
     moved = []
-    for f in sorted(MEM.glob("Session_Handover_*.md")):
+    for f in files:
         d = _file_date(f.name)
-        if d is None or d >= today:
-            continue  # unparseable -> leave in place (safe); today's -> keep
+        if d is None or d >= keep:
+            continue  # unparseable -> leave in place (safe); latest day -> keep
         dst = ARCHIVE / f.name
         if dst.exists():
             dst = ARCHIVE / f"{f.stem}_dup{f.suffix}"
