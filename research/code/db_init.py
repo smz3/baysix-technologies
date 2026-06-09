@@ -114,14 +114,14 @@ def init():
         CREATE TABLE IF NOT EXISTS log_tasks (
             task_id     INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id     TEXT REFERENCES step1_ideas(idea_id),
+            status      TEXT NOT NULL DEFAULT 'open'
+                          CHECK(status IN ('open','in_progress','done','dropped')),
             title       TEXT NOT NULL,
             detail      TEXT,
             kind        TEXT NOT NULL CHECK(kind IN
                           ('variant','sizing','filter','port','infra','data','cleanup')),
             priority    TEXT NOT NULL DEFAULT 'P2'
                           CHECK(priority IN ('P0','P1','P2')),
-            status      TEXT NOT NULL DEFAULT 'open'
-                          CHECK(status IN ('open','in_progress','done','dropped')),
             created_at  DATETIME NOT NULL,
             updated_at  DATETIME NOT NULL,
             resolved_at DATETIME,
@@ -153,8 +153,8 @@ def init():
 
         DROP VIEW IF EXISTS open_backlog;
         CREATE VIEW open_backlog AS
-        SELECT b.task_id, b.idea_id, i.name AS idea_name, b.title,
-               b.kind, b.priority, b.status,
+        SELECT b.task_id, b.idea_id, i.name AS idea_name, b.status, b.title,
+               b.kind, b.priority,
                CAST((julianday('now') - julianday(b.created_at)) AS INTEGER) AS age_days
         FROM log_tasks b
         LEFT JOIN step1_ideas i ON i.idea_id = b.idea_id
