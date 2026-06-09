@@ -65,22 +65,23 @@ Decoupled repos (Desktop-level, own git remotes):
 7. Don't assume, always ask if you're not sure. 
 8. Don't make things complicated.
 9. Only touch codes that you're supposed to touch.
-10. After every quant-researcher agent call, immediately write to `research/db/research.db` via the code layer before responding to Syafiq. No exceptions.
-    - GENERATE gear → `pipeline.py` (add idea to step1_ideas if new) + `agent_log.log_agent_call(gear='GENERATE')`
-    - DISSECT gear → `agent_log.log_dissect_result()` — atomic: updates step2_papers + inserts step5_agent_log
-    - VALIDATE gear → `pipeline.log_result()` (step4_results) + `agent_log.log_agent_call(gear='VALIDATE')`
-    - Always tell Syafiq which model was used: "QR agent ran on Opus/Sonnet"
+10. **QR agent = paper specialist ONLY** — two jobs: *find* papers (search ArXiv/SSRN) and *dissect* them. Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. After every QR agent call, immediately write to `research/db/research.db` via the code layer before responding to Syafiq. No exceptions.
+    - find phase → `agent_log.log_agent_call(gear='GENERATE')` (logs the literature search/pull)
+    - dissect phase → `agent_log.log_dissect_result()` — atomic: updates step2_papers + inserts step5_agent_log
+    - inline VALIDATE work Claude does directly → `pipeline.log_result()` (step4_results); inline strategy/architecture → `agent_log.log_human_decision()`
+    - Always tell Syafiq which model was used: "find ran on Sonnet / dissect ran on Opus"
 11. Before touching any file in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
 12. QR agent model selection — pass `model` explicitly on every Agent call:
-    - Default: **Sonnet** for ALL gear types (GENERATE, DISSECT, VALIDATE)
-    - Opus: ONLY when Syafiq explicitly says "use Opus" in that message — no auto-upgrading based on task complexity
+    - **Find / search papers → Sonnet** (cheap fan-out)
+    - **Dissect papers → Opus** (high-value extraction; Opus only reads papers the Sonnet find-phase surfaced as keepers)
+    - This is the ONLY place the agent is used. Inline GENERATE/VALIDATE is Claude — no agent call. (Reversed the 2026-05-28 "Sonnet-only dissect" call on 2026-06-09.)
 13. Before writing any code in `research/models/` for an idea, Gates 0 and 1 must be `passed` in `step3_gates`. No exceptions. Check with `pipeline.get_gates(idea_id)` — if empty or gates not passed, complete them first. See [braindump/research_protocol.md](braindump/research_protocol.md) for gate definitions.
 14. **DB query discipline** — Never `SELECT` text-heavy columns (`key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`) into main context. Use targeted column queries (id, title, status fields only). When a QR agent needs full paper content, query `research.db` inside the subagent — never load through main context first.
 15. **DB writes via code layer only** — All writes to `research.db` must use `research/code/` functions (`open_gate`, `pass_gate`, `kill_idea`, `log_result`, `log_agent_call`, `log_dissect_result`, `log_human_decision`). Never raw `sqlite3` — timestamps, validation, and constraints will be wrong.
 16. **Pre-QR-agent check** — Before briefing any QR agent, query `step1_ideas` and `step5_agent_log` for that `idea_id` (targeted columns only — see rule 14). Never re-surface already-resolved decisions or repeat logged work.
 17. **Long-running commands → new terminal** — Any command taking >10s (model fits, data loads, migrations) must be launched in a new PowerShell window via `Start-Process`. Never `run_in_background`. Syafiq needs live output.
 18. **Log human architecture decisions** — Key human-Claude architecture/methodology decisions must be logged immediately via `agent_log.log_human_decision(idea_id, gate_number, task_summary, output_summary)`. This is the `generate_calls` replacement. Not just QR agent calls — human decisions too.
-19. **Always end with a Dumb Summary** — Close every substantive reply with a `## 🧠 Dumb Summary` section: 2–4 sentences in plain English, zero jargon (no R-multiples, t-stats, regime/trend-beta, etc.), explaining what we found/did and what it means like you're telling a smart friend who doesn't trade. The technical answer stays on top; the dumb summary is the floor. Set 2026-06-08.
+19. **Always end with a Smart Summary** — Close every substantive reply with a `## 🧠 Smart Summary` section: **2–4 short bullet points** (point form, NOT a paragraph — for fast reading) in plain English, zero jargon (no R-multiples, t-stats, regime/trend-beta, etc.), explaining what we found/did and what it means like you're telling a smart friend who doesn't trade. The technical answer stays on top; the Smart Summary is the floor. Set 2026-06-08, renamed from "Dumb Summary" + made point-form 2026-06-09.
 
 ---
 
