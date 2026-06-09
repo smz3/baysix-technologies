@@ -30,41 +30,51 @@ You receive briefs from the co-founder (Claude) and do the deep work. You never 
 
 Before doing any research work, load current Baysix context:
 
+All context lives in the single unified **`research/db/research.db`** (post-migration-010). There is NO `ideas_log.db` / `research_log.db` / `agent_log.db` — connecting to those paths silently creates an empty husk. Read-only, lean columns only (CLAUDE.md rule 14 — never SELECT text-heavy columns like `description`, `key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`).
+
 ```bash
 # 1. Ideas — what exists, what's promoted, what's dead
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/ideas_log.db')
-print(pd.read_sql_query('SELECT id, code, name, role, category, status FROM ideas ORDER BY sort_order, id', conn).to_string())
+conn = sqlite3.connect('research/db/research.db')
+print(pd.read_sql_query('SELECT idea_id, name, category, status, kill_gate FROM step1_ideas ORDER BY idea_id', conn).to_string())
 conn.close()
 "
 
-# 2. Pipeline — what's been validated and at what stage
+# 2. Open backlog — what work is live and at what priority
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/research_log.db')
-print(pd.read_sql_query('SELECT idea_id, current_stage, stage_status, gross_metric, net_metric FROM pipeline', conn).to_string())
+conn = sqlite3.connect('research/db/research.db')
+print(pd.read_sql_query(\"SELECT task_id, idea_id, title, kind, priority, status FROM step6_backlog WHERE status='open' ORDER BY priority, task_id\", conn).to_string())
 conn.close()
 "
 
-# 3. Recent agent calls — what has already been researched
+# 3. Latest results — what has been validated (lean columns)
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/agent_log.db')
-print(pd.read_sql_query('SELECT idea_code, gear, model, task, timestamp FROM agent_calls ORDER BY timestamp DESC LIMIT 10', conn).to_string())
+conn = sqlite3.connect('research/db/research.db')
+print(pd.read_sql_query('SELECT idea_id, gate_number, stage, metric_key, metric_value, period FROM step4_results ORDER BY result_id DESC LIMIT 12', conn).to_string())
 conn.close()
 "
 
-# 4. Papers already consulted — avoid re-reading what is already in the knowledge base
+# 4. Recent agent calls — what has already been researched (avoid re-surfacing resolved work)
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/agent_log.db')
-print(pd.read_sql_query('SELECT id, title, source, dissected, replication_status FROM papers_consulted ORDER BY id DESC LIMIT 15', conn).to_string())
+conn = sqlite3.connect('research/db/research.db')
+print(pd.read_sql_query('SELECT call_id, idea_id, gear, model, source, task_summary, created_at FROM step5_agent_log ORDER BY call_id DESC LIMIT 10', conn).to_string())
+conn.close()
+"
+
+# 5. Papers already consulted — avoid re-reading what is already in the knowledge base
+python -c "
+import sqlite3, pandas as pd
+conn = sqlite3.connect('research/db/research.db')
+print(pd.read_sql_query('SELECT paper_id, idea_id, title, source, dissected FROM step2_papers ORDER BY paper_id DESC LIMIT 15', conn).to_string())
 conn.close()
 "
 ```
 
-Use this context to avoid re-surfacing dead ideas and to avoid re-reading papers already in `papers_consulted`.
+Use this context to avoid re-surfacing dead ideas and to avoid re-reading papers already in `step2_papers`.
 
 ---
 
@@ -76,7 +86,7 @@ For any GENERATE brief involving a new mathematical framework or model:
 2. Search SSRN if the topic is more applied/finance: `site:ssrn.com [topic]`
 3. Fetch and skim the abstract + introduction of each paper
 4. Only use papers that are directly relevant — do not pad the list
-5. Check Step 0 query 4 first — if a paper is already in `papers_consulted`, do not re-list it unless directly relevant to this new brief
+5. Check Step 0 query 5 first — if a paper is already in `step2_papers`, do not re-list it unless directly relevant to this new brief
 
 If the topic is well-established and no new papers are needed, write `none` in the Papers Consulted section.
 
@@ -194,10 +204,9 @@ Output structure for DISSECT — follow this format exactly, character-for-chara
 
 ---
 
-> **Orchestrator write checklist (Claude, not the agent)** — after every DISSECT run:
-> 1. INSERT into `agent_calls`: include both `idea_code` AND `idea_id` (look up FK from `ideas_log.db` before writing)
-> 2. UPDATE `papers_consulted`: set `dissected=1`, populate `key_equations`, `empirical_findings`, `context_fit`, `limitations`
-> 3. Fetch abstract from the canonical `abs/` URL and populate `abstract` field if NULL
+> **Orchestrator write checklist (Claude, not the agent)** — after every DISSECT run, write to `research.db` via the `research/code/` layer only (CLAUDE.md rule 15 — never raw sqlite3):
+> 1. Call `agent_log.log_dissect_result(...)` — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `step5_agent_log` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call.
+> 2. Confirm the paper's `step2_papers` row exists for that `idea_id` first; the code layer handles FK + timestamps.
 
 ---
 
