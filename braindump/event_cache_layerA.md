@@ -22,14 +22,14 @@ Caching is memoizing a deterministic transform. **Look-ahead comes from the logi
 Pure causal data **reduction** — drop the ~95% of ticks outside the trading session; keep only what any ORB variant needs.
 
 - **Grain:** one row-group per UTC day.
-- **Window:** 08:00–21:00 UTC mid-price path (covers all anchor candidates 08:00/08:30/09:00 + EOD 21:00 exit). Confirm this bound covers every anchor we'd sweep before freezing it.
+- **Window:** **07:00–22:00 UTC** mid-price path (LOCKED 2026-06-09). Covers London anchors 08:00/08:30/09:00 + EOD 21:00 exit, with headroom for Frankfurt-open (07:00) and the ORB-002 NY-session variant — so adding an anchor never forces a full 24GB rebuild. The dropped slice is the thin Asian session; the speedup is mostly *structural* (compact pre-sliced/pre-grouped columnar read) rather than raw row-count reduction.
 - **Columns (raw only):** `date`, `ts_utc`, `mid` (= (bid+ask)/2), `bid`, `ask` (keep bid/ask so half-spread fills + slippage/gap models stay exact), `is_oos` flag.
 - **Resolution:** full tick within the session window — do NOT downsample (fills/breakout timing depend on tick granularity; downsampling would change results). The win is dropping out-of-session rows + pre-aligning by day, not thinning ticks.
 - **Format/location:** partitioned parquet under `data/parquet/session/` (mirrors existing `daily/` cache convention), utf-8, gitignored (it's derived data).
 - **Consumers:** the OR-builder + breakout detector run on this slice for ANY (anchor, window, stop, exit, fill-model). Replaces the raw `_tick_files` full-tree scan in [orb_core.py](../research/models/orb/orb_core.py).
 
-### Layer B — per-config trades/events table (optional convenience)
-The resolved trades for ONE fixed config (anchor/window/stop/exit). Cache to re-run the SAME config's OOS / fill-stress / MC without recomputing. Regenerated whenever config changes. Not required for the speedup; nice for repeated fixed-config work.
+### Layer B — per-config trades/events table (DEFERRED 2026-06-09)
+The resolved trades for ONE fixed config (anchor/window/stop/exit). Would cache to re-run the SAME config's OOS / fill-stress / MC without recomputing. **Deferred** — A delivers the bulk of the speedup; B adds cache-invalidation failure surface with no evidence yet that we re-run identical configs often enough to justify it (rule 8). Revisit only if fixed-config re-runs stay a bottleneck after A.
 
 ---
 
@@ -50,6 +50,8 @@ The resolved trades for ONE fixed config (anchor/window/stop/exit). Cache to re-
 - Layer B (defer unless we find we re-run fixed configs a lot).
 - Any change to IS/OOS boundary (2024-05-02 stays sealed).
 
-## Open questions for Syafiq
-1. Session window bound — is 08:00–21:00 UTC safe for every anchor/exit we'd ever sweep, or widen (e.g. 07:00–22:00) for headroom?
-2. Build Layer A only now, or A+B together?
+## Decisions (LOCKED 2026-06-09, Claude's call — Syafiq delegated)
+1. **Session window = 07:00–22:00 UTC** — headroom for Frankfurt/NY-session + ORB-002, scan-once safe.
+2. **Layer A only**; Layer B deferred (YAGNI / rule 8).
+
+Build sequence: `session_cache.py` (+ `--verify`) → repoint [orb_core.py](../research/models/orb/orb_core.py) → swap [anchor_sweep.py](../research/models/orb/anchor_sweep.py) + [trail_oos.py](../research/models/orb/trail_oos.py) to cache reads (keep control-repro gate) → then Task 22 runs on top of it, fast.
