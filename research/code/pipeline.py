@@ -283,6 +283,22 @@ def get_lifecycle() -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+def update_idea(idea_id: str, **fields) -> None:
+    """Update descriptive idea fields (name / description / category / parent_idea_id).
+    Bumps updated_at. Status changes go through the gate/kill functions, not here."""
+    allowed = {"name", "description", "category", "parent_idea_id"}
+    bad = set(fields) - allowed
+    if bad:
+        raise ValueError(f"cannot update {bad}; allowed: {allowed}")
+    if not fields:
+        return
+    sets = ", ".join(f"{k}=?" for k in fields) + ", updated_at=?"
+    vals = list(fields.values()) + [_now(), idea_id]
+    with _conn() as conn:
+        conn.execute(f"UPDATE step1_ideas SET {sets} WHERE idea_id=?", vals)
+        conn.commit()
+
+
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
 def _check_previous_gate_passed(idea_id: str, gate_number: int) -> None:
