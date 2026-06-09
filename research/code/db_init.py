@@ -95,7 +95,7 @@ def init():
             logged_at       DATETIME NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS step5_agent_log (
+        CREATE TABLE IF NOT EXISTS log_agent (
             call_id        INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id        TEXT NOT NULL REFERENCES step1_ideas(idea_id),
             gate_number    INTEGER,
@@ -111,7 +111,7 @@ def init():
             created_at     DATETIME NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS step6_backlog (
+        CREATE TABLE IF NOT EXISTS log_tasks (
             task_id     INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id     TEXT REFERENCES step1_ideas(idea_id),
             title       TEXT NOT NULL,
@@ -128,12 +128,35 @@ def init():
             resolution  TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS log_strategy (
+            log_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            idea_id     TEXT NOT NULL REFERENCES step1_ideas(idea_id),
+            event       TEXT NOT NULL,
+            component   TEXT,
+            from_value  TEXT,
+            to_value    TEXT,
+            verdict     TEXT NOT NULL,
+            rationale   TEXT,
+            result_id   INTEGER REFERENCES step4_results(result_id),
+            git_sha     TEXT,
+            decided_by  TEXT NOT NULL DEFAULT 'human',
+            created_at  DATETIME NOT NULL,
+            CHECK (verdict IN ('CREATED','VALIDATED','PROPOSED','ADOPTED',
+                               'REJECTED','FALSIFIED','SUPERSEDED')),
+            CHECK (component IN ('exit','anchor','sizing','entry','filter','config')
+                   OR component IS NULL),
+            CHECK (decided_by IN ('human','agent'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_strategy_log_idea
+            ON log_strategy(idea_id, created_at);
+
         DROP VIEW IF EXISTS open_backlog;
         CREATE VIEW open_backlog AS
         SELECT b.task_id, b.idea_id, i.name AS idea_name, b.title,
                b.kind, b.priority, b.status,
                CAST((julianday('now') - julianday(b.created_at)) AS INTEGER) AS age_days
-        FROM step6_backlog b
+        FROM log_tasks b
         LEFT JOIN step1_ideas i ON i.idea_id = b.idea_id
         WHERE b.status IN ('open','in_progress')
         ORDER BY b.priority ASC, b.created_at ASC;

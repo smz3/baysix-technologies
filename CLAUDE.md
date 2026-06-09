@@ -27,7 +27,7 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 ├── brokers/                  ← venue specs: justmarkets.yaml (TCM-001 cost model) + .md per broker
 ├── research/
 │   ├── db/                   ← all SQLite databases
-│   │   └── research.db       ← single DB · step1_ideas(62) · step2_papers · step3_gates · step4_results · step5_agent_log
+│   │   └── research.db       ← single DB · pipeline: step1_ideas · step2_papers · step3_gates · step4_results · logs: log_agent · log_tasks · log_strategy
 │   ├── code/                 ← shared DB layer (db_init · pipeline · agent_log)
 │   ├── models/               ← one folder per foundational model
 │   │   ├── cusum/            ← CUSUM-001 (parked · no code yet · awaiting gates)
@@ -67,7 +67,7 @@ Decoupled repos (Desktop-level, own git remotes):
 9. Only touch codes that you're supposed to touch.
 10. **QR agent = paper specialist ONLY** — two jobs: *find* papers (search ArXiv/SSRN) and *dissect* them. Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. After every QR agent call, immediately write to `research/db/research.db` via the code layer before responding to Syafiq. No exceptions.
     - find phase → `agent_log.log_agent_call(gear='GENERATE')` (logs the literature search/pull)
-    - dissect phase → `agent_log.log_dissect_result()` — atomic: updates step2_papers + inserts step5_agent_log
+    - dissect phase → `agent_log.log_dissect_result()` — atomic: updates step2_papers + inserts log_agent
     - inline VALIDATE work Claude does directly → `pipeline.log_result()` (step4_results); inline strategy/architecture → `agent_log.log_human_decision()`
     - Always tell Syafiq which model was used: "find ran on Sonnet / dissect ran on Opus"
 11. Before touching any file in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
@@ -78,7 +78,7 @@ Decoupled repos (Desktop-level, own git remotes):
 13. Before writing any code in `research/models/` for an idea, Gates 0 and 1 must be `passed` in `step3_gates`. No exceptions. Check with `pipeline.get_gates(idea_id)` — if empty or gates not passed, complete them first. See [braindump/research_protocol.md](braindump/research_protocol.md) for gate definitions.
 14. **DB query discipline** — Never `SELECT` text-heavy columns (`key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`) into main context. Use targeted column queries (id, title, status fields only). When a QR agent needs full paper content, query `research.db` inside the subagent — never load through main context first.
 15. **DB writes via code layer only** — All writes to `research.db` must use `research/code/` functions (`open_gate`, `pass_gate`, `kill_idea`, `log_result`, `log_agent_call`, `log_dissect_result`, `log_human_decision`). Never raw `sqlite3` — timestamps, validation, and constraints will be wrong.
-16. **Pre-QR-agent check** — Before briefing any QR agent, query `step1_ideas` and `step5_agent_log` for that `idea_id` (targeted columns only — see rule 14). Never re-surface already-resolved decisions or repeat logged work.
+16. **Pre-QR-agent check** — Before briefing any QR agent, query `step1_ideas` and `log_agent` for that `idea_id` (targeted columns only — see rule 14). Never re-surface already-resolved decisions or repeat logged work.
 17. **Long-running commands → new terminal** — Any command taking >10s (model fits, data loads, migrations) must be launched in a new PowerShell window via `Start-Process`. Never `run_in_background`. Syafiq needs live output.
 18. **Log human architecture decisions** — Key human-Claude architecture/methodology decisions must be logged immediately via `agent_log.log_human_decision(idea_id, gate_number, task_summary, output_summary)`. This is the `generate_calls` replacement. Not just QR agent calls — human decisions too.
 19. **Always end with a Smart Summary** — Close every substantive reply with a `## 🧠 Smart Summary` section: **2–4 short bullet points** (point form, NOT a paragraph — for fast reading) in plain English, zero jargon (no R-multiples, t-stats, regime/trend-beta, etc.), explaining what we found/did and what it means like you're telling a smart friend who doesn't trade. The technical answer stays on top; the Smart Summary is the floor. Set 2026-06-08, renamed from "Dumb Summary" + made point-form 2026-06-09.
@@ -89,5 +89,5 @@ Decoupled repos (Desktop-level, own git remotes):
 
 1. The SessionStart hook prints the live **open backlog**, recently resolved tasks, and latest results straight from `research.db` (via [.claude/hooks/scripts/session_brief.py](.claude/hooks/scripts/session_brief.py)). Read it — it is the source of truth for what is open and what is already tested.
 2. Read the latest [memory/](memory/) handover (the brief names the file) for the narrative + caveats.
-3. Before proposing any work, reconcile against `open_backlog` (P1 first) + `step5_agent_log` for the active idea (rule 16). Never re-surface a resolved task or re-run logged work.
+3. Before proposing any work, reconcile against `open_backlog` (P1 first) + `log_agent` for the active idea (rule 16). Never re-surface a resolved task or re-run logged work.
 4. Brief Syafiq: "Here's where we left off" → wait for priority confirmation.

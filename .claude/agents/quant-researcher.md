@@ -47,7 +47,7 @@ conn.close()
 python -c "
 import sqlite3, pandas as pd
 conn = sqlite3.connect('research/db/research.db')
-print(pd.read_sql_query(\"SELECT task_id, idea_id, title, kind, priority, status FROM step6_backlog WHERE status='open' ORDER BY priority, task_id\", conn).to_string())
+print(pd.read_sql_query(\"SELECT task_id, idea_id, title, kind, priority, status FROM log_tasks WHERE status='open' ORDER BY priority, task_id\", conn).to_string())
 conn.close()
 "
 
@@ -63,7 +63,7 @@ conn.close()
 python -c "
 import sqlite3, pandas as pd
 conn = sqlite3.connect('research/db/research.db')
-print(pd.read_sql_query('SELECT call_id, idea_id, gear, model, source, task_summary, created_at FROM step5_agent_log ORDER BY call_id DESC LIMIT 10', conn).to_string())
+print(pd.read_sql_query('SELECT call_id, idea_id, gear, model, source, task_summary, created_at FROM log_agent ORDER BY call_id DESC LIMIT 10', conn).to_string())
 conn.close()
 "
 
@@ -207,7 +207,7 @@ Output structure for DISSECT — follow this format exactly, character-for-chara
 ---
 
 > **Orchestrator write checklist (Claude, not the agent)** — after every DISSECT run, write to `research.db` via the `research/code/` layer only (CLAUDE.md rule 15 — never raw sqlite3):
-> 1. Call `agent_log.log_dissect_result(...)` — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `step5_agent_log` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call.
+> 1. Call `agent_log.log_dissect_result(...)` — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `log_agent` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call.
 > 2. Confirm the paper's `step2_papers` row exists for that `idea_id` first; the code layer handles FK + timestamps.
 
 ---

@@ -1,5 +1,5 @@
 """
-Backlog interface for research.db (step6_backlog).
+Backlog interface for research.db (log_tasks).
 Research/eng follow-ups that are NOT falsifiable ideas (ideas live in step1_ideas).
 All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 15).
 """
@@ -35,7 +35,7 @@ def add_task(title: str, kind: str, detail: str = "", idea_id: str = None,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO step6_backlog
+            INSERT INTO log_tasks
                 (idea_id, title, detail, kind, priority, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
         """, (idea_id, title, detail, kind, priority, now, now))
@@ -58,7 +58,7 @@ def update_task(task_id: int, **fields) -> None:
     sets = ", ".join(f"{k}=?" for k in fields) + ", updated_at=?"
     vals = list(fields.values()) + [_now(), task_id]
     with _conn() as conn:
-        conn.execute(f"UPDATE step6_backlog SET {sets} WHERE task_id=?", vals)
+        conn.execute(f"UPDATE log_tasks SET {sets} WHERE task_id=?", vals)
         conn.commit()
 
 
@@ -69,7 +69,7 @@ def resolve_task(task_id: int, resolution: str, status: str = "done") -> None:
     now = _now()
     with _conn() as conn:
         conn.execute("""
-            UPDATE step6_backlog
+            UPDATE log_tasks
             SET status=?, resolution=?, resolved_at=?, updated_at=?
             WHERE task_id=?
         """, (status, resolution, now, now, task_id))
@@ -80,7 +80,7 @@ def resolve_task(task_id: int, resolution: str, status: str = "done") -> None:
 def get_backlog(status: str = "open", idea_id: str = "__any__") -> list[dict]:
     """Return backlog rows filtered by status (and optionally idea_id).
     Pass idea_id=None to match rows with NULL idea_id; omit to match any idea_id."""
-    q = "SELECT * FROM step6_backlog WHERE status=?"
+    q = "SELECT * FROM log_tasks WHERE status=?"
     params = [status]
     if idea_id != "__any__":
         if idea_id is None:

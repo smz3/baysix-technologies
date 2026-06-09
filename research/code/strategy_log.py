@@ -1,9 +1,9 @@
 """
-Strategy evolution log interface for research.db (step7_strategy_log).
+Strategy evolution log interface for research.db (log_strategy).
 All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 15).
 
 The lineage of a strategy: birth -> every tested variant (kept or cut) -> live
-config. Distinct from step5_agent_log (activity feed) — this is the structured,
+config. Distinct from log_agent (activity feed) — this is the structured,
 verdict-tagged spine, each row pointing at its evidence in step4_results.
 
 Write:
@@ -62,7 +62,7 @@ def log_change(
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO step7_strategy_log
+            INSERT INTO log_strategy
                 (idea_id, event, component, from_value, to_value, verdict,
                  rationale, result_id, git_sha, decided_by, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -80,7 +80,7 @@ def get_lineage(idea_id: str) -> list[dict]:
     """Full chronological lineage — the strategy's whole story, oldest first."""
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM step7_strategy_log WHERE idea_id=? ORDER BY created_at, log_id",
+            "SELECT * FROM log_strategy WHERE idea_id=? ORDER BY created_at, log_id",
             (idea_id,)
         ).fetchall()
     return [dict(r) for r in rows]

@@ -1,5 +1,5 @@
 """
-Migration 012 — Create step7_strategy_log
+Migration 014 — Create step7_strategy_log (renamed to log_strategy by migration 015)
 
 The strategy evolution log: the lineage of each strategy/idea — birth -> every
 tested variant (kept or cut) -> current live config. Distinct from step5_agent_log
@@ -51,7 +51,7 @@ def run():
     """)
     conn.commit()
     n = cur.execute("SELECT COUNT(*) FROM step7_strategy_log").fetchone()[0]
-    print(f"[012] step7_strategy_log ready ({n} rows).")
+    print(f"[014] step7_strategy_log ready ({n} rows).")
     conn.close()
 
 

@@ -1,5 +1,5 @@
 """
-Agent log interface for research.db (step2_papers + step5_agent_log).
+Agent log interface for research.db (step2_papers + log_agent).
 All writes go through here — no raw SQL elsewhere.
 
 Write functions:
@@ -123,7 +123,7 @@ def log_agent_call(
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO step5_agent_log
+            INSERT INTO log_agent
                 (idea_id, gate_number, gear, model, source, task_summary,
                  output_summary, paper_id, result_id, created_at)
             VALUES (?, ?, ?, ?, 'agent', ?, ?, ?, ?, ?)
@@ -150,7 +150,7 @@ def log_dissect_result(
 ) -> int:
     """
     Atomic DISSECT writer.
-    Validates fields → updates step2_papers → inserts step5_agent_log.
+    Validates fields → updates step2_papers → inserts log_agent.
     All in one transaction.
 
     Returns the new call_id.
@@ -170,7 +170,7 @@ def log_dissect_result(
         ts = _now()
 
         cur.execute("""
-            INSERT INTO step5_agent_log
+            INSERT INTO log_agent
                 (idea_id, gate_number, gear, model, source, task_summary,
                  output_summary, paper_id, created_at)
             VALUES (?, ?, 'DISSECT', ?, 'agent', ?, ?, ?, ?)
@@ -206,7 +206,7 @@ def log_human_decision(
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO step5_agent_log
+            INSERT INTO log_agent
                 (idea_id, gate_number, gear, model, source,
                  task_summary, output_summary, created_at)
             VALUES (?, ?, 'GENERATE', NULL, 'human', ?, ?, ?)
@@ -232,11 +232,11 @@ def get_papers(idea_id: str) -> list[dict]:
 
 
 def get_agent_calls(idea_id: str) -> list[dict]:
-    """Return all step5_agent_log rows for an idea, ordered by created_at."""
+    """Return all log_agent rows for an idea, ordered by created_at."""
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM step5_agent_log WHERE idea_id=? ORDER BY created_at",
+            "SELECT * FROM log_agent WHERE idea_id=? ORDER BY created_at",
             (idea_id,)
         )
         return [dict(r) for r in cur.fetchall()]

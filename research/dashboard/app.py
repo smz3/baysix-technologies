@@ -203,7 +203,7 @@ with tab_agents:
 
         agents_df = q("""
             SELECT call_id, idea_id, gate_number, gear, model, task_summary, created_at
-            FROM step5_agent_log
+            FROM log_agent
             ORDER BY created_at DESC
         """)
 

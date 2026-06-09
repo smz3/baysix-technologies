@@ -40,7 +40,7 @@ def main():
 
     print("\n--- RECENTLY RESOLVED (last 6) ---")
     done = cur.execute(
-        "SELECT task_id, title FROM step6_backlog WHERE status='done' "
+        "SELECT task_id, title FROM log_tasks WHERE status='done' "
         "ORDER BY resolved_at DESC LIMIT 6").fetchall()
     for tid, title in done:
         print(f"   {tid:>2} done  {title}")
@@ -52,7 +52,7 @@ def main():
     for idea, stage, key, val in res:
         print(f"   {idea} {stage:4s} {key} = {val}")
 
-    print("\nBefore proposing work: check open_backlog (P1 first) + step5_agent_log "
+    print("\nBefore proposing work: check open_backlog (P1 first) + log_agent "
           "for the active idea (CLAUDE.md rule 16). Never re-surface resolved tasks.")
     c.close()
 
