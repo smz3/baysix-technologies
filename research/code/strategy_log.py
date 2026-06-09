@@ -1,6 +1,6 @@
 """
 Strategy evolution log interface for research.db (log_strategy).
-All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 15).
+All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 10).
 
 The lineage of a strategy: birth -> every tested variant (kept or cut) -> live
 config. Distinct from log_agent (activity feed) — this is the structured,

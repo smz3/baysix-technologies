@@ -53,7 +53,7 @@ def main():
         print(f"   {idea} {stage:4s} {key} = {val}")
 
     print("\nBefore proposing work: check open_backlog (P1 first) + log_agent "
-          "for the active idea (CLAUDE.md rule 16). Never re-surface resolved tasks.")
+          "for the active idea (CLAUDE.md rule 6). Never re-surface resolved tasks.")
     c.close()
 
 

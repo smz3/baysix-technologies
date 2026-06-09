@@ -56,33 +56,33 @@ Decoupled repos (Desktop-level, own git remotes):
 
 ## Rules
 
-1. Auto commit + push: at natural completion points, stage all work, commit with a real message, and push to master — no need to ask first (Syafiq standing authorization 2026-06-06). GUARDRAILS: (a) `.gitignore` is the safety net — secrets (.env/keys), data (parquet/csv/pkl), logs, and binaries/installers are all ignored; keep it airtight. (b) Still pause and ask if something sensitive or a large binary looks like it would slip through, or before any history rewrite/force-push.
-2. No destructive actions (rm -rf, reset --hard) without telling the user first.
-3. Never print API keys — read from `.env` only.
-4. Brevity — lead with the answer, cut the padding.
-5. File references use markdown links [filename](path), never backticks.
-6. No loose single files or py scripts. everything needs a house/folder.
-7. Don't assume, always ask if you're not sure. 
-8. Don't make things complicated.
-9. Only touch codes that you're supposed to touch.
-10. **QR agent = paper specialist ONLY** — two jobs: *find* papers (search ArXiv/SSRN) and *dissect* them. Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. After every QR agent call, immediately write to `research/db/research.db` via the code layer before responding to Syafiq. No exceptions.
-    - find phase → `agent_log.log_agent_call(gear='GENERATE')` (logs the literature search/pull)
-    - dissect phase → `agent_log.log_dissect_result()` — atomic: updates step2_papers + inserts log_agent
-    - inline VALIDATE work Claude does directly → `pipeline.log_result()` (step4_results); inline strategy/architecture → `agent_log.log_human_decision()`
-    - Always tell Syafiq which model was used: "find ran on Sonnet / dissect ran on Opus"
-11. Before touching any file in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
-12. QR agent model selection — pass `model` explicitly on every Agent call:
-    - **Find / search papers → Sonnet** (cheap fan-out)
-    - **Dissect papers → Opus** (high-value extraction; Opus only reads papers the Sonnet find-phase surfaced as keepers)
-    - This is the ONLY place the agent is used. Inline GENERATE/VALIDATE is Claude — no agent call. (Reversed the 2026-05-28 "Sonnet-only dissect" call on 2026-06-09.)
-13. Before writing any code in `research/models/` for an idea, Gates 0 and 1 must be `passed` in `step3_gates`. No exceptions. Check with `pipeline.get_gates(idea_id)` — if empty or gates not passed, complete them first. See [braindump/research_protocol.md](braindump/research_protocol.md) for gate definitions.
-14. **DB query discipline** — Never `SELECT` text-heavy columns (`key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`) into main context. Use targeted column queries (id, title, status fields only). When a QR agent needs full paper content, query `research.db` inside the subagent — never load through main context first.
-15. **DB writes via code layer only** — All writes to `research.db` must use `research/code/` functions (`open_gate`, `pass_gate`, `kill_idea`, `log_result`, `log_agent_call`, `log_dissect_result`, `log_human_decision`). Never raw `sqlite3` — timestamps, validation, and constraints will be wrong.
-16. **Pre-QR-agent check** — Before briefing any QR agent, query `step1_ideas` and `log_agent` for that `idea_id` (targeted columns only — see rule 14). Never re-surface already-resolved decisions or repeat logged work.
-17. **Long-running commands → new terminal** — Any command taking >10s (model fits, data loads, migrations) must be launched in a new PowerShell window via `Start-Process`. Never `run_in_background`. Syafiq needs live output.
-18. **Log human architecture decisions** — Key human-Claude architecture/methodology decisions must be logged immediately via `agent_log.log_human_decision(idea_id, gate_number, task_summary, output_summary)`. This is the `generate_calls` replacement. Not just QR agent calls — human decisions too.
-19. **Always end with a Smart Summary** — Close every substantive reply with a `## 🧠 Smart Summary` section: **2–4 short bullet points** (point form, NOT a paragraph — for fast reading) in plain English, zero jargon (no R-multiples, t-stats, regime/trend-beta, etc.), explaining what we found/did and what it means like you're telling a smart friend who doesn't trade. The technical answer stays on top; the Smart Summary is the floor. Set 2026-06-08, renamed from "Dumb Summary" + made point-form 2026-06-09.
-20. **Log strategy-defining changes to `log_strategy`** — Whenever a strategy's config changes verdict — a variant **ADOPTED / REJECTED / FALSIFIED / SUPERSEDED**, a baseline **VALIDATED**, an idea **CREATED**, or a change **PROPOSED** (pending a gate) — immediately record it via `strategy_log.log_change()`, alongside the `pipeline.log_result()` write, passing `component` (exit/anchor/sizing/entry/filter/config), `from_value`/`to_value`, `verdict`, `rationale`, and the `result_id` that justifies it. This is the strategy's lineage (birth → live config); `log_agent` is the activity feed and is NOT a substitute. The live config = `strategy_log.get_live_config(idea_id)` (latest VALIDATED/ADOPTED per component). Set 2026-06-09.
+**Safety & Git**
+1. **Auto commit + push** at natural completion points — stage all (`git add -A`), real message, push to master, no need to ask (standing authorization 2026-06-06). Guardrails: `.gitignore` is the safety net (secrets/.env, data/parquet/csv/pkl, logs, binaries all ignored — keep it airtight); pause and ask only if something sensitive/large looks like it'll slip through, or before any history rewrite / force-push.
+2. **No destructive actions** (`rm -rf`, `reset --hard`, etc.) without telling Syafiq first.
+3. **Never print API keys** — read from `.env` only.
+
+**Working style**
+4. Only touch code you're meant to · no loose files (everything lives in a folder) · ask when unsure, don't assume · don't overcomplicate. (Brevity + markdown file-links live in the global directives.)
+
+**QR agent — paper specialist only**
+5. The QR agent ONLY **finds** papers (Sonnet — cheap fan-out) and **dissects** them (Opus — high-value; only reads keepers the find-phase surfaced). Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. Pass `model` explicitly on every Agent call; tell Syafiq which ran ("find on Sonnet / dissect on Opus"). (Reversed the 2026-05-28 Sonnet-only-dissect call on 2026-06-09.)
+6. **Pre-brief check** — before briefing the agent, query `step1_ideas` + `log_agent` for that `idea_id` (targeted columns — rule 9). Never re-surface resolved decisions or repeat logged work.
+
+**Research DB**
+7. Before touching anything in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
+8. Gates 0 and 1 must be `passed` in `step3_gates` before writing any model code for an idea — check `pipeline.get_gates(idea_id)`. Gate definitions: [braindump/research_protocol.md](braindump/research_protocol.md).
+9. **Query discipline** — never `SELECT` text-heavy columns (`key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`) into main context; use targeted column queries. QR agents query `research.db` inside the subagent, never through main context.
+10. **Writes via code layer only** — all `research.db` writes use `research/code/` functions (`open_gate`, `pass_gate`, `kill_idea`, `log_result`, `log_agent_call`, `log_dissect_result`, `log_human_decision`, `log_change`). Never raw `sqlite3` (timestamps/validation/constraints break).
+11. **Log immediately, before replying to Syafiq** — after every agent call or decision:
+    - QR find → `log_agent_call(gear='GENERATE')`; dissect → `log_dissect_result()` (atomic: step2_papers + log_agent)
+    - inline VALIDATE → `pipeline.log_result()`; human architecture/methodology decision → `log_human_decision()`
+    - any strategy-defining change (ADOPTED / REJECTED / FALSIFIED / SUPERSEDED / VALIDATED / CREATED / PROPOSED) → `strategy_log.log_change()` with `component`/`from`/`to`/`verdict`/`rationale`/`result_id`. `log_strategy` is the lineage (birth→live config, read via `get_live_config(idea_id)`); `log_agent` is NOT a substitute.
+
+**Execution**
+12. **Long-running commands (>10s)** — model fits, data loads, migrations — launch in a new PowerShell window via `Start-Process`. Never `run_in_background`; Syafiq needs live output.
+
+**Communication**
+13. **Always end with a Smart Summary** — a `## 🧠 Smart Summary` of 2–4 plain-English bullets (point form, zero jargon — no R-multiples/t-stats/regime), explaining what we did/found like to a smart friend who doesn't trade. Technical answer on top; this is the floor.
 
 ---
 
@@ -90,5 +90,5 @@ Decoupled repos (Desktop-level, own git remotes):
 
 1. The SessionStart hook prints the live **open backlog**, recently resolved tasks, and latest results straight from `research.db` (via [.claude/hooks/scripts/session_brief.py](.claude/hooks/scripts/session_brief.py)). Read it — it is the source of truth for what is open and what is already tested.
 2. Read the latest [memory/](memory/) handover (the brief names the file) for the narrative + caveats.
-3. Before proposing any work, reconcile against `open_backlog` (P1 first) + `log_agent` for the active idea (rule 16). Never re-surface a resolved task or re-run logged work.
+3. Before proposing any work, reconcile against `open_backlog` (P1 first) + `log_agent` for the active idea (rule 6), and check `strategy_log.get_live_config(idea_id)` for its current frozen config. Never re-surface a resolved task or re-run logged work.
 4. Brief Syafiq: "Here's where we left off" → wait for priority confirmation.

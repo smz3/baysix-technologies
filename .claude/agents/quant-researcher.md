@@ -32,7 +32,7 @@ You receive briefs from the co-founder (Claude) and do the deep work. You never 
 
 Before doing any research work, load current Baysix context:
 
-All context lives in the single unified **`research/db/research.db`** (post-migration-010). There is NO `ideas_log.db` / `research_log.db` / `agent_log.db` — connecting to those paths silently creates an empty husk. Read-only, lean columns only (CLAUDE.md rule 14 — never SELECT text-heavy columns like `description`, `key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`).
+All context lives in the single unified **`research/db/research.db`** (post-migration-010). There is NO `ideas_log.db` / `research_log.db` / `agent_log.db` — connecting to those paths silently creates an empty husk. Read-only, lean columns only (CLAUDE.md rule 9 — never SELECT text-heavy columns like `description`, `key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`).
 
 ```bash
 # 1. Ideas — what exists, what's promoted, what's dead
@@ -206,7 +206,7 @@ Output structure for DISSECT — follow this format exactly, character-for-chara
 
 ---
 
-> **Orchestrator write checklist (Claude, not the agent)** — after every DISSECT run, write to `research.db` via the `research/code/` layer only (CLAUDE.md rule 15 — never raw sqlite3):
+> **Orchestrator write checklist (Claude, not the agent)** — after every DISSECT run, write to `research.db` via the `research/code/` layer only (CLAUDE.md rule 10 — never raw sqlite3):
 > 1. Call `agent_log.log_dissect_result(...)` — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `log_agent` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call.
 > 2. Confirm the paper's `step2_papers` row exists for that `idea_id` first; the code layer handles FK + timestamps.
 

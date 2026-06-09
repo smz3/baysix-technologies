@@ -1,7 +1,7 @@
 """
 Backlog interface for research.db (log_tasks).
 Research/eng follow-ups that are NOT falsifiable ideas (ideas live in step1_ideas).
-All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 15).
+All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 10).
 """
 import sqlite3
 from datetime import datetime, timezone, timedelta

@@ -43,7 +43,7 @@ The resolved trades for ONE fixed config (anchor/window/stop/exit). Would cache 
 - [research/models/orb/orb_core.py](../research/models/orb/orb_core.py) — `_tick_files` consumers read the cache instead of raw parquet.
 - [anchor_sweep.py](../research/models/orb/anchor_sweep.py) + [trail_oos.py](../research/models/orb/trail_oos.py) — swap raw scan → cache read; keep control-repro gate.
 - `.gitignore` — add `data/parquet/session/`.
-- research.db — close/extend backlog task 7; log architecture decision (CLAUDE.md rule 18).
+- research.db — close/extend backlog task 7; log architecture decision (CLAUDE.md rule 11).
 
 ## Out of scope here
 - Actual code (this is the design note).
