@@ -7,6 +7,7 @@ from tqdm import tqdm
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 from research.models.orb.orb_core import _tick_files, IS_END
+from research.code.session_cache import session_files  # Layer A: read 07:00-22:00 session slice
 SPREAD=2.0*0.10; IS_CUT=np.datetime64(IS_END); EOD_HOUR=21
 NS_H=3_600_000_000_000; NS_M=60_000_000_000; NS_D=86_400_000_000_000
 ANCHOR_HOURS=[8.0,8.5,9.0,10.0]; N_MINUTES=[3,5,10,15,30]
@@ -116,8 +117,9 @@ def main():
     tc=len(ANCHOR_HOURS)*len(N_MINUTES)
     print(f"Cells: {tc} x 2 arms = {tc*2} stat vectors")
     print("="*88)
-    files=_tick_files(None)
-    print("IS parquet files: " + str(len(files)))
+    files=session_files(None)
+    if not files: sys.exit("No session-cache files. Build first: python research/code/session_cache.py build")
+    print("session-cache files: " + str(len(files)))
     print("[STEP 1] Control repro: anchor=08:00 N=5 ...")
     ctrl_base,ctrl_trail=_scan_cell(files,8.0,5,desc="control 08:00/N=5")
     ctrl_b=_stats(ctrl_base,"base_3R",8.0,5)

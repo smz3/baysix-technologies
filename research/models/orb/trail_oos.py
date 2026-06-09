@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 
 from research.models.orb.orb_core import _tick_files, IS_END, LONDON_ANCHOR_HOUR
+from research.code.session_cache import session_files  # Layer A: read 07:00-22:00 session slice
 from research.models.orb.equity_sim import MIN_LOT, CONTRACT_OZ, LEVERAGE
 from research.models.orb.regime_gate import build_daily_close, compute_regime
 
@@ -325,8 +326,10 @@ def main():
     print("=" * 88)
     print("ORB-001 trail_1R OOS VALIDATION (task 13)")
     print("=" * 88)
-    files_all = _tick_files(None)
-    files_oos = _tick_files(OOS_MONTHS)
+    files_all = session_files(None)
+    files_oos = session_files(OOS_MONTHS)
+    if not files_all:
+        sys.exit("No session-cache files. Build first: python research/code/session_cache.py build")
 
     # 1 IS control repro
     print("\n[1/5] IS control repro (base_3R + trail_1R) ...")
