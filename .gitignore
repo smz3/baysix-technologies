@@ -43,6 +43,11 @@ research/db/ideas_log.db
 research/db/research_log.db
 research/db/agent_log.db
 
+# execution.db = the LIVE downstream DB (real-money fills, account/broker_login state).
+# Protocol §1 Isolation: live records stay out of git. Rebuildable anytime via
+# `python research/migrations/020_create_execution_db.py`. (research.db stays tracked — shareable research state.)
+research/db/execution.db
+
 # Stack runtime
 .gstack/
 
