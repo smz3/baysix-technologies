@@ -104,14 +104,48 @@ def open_gate(
     return gate_id
 
 
+# Gate 6 (per braindump/research_protocol.md L204-226) is THREE legs, not one:
+# walk-forward + Monte Carlo + OOS. ORB-002/003 were marked passed on OOS alone
+# (task 29 process failure). This guard refuses pass_gate(6) until all three
+# stages have at least one step4_results row for the idea — or an explicit waiver.
+_GATE6_REQUIRED_STAGES = ("walkforward", "montecarlo", "OOS")
+
+
+def _gate6_missing_stages(idea_id: str) -> list[str]:
+    """Return the Gate-6 stages that have NO step4_results row for this idea."""
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT stage FROM step4_results WHERE idea_id=? AND gate_number=6",
+            (idea_id,),
+        )
+        present = {r["stage"] for r in cur.fetchall()}
+    return [s for s in _GATE6_REQUIRED_STAGES if s not in present]
+
+
 def pass_gate(
     idea_id: str,
     gate_number: int,
     gate_answer: str,
     answered_by: str = "human",
     attempt: int = 1,
+    allow_incomplete: bool = False,
 ) -> None:
-    """Mark a gate as passed."""
+    """Mark a gate as passed.
+
+    Gate 6 guardrail: refuses unless walk-forward + Monte Carlo + OOS results are
+    all logged for the idea (protocol L204-226). Pass allow_incomplete=True ONLY
+    with a logged waiver in gate_answer.
+    """
+    if gate_number == 6 and not allow_incomplete:
+        missing = _gate6_missing_stages(idea_id)
+        if missing:
+            raise ValueError(
+                f"Cannot pass Gate 6 for {idea_id}: missing step4_results stages "
+                f"{missing}. Gate 6 = walk-forward + Monte Carlo + OOS (protocol "
+                f"L204-226). Log the missing legs first, or pass allow_incomplete=True "
+                f"with a waiver reason in gate_answer."
+            )
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()

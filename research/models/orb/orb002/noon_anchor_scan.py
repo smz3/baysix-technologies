@@ -153,7 +153,7 @@ def _sim_trail(ts, mid, day0, n_minutes, spread_price=0.0):
         R, outcome = float(pdir * (ef[-1]   - entry) / range_w), "eod"
 
     return {"direction": "long" if pdir > 0 else "short",
-            "range_w": range_w, "outcome": outcome, "R": float(R)}
+            "range_w": range_w, "entry_px": entry, "outcome": outcome, "R": float(R)}
 
 
 # ── multi-day runner ──────────────────────────────────────────────────────────
