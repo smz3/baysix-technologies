@@ -109,3 +109,7 @@ Sandbox/
 
 # ORB backtest run logs
 research/models/orb/_*.log
+
+# Research paper source PDFs — kept local only (copyright + binary bloat).
+# The dissection lives in research.db (step2_papers), not the source file.
+*.pdf
