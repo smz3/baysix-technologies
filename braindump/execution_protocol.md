@@ -296,8 +296,9 @@ The EA's hot path stays sacred: decide, order, kill-switch. Bookkeeping, normali
 The schema is already idea-agnostic (keyed by `idea_id × venue × instrument`, universals as columns, `meta`/`recon_results` flexible). What we **add** as we scale — additive, never a teardown:
 
 1. **Portfolio layer** (`portfolio_allocations`, `portfolio_risk`) above individual strategies, when 2+ run live together: capital allocation, aggregate risk, correlation netting (e.g. the three ORB anchors sharing a 21:00 EOD). This is also where account-level prop risk aggregates across strategies.
-2. **SQLite → Postgres** when throughput hits SQLite's single-writer wall — painless because all writes go through `execution.py`.
-3. **More venue adapters** — each new broker is one isolated normalizer (§6), no schema change.
+2. **SQLite → Postgres (Supabase) — DECIDED 2026-06-10.** Target = **Supabase (managed Postgres)**: gives managed backups + PITR **and** an auto REST API for the dashboard in one move, and Syafiq already has Supabase experience. **Trigger = building the webapp dashboard / going to real money** — that's when network access + concurrent readers + a cloud server outgrow SQLite's single-writer/one-machine model. Migration is contained to `execution.py`'s `_SCHEMA` DDL + `_conn()` (call sites unchanged): `AUTOINCREMENT`→`IDENTITY`, `json_valid()` CHECK→native `jsonb`, `DATETIME`→`timestamptz`, `sqlite3`→`psycopg`. Hours, not a rewrite — keep `execution.py` free of SQLite-only idioms until then.
+3. **Durability ladder.** *Demo phase (now):* SQLite WAL mode + periodic `VACUUM INTO` snapshots to a cloud-synced folder (cheap; RPO = snapshot interval, acceptable because fills are re-pullable from the broker ledger and only signals/recon/incidents are truly irreplaceable). *Live/serious:* Supabase managed PITR. **Litestream evaluated and DEFERRED** — it is the right SQLite-PITR tool (v0.5.x, actively maintained, but restore-then-run + checkpoint-ownership/`busy_timeout` caveats and a silent-replication bug to monitor), yet Supabase's managed backups supersede it for this project. Revisit only if we stay on self-hosted SQLite at higher cadence.
+4. **More venue adapters** — each new broker is one isolated normalizer (§6), no schema change.
 
 ---
 
