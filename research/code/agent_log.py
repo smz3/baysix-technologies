@@ -97,6 +97,47 @@ def validate_dissect_fields(
 
 # ── Write functions ────────────────────────────────────────────────────────────
 
+def add_paper(
+    idea_id: str,
+    title: str,
+    source: str,
+    url: str,
+    authors: str = None,
+    year: int = None,
+    doi: str = None,
+    local_path: str = None,
+) -> int:
+    """
+    Insert a paper surfaced by a FIND run into step2_papers (dissected=0).
+    Required before a DISSECT — log_dissect_result() updates an existing row.
+    Idempotent on (idea_id, url): returns the existing paper_id if already on file.
+
+    Returns the paper_id.
+    """
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT paper_id FROM step2_papers WHERE idea_id=? AND url=?",
+            (idea_id, url),
+        )
+        existing = cur.fetchone()
+        if existing:
+            print(f"[agent_log] paper already on file: paper_id={existing['paper_id']} ({title[:50]})")
+            return existing["paper_id"]
+
+        cur.execute("""
+            INSERT INTO step2_papers
+                (idea_id, title, authors, year, source, url, doi, local_path,
+                 dissected, added_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        """, (idea_id, title, authors, year, source, url, doi, local_path, _now()))
+        conn.commit()
+        paper_id = cur.lastrowid
+
+    print(f"[agent_log] paper added: paper_id={paper_id} [{source}] {title[:50]}")
+    return paper_id
+
+
 def log_agent_call(
     idea_id: str,
     gate_number: int,
