@@ -1,12 +1,14 @@
-"""SessionStart handover sweep — keeps the most recent day's handover(s) in
-memory/ and moves everything strictly older into memory/_handover_archive/.
+"""SessionStart handover sweep — keeps ONLY the single latest handover in
+memory/ and moves every other one into memory/_handover_archive/.
 
-Rule (revised 2026-06-10): keep every Session_Handover dated on the *latest date
-present* (not today); git mv anything older to the archive. This always leaves
-the current handover in memory/ for easy tracking — even on the first session of
-a new day, when nothing is dated 'today' yet — while preserving same-day
-narrative (Morning/Afternoon/...). Wired into the SessionStart hook
-(.claude/settings.json). Quiet on no-op; never blocks a session."""
+Rule (revised 2026-06-10): each day produces several handovers
+(Morning/Afternoon/Afternoon2/Evening/...). Keep just the most recent one for
+easy tracking; archive the rest — including older same-day slots. "Most recent"
+is ranked by (date, slot-of-day, slot-number, mtime): a robust slot order
+(Morning < Noon < Afternoon < Evening < Night, with trailing digit as a minor
+key), with file mtime as the final tiebreaker for unknown slot names. Wired into
+the SessionStart hook (.claude/settings.json). Quiet on no-op; never blocks a
+session."""
 import re
 import subprocess
 import sys
@@ -18,17 +20,42 @@ MEM = REPO / "memory"
 ARCHIVE = MEM / "_handover_archive"
 
 # Session_Handover_YYYY_MM_DD_<slot>.md
-_PAT = re.compile(r"^Session_Handover_(\d{4})_(\d{2})_(\d{2})_.+\.md$")
+_PAT = re.compile(r"^Session_Handover_(\d{4})_(\d{2})_(\d{2})_(.+)\.md$")
+
+# Chronological order of named slots within a day.
+_SLOT_ORDER = {
+    "morning": 1, "noon": 2, "midday": 2, "afternoon": 3,
+    "evening": 4, "night": 5,
+}
 
 
-def _file_date(name):
+def _parsed(name):
+    """-> (date, slot_rank, slot_num) or None if the name doesn't parse."""
     m = _PAT.match(name)
     if not m:
         return None
     try:
-        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     except ValueError:
         return None
+    slot = m.group(4)
+    sm = re.match(r"^([A-Za-z]+?)(\d*)$", slot)
+    base = sm.group(1).lower() if sm else slot.lower()
+    num = int(sm.group(2)) if sm and sm.group(2) else 1
+    rank = _SLOT_ORDER.get(base, 99)  # unknown slot -> ranks high; mtime breaks
+    return (d, rank, num)
+
+
+def _sort_key(f):
+    """Total order over handovers; the max is the one we keep."""
+    p = _parsed(f.name)
+    if p is None:
+        return None
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return (*p, mtime)
 
 
 def _move(src, dst):
@@ -50,17 +77,18 @@ def main():
         return
     ARCHIVE.mkdir(exist_ok=True)
 
-    files = sorted(MEM.glob("Session_Handover_*.md"))
-    dates = [d for d in (_file_date(f.name) for f in files) if d is not None]
-    if not dates:
+    # Only parseable handovers are sortable; unparseable ones are left in place.
+    candidates = [(k, f) for f in MEM.glob("Session_Handover_*.md")
+                  if (k := _sort_key(f)) is not None]
+    if not candidates:
         return  # nothing parseable -> nothing to sweep
-    keep = max(dates)  # latest day present -> always stays in memory/
+
+    keeper = max(candidates, key=lambda kf: kf[0])[1]  # the single latest
 
     moved = []
-    for f in files:
-        d = _file_date(f.name)
-        if d is None or d >= keep:
-            continue  # unparseable -> leave in place (safe); latest day -> keep
+    for _, f in sorted(candidates, key=lambda kf: kf[0]):
+        if f == keeper:
+            continue  # the latest handover stays in memory/
         dst = ARCHIVE / f.name
         if dst.exists():
             dst = ARCHIVE / f"{f.stem}_dup{f.suffix}"
@@ -68,8 +96,8 @@ def main():
         moved.append(f.name)
 
     if moved:
-        print(f"[handover-sweep] archived {len(moved)} older handover(s): "
-              + ", ".join(moved))
+        print(f"[handover-sweep] kept {keeper.name}; archived "
+              f"{len(moved)} older handover(s): " + ", ".join(moved))
 
 
 if __name__ == "__main__":
