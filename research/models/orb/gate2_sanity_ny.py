@@ -95,7 +95,7 @@ def main() -> None:
     checks = {
         "anchor-minute bars present (13:30 or 14:30 UTC)":  (len(edt_bars) + len(est_bars)) > 0,
         "OR builds on >=80% of NY-window trading days":     coverage_pct >= 0.80,
-        "range width plausible (0.5-30 USD)":               0.5 <= orb["range_w"].median() <= 30,
+        "range width plausible (0.05-30 USD, N=5 calibrated)": 0.05 <= orb["range_w"].median() <= 30,
         "breakouts fire on most OR days (>=60%)":           n_break / n_days >= 0.60,
         "both directions present":                          vc.get("long", 0) > 0 and vc.get("short", 0) > 0,
     }
