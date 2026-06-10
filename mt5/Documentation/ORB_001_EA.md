@@ -1,6 +1,6 @@
 # Sigma_ORB_V1 — ORB-001 Standalone EA
 
-**File:** [Experts/Sigma_System/Sigma_ORB_V1.mq5](../Experts/Sigma_System/Sigma_ORB_V1.mq5)
+**File:** [Experts/Sigma_ORB_V1.mq5](../Experts/Sigma_ORB_V1.mq5) (top-level Experts/ — NOT under Sigma_System; isolated from B2B)
 **Status:** compiled (0 errors / 0 warnings via MetaEditor64 CLI), 2026-06-11. Awaiting JM **demo** attach (D1).
 **Magic:** 1001 · **Comment:** `ORB001` · **Symbol:** XAUUSD.s
 
