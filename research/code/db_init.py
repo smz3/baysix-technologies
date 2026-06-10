@@ -194,6 +194,14 @@ def init():
 
         DROP VIEW IF EXISTS gate_pipeline;
         CREATE VIEW gate_pipeline AS
+        -- Dedupe to the LATEST attempt per (idea, gate) BEFORE filtering, so a gate
+        -- later passed on a retry no longer surfaces its stale blocked attempts
+        -- (task 23 — HMM-001 G2/G4 false-blocked). See migration 017.
+        WITH latest AS (
+            SELECT idea_id, gate_number, MAX(attempt) AS max_attempt
+            FROM step3_gates
+            GROUP BY idea_id, gate_number
+        )
         SELECT
             i.idea_id,
             i.name,
@@ -205,6 +213,9 @@ def init():
                             AS days_since_activity
         FROM step1_ideas i
         JOIN step3_gates g ON g.idea_id = i.idea_id
+        JOIN latest l ON l.idea_id = g.idea_id
+                     AND l.gate_number = g.gate_number
+                     AND l.max_attempt = g.attempt
         WHERE g.status IN ('open','blocked')
           AND i.status NOT IN ('killed','graduated')
         ORDER BY days_since_activity DESC;
