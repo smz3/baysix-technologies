@@ -7,13 +7,29 @@ description: 'Write a session handover to Memory/ before ending any session.'
 
 ## Step 1 — Get timestamp
 
+Run this to get the date, slot, and next available filename:
+
 ```bash
-date +"%Y_%m_%d"
+python -c "
+from datetime import datetime
+from pathlib import Path
+dt = datetime.now()
+h = dt.hour
+slot = 'Morning' if 5<=h<12 else 'Afternoon' if 12<=h<17 else 'Evening' if 17<=h<21 else 'Night'
+date_str = dt.strftime('%Y_%m_%d')
+base = f'Memory/Session_Handover_{date_str}_{slot}'
+n = 1
+while True:
+    suffix = '' if n == 1 else str(n)
+    path = Path(f'{base}{suffix}.md')
+    if not path.exists():
+        print(f'{base}{suffix}.md')
+        break
+    n += 1
+"
 ```
 
-Time-of-day label (24h): 05–11 → Morning · 12–16 → Afternoon · 17–20 → Evening · 21–04 → Night
-
-Filename: `Memory/Session_Handover_<YYYY_MM_DD>_<TimeOfDay>.md`
+Use the printed path as the filename. Never overwrite an existing file — the script handles numbering (Morning, Morning2, Morning3…) automatically.
 
 ## Step 2 — Write the file
 
