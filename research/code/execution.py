@@ -1,27 +1,36 @@
 """
-Execution interface for execution.db — the downstream twin of research.db.
+Execution interface for execution.db — the downstream twin of research.db (VPS side).
 All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 10).
 
-execution.db tracks the LIFE OF A DEPLOYED STRATEGY in five layers:
-    1. REGISTER   — accounts, deploy_strategies (what's deployed)
-    2. GATE       — deploy_gates (D0-D3 checkpoints)
-    3. OBSERVE    — exec_signals -> exec_orders -> exec_fills -> exec_trades
-    4. RECONCILE  — recon_results (live vs model; the lie-detector)
-    5. RECORD     — log_deploy, log_incidents
+execution.db tracks the LIFE OF A DEPLOYED STRATEGY in six layers (12 tables):
+    1. REGISTER   — accounts, instruments, deployments (what's deployed)
+    2. GATE       — deploy_gates (FORWARD checkpoint; FIDELITY is research Gate 7)
+    3. OBSERVE    — signals -> orders -> fills -> trades (LIVE accounts only)
+    4. STATE      — equity_snapshots (trailing-DD + kill-switch audit)
+    5. RECONCILE  — recon_results (live vs model; the lie-detector)
+    6. RECORD     — log_deploy, log_incidents
 
-Spec: braindump/execution_schema.md (the what) + execution_protocol.md (the why).
+TWO-DATABASE design (re-locked 2026-06-11): the MT5 Strategy-Tester evidence is NOT
+here — port-fidelity is the last *research* gate (Gate 7 — FIDELITY) and lives in
+research.db (research.code.tester). A deployment cannot be registered until that gate
+is 'passed'. Spec: braindump/execution_schema.md (what) + execution_protocol.md (why).
 
-Conventions mirror pipeline.py / strategy_log.py:
-  _conn() with PRAGMA foreign_keys=ON + row_factory, _now() in MYT, VALID_* tuples.
-Two time bases: bookkeeping (created_at/updated_at) = MYT; market (signal_ts,
-fill_ts, entry_ts, exit_ts, incident_ts) = UTC, supplied by the caller/adapter.
+Conventions mirror pipeline.py / strategy_log.py: _conn() with PRAGMA foreign_keys=ON
++ row_factory, _now() in MYT, VALID_* tuples. Two time bases — bookkeeping
+(created_at/updated_at) = MYT; market (signal_ts, fill_ts, entry_ts, exit_ts,
+incident_ts, snapshot_ts) = UTC, supplied by the caller/adapter.
 
-idea_id is a SOFT key into research.db — there is no FK; register_deployment()
-validates it against research.db in the code layer (principle: §1 of the protocol).
+Locked decisions baked in:
+  - venue = PROTOCOL ('mt5'/'ibkr', the adapter/code path), NOT the broker. The broker
+    is accounts.broker ('justmarkets'/'darwinex'/'ftmo') — all three are venue='mt5'.
+  - idea_id is a SOFT key into research.db (no FK); register_deployment() validates it
+    AND that its Gate 7 (FIDELITY) is 'passed'.
+  - magic_number: readable deterministic map owned here (ORB-001 -> 1001).
+  - redeploy = singleton: one deployments row per (idea x account); relaunch flips status.
 
-DB path is env-overridable via EXECUTION_DB_PATH (the smoke test points it at a
-temp file). All other research.db reads (idea validation, live config) always hit
-the real research.db regardless.
+DB path is env-overridable via EXECUTION_DB_PATH (the smoke test points it at a temp
+file). research.db reads (idea validation, Gate 7, live config) always hit the real
+research.db regardless.
 """
 
 import os
@@ -30,11 +39,11 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-# research.db code layer — soft-key validation + frozen-config snapshot
+# research.db code layer — soft-key validation, Gate-7 check, frozen-config snapshot
 try:
-    from research.code import pipeline, strategy_log
+    from research.code import pipeline, strategy_log, tester
 except ImportError:  # running as a loose script with research/code on sys.path
-    import pipeline, strategy_log
+    import pipeline, strategy_log, tester
 
 MYT = timezone(timedelta(hours=8))
 
@@ -48,14 +57,17 @@ def _db_path() -> Path:
 
 
 # ── Enum vocabularies (belt + suspenders: also CHECK-constrained in the DDL) ────
-VALID_VENUE          = ("justmarkets", "ibkr")
+VALID_VENUE          = ("mt5", "ibkr")                 # PROTOCOL (adapter), not broker
+VALID_INSTRUMENT_TYPE = ("spot", "fx", "cfd", "future")
 VALID_ACCOUNT_TYPE   = ("retail_highlev", "darwinex_alloc", "ftmo_challenge",
                         "ftmo_funded", "ibkr_dma")
 VALID_MODE           = ("demo", "live")
 VALID_DD_BASIS       = ("static", "trailing")
 VALID_ACCOUNT_STATUS = ("active", "breached", "closed")
-VALID_STAGE          = ("D0", "D1", "D2", "D3")
+VALID_STAGE          = ("FORWARD", "STEADY", "RETIRED")
 VALID_DEPLOY_STATUS  = ("pending", "active", "paused", "killed", "retired")
+VALID_GATE_NAME      = ("FORWARD",)                    # FIDELITY is research Gate 7
+VALID_SUB_STAGE      = ("demo", "live")
 VALID_GATE_STATUS    = ("open", "passed", "blocked", "killed")
 VALID_DIRECTION      = ("long", "short", "flat")
 VALID_ORDER_STATUS   = ("sent", "accepted", "rejected", "filled", "cancelled")
@@ -65,13 +77,8 @@ VALID_DEPLOY_VERDICT = ("CREATED", "PROMOTED", "PAUSED", "KILLED", "RESUMED", "R
 VALID_SEVERITY       = ("info", "warn", "critical")
 VALID_INCIDENT_KIND  = ("disconnect", "missed_fill", "slippage_spike", "reject",
                         "killswitch_fire", "data_gap", "config_mismatch",
-                        "prop_rule_breach", "tz_mismatch")
+                        "prop_rule_breach", "tz_mismatch", "heartbeat_gap")
 VALID_DECIDED_BY     = ("human", "agent")
-# TESTER provenance — the headline distinction: where the ticks came from + how MT5
-# modelled them. broker_history = JM's own (weak far back); dukascopy = our trusted
-# tick source loaded as a custom symbol; custom = any other imported feed.
-VALID_DATA_SOURCE    = ("broker_history", "dukascopy", "custom")
-VALID_TESTER_MODEL   = ("real_ticks", "every_tick", "1min_ohlc", "open_only")
 
 # Readable deterministic magic-number map (owned here, §Conventions of the spec):
 # family base + numeric suffix → ORB-001 = 1001, ORB-002 = 1002, HMM-001 = 2001.
@@ -80,14 +87,15 @@ _MAGIC_FAMILY_BASE = {"ORB": 1000, "HMM": 2000, "CUSUM": 3000}
 META_SCHEMA_VERSION = "1.0"
 
 
-# ── Canonical schema (single source of truth) ───────────────────────────────────
+# ── Canonical schema (single source of truth — 12 tables) ───────────────────────
 _SCHEMA = """
 PRAGMA foreign_keys = ON;
 
 -- Layer 1 — REGISTER ---------------------------------------------------------
 CREATE TABLE IF NOT EXISTS accounts (
     account_id         TEXT PRIMARY KEY,
-    venue              TEXT NOT NULL CHECK(venue IN ('justmarkets','ibkr')),
+    venue              TEXT NOT NULL CHECK(venue IN ('mt5','ibkr')),  -- PROTOCOL, not broker
+    broker             TEXT NOT NULL,                 -- 'justmarkets'/'darwinex'/'ftmo'/'ibkr'
     account_type       TEXT NOT NULL CHECK(account_type IN
                          ('retail_highlev','darwinex_alloc',
                           'ftmo_challenge','ftmo_funded','ibkr_dma')),
@@ -109,17 +117,35 @@ CREATE TABLE IF NOT EXISTS accounts (
     updated_at         DATETIME NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS deploy_strategies (
-    deploy_id           TEXT PRIMARY KEY,
-    idea_id             TEXT NOT NULL,
-    venue               TEXT NOT NULL CHECK(venue IN ('justmarkets','ibkr')),
-    instrument          TEXT NOT NULL DEFAULT 'XAUUSD.s',
+CREATE TABLE IF NOT EXISTS instruments (
+    symbol           TEXT PRIMARY KEY,                -- 'XAUUSD.s' (broker-specific)
+    display_name     TEXT,
+    instrument_type  TEXT NOT NULL CHECK(instrument_type IN ('spot','fx','cfd','future')),
+    base_asset       TEXT,
+    quote_currency   TEXT NOT NULL DEFAULT 'USD',
+    tick_size        REAL NOT NULL,                   -- min price increment
+    tick_value       REAL,                            -- $ per tick per 1.0 lot
+    contract_size    REAL NOT NULL,                   -- oz/lot (XAU=100) or contract multiplier
+    min_lot          REAL,
+    lot_step         REAL,
+    expiry           DATE,                            -- NULL for spot/fx/cfd; set for futures
+    meta             TEXT CHECK(meta IS NULL OR json_valid(meta)),
+    created_at       DATETIME NOT NULL,
+    updated_at       DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS deployments (
+    deploy_id           TEXT PRIMARY KEY,             -- 'ORB-001@jm-live-01'
+    idea_id             TEXT NOT NULL,                -- SOFT key -> research.db (no FK)
+    venue               TEXT NOT NULL CHECK(venue IN ('mt5','ibkr')),  -- protocol
+    instrument          TEXT NOT NULL REFERENCES instruments(symbol),
     account_id          TEXT NOT NULL REFERENCES accounts(account_id),
     magic_number        INTEGER NOT NULL,
     config_snapshot     TEXT CHECK(config_snapshot IS NULL OR json_valid(config_snapshot)),
     config_source       TEXT,
     meta_schema_version TEXT,
-    stage               TEXT NOT NULL DEFAULT 'D0' CHECK(stage IN ('D0','D1','D2','D3')),
+    stage               TEXT NOT NULL DEFAULT 'FORWARD'
+                          CHECK(stage IN ('FORWARD','STEADY','RETIRED')),
     status              TEXT NOT NULL DEFAULT 'pending'
                           CHECK(status IN ('pending','active','paused','killed','retired')),
     created_at          DATETIME NOT NULL,
@@ -130,26 +156,28 @@ CREATE TABLE IF NOT EXISTS deploy_strategies (
 -- Layer 2 — GATE -------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS deploy_gates (
     gate_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id     TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
-    gate_number   INTEGER NOT NULL CHECK(gate_number BETWEEN 0 AND 3),
+    deploy_id     TEXT NOT NULL REFERENCES deployments(deploy_id),
+    gate_name     TEXT NOT NULL DEFAULT 'FORWARD' CHECK(gate_name IN ('FORWARD')),
+    sub_stage     TEXT CHECK(sub_stage IS NULL OR sub_stage IN ('demo','live')),
     attempt       INTEGER NOT NULL DEFAULT 1,
     pass_criteria TEXT,
     gate_answer   TEXT,
+    evidence_ref  TEXT,
     status        TEXT NOT NULL DEFAULT 'open'
                   CHECK(status IN ('open','passed','blocked','killed')),
     answered_by   TEXT,
     created_at    DATETIME NOT NULL,
     updated_at    DATETIME NOT NULL,
     answered_at   DATETIME,
-    UNIQUE(deploy_id, gate_number, attempt)
+    UNIQUE(deploy_id, gate_name, sub_stage, attempt)
 );
 
--- Layer 3 — OBSERVE ----------------------------------------------------------
-CREATE TABLE IF NOT EXISTS exec_signals (
+-- Layer 3 — OBSERVE (LIVE accounts only) -------------------------------------
+CREATE TABLE IF NOT EXISTS signals (
     signal_id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id           TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
-    signal_ts           DATETIME NOT NULL,
-    session_date        DATE NOT NULL,
+    deploy_id           TEXT NOT NULL REFERENCES deployments(deploy_id),
+    signal_ts           DATETIME NOT NULL,            -- UTC (market time)
+    session_date        DATE NOT NULL,                -- anchor-tz session date
     direction           TEXT NOT NULL CHECK(direction IN ('long','short','flat')),
     intended_entry_px   REAL,
     intended_stop_px    REAL,
@@ -158,13 +186,13 @@ CREATE TABLE IF NOT EXISTS exec_signals (
     expected_R          REAL,
     meta                TEXT CHECK(meta IS NULL OR json_valid(meta)),
     meta_schema_version TEXT,
-    created_at          DATETIME NOT NULL
+    created_at          DATETIME NOT NULL             -- MYT (bookkeeping)
 );
 
-CREATE TABLE IF NOT EXISTS exec_orders (
+CREATE TABLE IF NOT EXISTS orders (
     order_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    signal_id      INTEGER REFERENCES exec_signals(signal_id),
-    deploy_id      TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
+    signal_id      INTEGER REFERENCES signals(signal_id),
+    deploy_id      TEXT NOT NULL REFERENCES deployments(deploy_id),
     venue_order_id TEXT,
     order_type     TEXT,
     side           TEXT CHECK(side IS NULL OR side IN ('buy','sell')),
@@ -173,59 +201,72 @@ CREATE TABLE IF NOT EXISTS exec_orders (
     status         TEXT NOT NULL DEFAULT 'sent'
                    CHECK(status IN ('sent','accepted','rejected','filled','cancelled')),
     reject_reason  TEXT,
-    placed_ts      DATETIME,
-    created_at     DATETIME NOT NULL
+    placed_ts      DATETIME,                          -- UTC
+    created_at     DATETIME NOT NULL                  -- MYT
 );
 
-CREATE TABLE IF NOT EXISTS exec_fills (
+CREATE TABLE IF NOT EXISTS fills (
     fill_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id      INTEGER REFERENCES exec_orders(order_id),
-    deploy_id     TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
+    order_id      INTEGER REFERENCES orders(order_id),
+    deploy_id     TEXT NOT NULL REFERENCES deployments(deploy_id),
     venue_deal_id TEXT,
     leg           TEXT NOT NULL CHECK(leg IN ('entry','exit')),
     fill_px       REAL NOT NULL,
     fill_size     REAL NOT NULL,
-    fill_ts       DATETIME NOT NULL,
+    fill_ts       DATETIME NOT NULL,                  -- UTC
     slippage_px   REAL,
     commission    REAL,
     swap          REAL,
     magic_number  INTEGER,
-    created_at    DATETIME NOT NULL
+    created_at    DATETIME NOT NULL                   -- MYT
 );
 
-CREATE TABLE IF NOT EXISTS exec_trades (
+CREATE TABLE IF NOT EXISTS trades (
     trade_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id        TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
-    signal_id        INTEGER REFERENCES exec_signals(signal_id),
-    entry_ts         DATETIME,
+    deploy_id        TEXT NOT NULL REFERENCES deployments(deploy_id),
+    signal_id        INTEGER REFERENCES signals(signal_id),
+    entry_ts         DATETIME,                        -- UTC
     entry_px         REAL,
-    exit_ts          DATETIME,
+    exit_ts          DATETIME,                        -- UTC
     exit_px          REAL,
     exit_reason      TEXT,
     risk_unit        REAL,
     realized_R       REAL,
     expected_R       REAL,
     realized_pnl_usd REAL,
-    created_at       DATETIME NOT NULL
+    created_at       DATETIME NOT NULL                -- MYT
 );
 
--- Layer 4 — RECONCILE --------------------------------------------------------
+-- Layer 4 — STATE ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS equity_snapshots (
+    snapshot_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id    TEXT NOT NULL REFERENCES accounts(account_id),
+    deploy_id     TEXT REFERENCES deployments(deploy_id),  -- nullable: account-level
+    snapshot_ts   DATETIME NOT NULL,                  -- UTC
+    equity        REAL NOT NULL,                      -- balance + floating P&L
+    balance       REAL NOT NULL,                      -- realized only
+    open_pnl      REAL,
+    margin_used   REAL,
+    created_at    DATETIME NOT NULL                   -- MYT
+);
+
+-- Layer 5 — RECONCILE --------------------------------------------------------
 CREATE TABLE IF NOT EXISTS recon_results (
     recon_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id    TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
-    gate_number  INTEGER,
+    deploy_id    TEXT NOT NULL REFERENCES deployments(deploy_id),
+    gate_id      INTEGER REFERENCES deploy_gates(gate_id),
     period_start DATE,
     period_end   DATE,
     metric_key   TEXT NOT NULL,
     metric_value REAL NOT NULL,
     n_obs        INTEGER,
-    created_at   DATETIME NOT NULL
+    created_at   DATETIME NOT NULL                    -- MYT
 );
 
--- Layer 5 — RECORD -----------------------------------------------------------
+-- Layer 6 — RECORD -----------------------------------------------------------
 CREATE TABLE IF NOT EXISTS log_deploy (
     log_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id   TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
+    deploy_id   TEXT NOT NULL REFERENCES deployments(deploy_id),
     event       TEXT,
     from_stage  TEXT,
     to_stage    TEXT,
@@ -234,80 +275,22 @@ CREATE TABLE IF NOT EXISTS log_deploy (
     rationale   TEXT,
     recon_id    INTEGER REFERENCES recon_results(recon_id),
     decided_by  TEXT NOT NULL DEFAULT 'human' CHECK(decided_by IN ('human','agent')),
-    created_at  DATETIME NOT NULL
+    created_at  DATETIME NOT NULL                     -- MYT
 );
 
 CREATE TABLE IF NOT EXISTS log_incidents (
     incident_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id   TEXT NOT NULL REFERENCES deploy_strategies(deploy_id),
-    incident_ts DATETIME NOT NULL,
+    deploy_id   TEXT REFERENCES deployments(deploy_id),   -- nullable: account-level
+    account_id  TEXT REFERENCES accounts(account_id),
+    incident_ts DATETIME NOT NULL,                    -- UTC
     severity    TEXT NOT NULL CHECK(severity IN ('info','warn','critical')),
     kind        TEXT NOT NULL CHECK(kind IN
                   ('disconnect','missed_fill','slippage_spike','reject',
                    'killswitch_fire','data_gap','config_mismatch',
-                   'prop_rule_breach','tz_mismatch')),
+                   'prop_rule_breach','tz_mismatch','heartbeat_gap')),
     detail      TEXT,
     resolved    INTEGER NOT NULL DEFAULT 0 CHECK(resolved IN (0,1)),
-    created_at  DATETIME NOT NULL
-);
-
--- TESTER — MT5 Strategy Tester capture (provenance-first) ---------------------
--- A tester run is NOT a live deploy: no account, no real fills. It exists to (a)
--- mechanically check the MQL5 port reproduces the Python logic, and (b) be diffed
--- trade-for-trade against the Python backtest on the SAME data. data_source is the
--- first-class fact — the same EA run means different things on dukascopy vs JM.
-CREATE TABLE IF NOT EXISTS tester_runs (
-    run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    idea_id         TEXT NOT NULL,                 -- soft key into research.db
-    deploy_id       TEXT REFERENCES deploy_strategies(deploy_id),  -- optional link
-    ea_name         TEXT,                          -- 'baysix_orb_001'
-    ea_version      TEXT,
-    symbol          TEXT NOT NULL,                 -- e.g. 'XAUUSD_dukas'
-    data_source     TEXT NOT NULL CHECK(data_source IN
-                       ('broker_history','dukascopy','custom')),
-    model_quality   TEXT,                          -- MT5 history quality, e.g. '99%'
-    tester_model    TEXT CHECK(tester_model IS NULL OR tester_model IN
-                       ('real_ticks','every_tick','1min_ohlc','open_only')),
-    timeframe       TEXT,                          -- chart TF of the run, e.g. 'M1'
-    period_start    DATE,
-    period_end      DATE,
-    tz_offset_hours INTEGER,                        -- tester server->UTC offset used (0 = UTC dukas)
-    magic_number    INTEGER,
-    initial_deposit REAL,
-    leverage        INTEGER,
-    spread_setting  TEXT,                           -- 'real' | 'fixed:N'
-    params          TEXT CHECK(params IS NULL OR json_valid(params)),  -- EA inputs snapshot
-    -- run-level summary (filled on finalize) --
-    n_trades        INTEGER,
-    net_profit_usd  REAL,
-    profit_factor   REAL,
-    max_dd_pct      REAL,
-    win_rate        REAL,
-    notes           TEXT,
-    created_at      DATETIME NOT NULL,
-    updated_at      DATETIME NOT NULL
-);
-
--- Mirrors exec_trades (the reconciliation unit), plus ORB session context so a row
--- diffs straight against a Python backtest trade keyed on session_date.
-CREATE TABLE IF NOT EXISTS tester_trades (
-    tt_id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id           INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    ticket           INTEGER,
-    session_date     DATE,                          -- join key to the Python backtest
-    direction        TEXT CHECK(direction IS NULL OR direction IN ('long','short','flat')),
-    entry_ts         DATETIME,
-    entry_px         REAL,
-    exit_ts          DATETIME,
-    exit_px          REAL,
-    exit_reason      TEXT,
-    risk_unit        REAL,                          -- range_w (1R)
-    realized_R       REAL,
-    realized_pnl_usd REAL,
-    or_high          REAL,
-    or_low           REAL,
-    range_w          REAL,
-    created_at       DATETIME NOT NULL
+    created_at  DATETIME NOT NULL                     -- MYT
 );
 """
 
@@ -317,12 +300,14 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ORBMeta(BaseModel):
-    """exec_signals.meta for ORB strategies — strategy-private context only."""
+    """signals.meta for ORB strategies — strategy-private context + feed provenance."""
     model_config = ConfigDict(extra="forbid")
     or_high: float
     or_low: float
     range_w: float
-    anchor: str   # e.g. '09:00 UTC'
+    anchor: str                       # e.g. '09:00 UTC'
+    feed_window: str | None = None    # bars recomputed against (recon replay)
+    feed_source: str | None = None    # which feed the auditor used
 
 
 # idea-family prefix → meta model. Extend as new strategy families go live.
@@ -336,8 +321,7 @@ def _validate_meta(idea_id: str, meta: dict | None) -> str | None:
     family = idea_id.split("-")[0]
     model = _META_MODELS.get(family)
     if model is None:
-        # no schema defined for this family yet — store as-is but require valid JSON
-        return json.dumps(meta)
+        return json.dumps(meta)  # no schema yet — store as-is but require valid JSON
     return model(**meta).model_dump_json()
 
 
@@ -355,7 +339,7 @@ def _now() -> str:
 
 
 def init_db() -> Path:
-    """Create execution.db with the full schema. Idempotent (IF NOT EXISTS)."""
+    """Create execution.db with the full 12-table schema. Idempotent (IF NOT EXISTS)."""
     path = _db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with _conn() as conn:
@@ -384,6 +368,7 @@ def _magic_for(idea_id: str) -> int:
 def register_account(
     account_id: str,
     venue: str,
+    broker: str,
     account_type: str,
     mode: str,
     broker_login: str = None,
@@ -399,7 +384,8 @@ def register_account(
     rules_meta: dict = None,
     status: str = "active",
 ) -> str:
-    """Register a broker account (the rulebook the EA kill-switch enforces)."""
+    """Register a broker account (the rulebook the EA kill-switch enforces).
+    venue = PROTOCOL ('mt5'/'ibkr'); broker = who it is ('justmarkets'...)."""
     if venue not in VALID_VENUE:
         raise ValueError(f"venue must be one of {VALID_VENUE}")
     if account_type not in VALID_ACCOUNT_TYPE:
@@ -416,33 +402,69 @@ def register_account(
     with _conn() as conn:
         conn.execute("""
             INSERT INTO accounts
-                (account_id, venue, account_type, mode, broker_login, base_currency,
-                 leverage, initial_balance, max_daily_loss_pct, max_total_dd_pct,
-                 dd_basis, daily_reset_tz, profit_target_pct, min_trading_days,
-                 rules_meta, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (account_id, venue, account_type, mode, broker_login, base_currency,
-              leverage, initial_balance, max_daily_loss_pct, max_total_dd_pct,
-              dd_basis, daily_reset_tz, profit_target_pct, min_trading_days,
-              rules_json, status, now, now))
+                (account_id, venue, broker, account_type, mode, broker_login,
+                 base_currency, leverage, initial_balance, max_daily_loss_pct,
+                 max_total_dd_pct, dd_basis, daily_reset_tz, profit_target_pct,
+                 min_trading_days, rules_meta, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (account_id, venue, broker, account_type, mode, broker_login,
+              base_currency, leverage, initial_balance, max_daily_loss_pct,
+              max_total_dd_pct, dd_basis, daily_reset_tz, profit_target_pct,
+              min_trading_days, rules_json, status, now, now))
         conn.commit()
-    print(f"[execution] account registered: {account_id} ({venue}/{account_type}/{mode})")
+    print(f"[execution] account registered: {account_id} ({venue}/{broker}/{account_type}/{mode})")
     return account_id
+
+
+def register_instrument(
+    symbol: str,
+    instrument_type: str,
+    tick_size: float,
+    contract_size: float,
+    display_name: str = None,
+    base_asset: str = None,
+    quote_currency: str = "USD",
+    tick_value: float = None,
+    min_lot: float = None,
+    lot_step: float = None,
+    expiry: str = None,
+    meta: dict = None,
+) -> str:
+    """Register a tradable product (the spec P&L / risk math reads). Returns symbol."""
+    if instrument_type not in VALID_INSTRUMENT_TYPE:
+        raise ValueError(f"instrument_type must be one of {VALID_INSTRUMENT_TYPE}")
+    now = _now()
+    meta_json = json.dumps(meta) if meta is not None else None
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO instruments
+                (symbol, display_name, instrument_type, base_asset, quote_currency,
+                 tick_size, tick_value, contract_size, min_lot, lot_step, expiry,
+                 meta, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, display_name, instrument_type, base_asset, quote_currency,
+              tick_size, tick_value, contract_size, min_lot, lot_step, expiry,
+              meta_json, now, now))
+        conn.commit()
+    print(f"[execution] instrument registered: {symbol} ({instrument_type}, "
+          f"tick={tick_size}, contract={contract_size})")
+    return symbol
 
 
 def register_deployment(
     idea_id: str,
     account_id: str,
-    instrument: str = "XAUUSD.s",
+    instrument: str,
     venue: str = None,
     magic_number: int = None,
     config_source: str = None,
 ) -> str:
-    """Register a deployment of a research idea onto an account.
+    """Register a deployment of a research idea onto an account+instrument.
 
-    Validates idea_id exists in research.db (SOFT key — no FK), derives venue from
-    the account, assigns the readable magic number, and snapshots the frozen live
-    config via strategy_log.get_live_config(). Returns deploy_id ('idea@account').
+    GUARDRAILS (cross-DB, soft-key): (1) idea_id must exist in research.db; (2) its
+    Gate 7 (FIDELITY) must be 'passed' — a failing port never reaches an account.
+    Derives venue from the account, assigns the readable magic number, and snapshots
+    the frozen live config via strategy_log.get_live_config(). Returns deploy_id.
     """
     # 1) soft-key validation against research.db
     if not pipeline.get_idea(idea_id):
@@ -450,10 +472,19 @@ def register_deployment(
             f"idea_id '{idea_id}' not found in research.db — register the idea first "
             f"(execution.db keys it as a soft key, code-validated)"
         )
-    # 2) account must exist; inherit its venue
+    # 2) Gate 7 (FIDELITY) must be passed upstream — the bridge between the two DBs
+    if not tester.gate7_passed(idea_id):
+        raise ValueError(
+            f"Gate 7 (FIDELITY) is not 'passed' for {idea_id} — the MQL5 port has not "
+            f"been verified against the research backtest. No deployment until it passes "
+            f"(tester.log_fidelity_diff)."
+        )
+    # 3) account + instrument must exist; inherit venue from the account
     rules = get_account_rules(account_id)
     if not rules:
         raise ValueError(f"account '{account_id}' not registered — register_account() first")
+    if not get_instrument(instrument):
+        raise ValueError(f"instrument '{instrument}' not registered — register_instrument() first")
     if venue is None:
         venue = rules["venue"]
     elif venue != rules["venue"]:
@@ -462,7 +493,7 @@ def register_deployment(
     if magic_number is None:
         magic_number = _magic_for(idea_id)
 
-    # 3) snapshot the frozen live config (the contract between the two DBs)
+    # 4) snapshot the frozen live config (the contract between the two DBs)
     live = strategy_log.get_live_config(idea_id)
     config_snapshot = json.dumps(live) if live else None
     if config_source is None and live:
@@ -474,25 +505,25 @@ def register_deployment(
     now = _now()
     with _conn() as conn:
         conn.execute("""
-            INSERT INTO deploy_strategies
+            INSERT INTO deployments
                 (deploy_id, idea_id, venue, instrument, account_id, magic_number,
                  config_snapshot, config_source, meta_schema_version,
                  stage, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'D0', 'pending', ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'FORWARD', 'pending', ?, ?)
         """, (deploy_id, idea_id, venue, instrument, account_id, magic_number,
               config_snapshot, config_source, META_SCHEMA_VERSION, now, now))
         conn.commit()
     print(f"[execution] deployment registered: {deploy_id} (magic={magic_number}, venue={venue})")
-    log_deploy_change(deploy_id, verdict="CREATED", to_stage="D0",
-                      rationale=f"registered {idea_id} on {account_id}")
+    log_deploy_change(deploy_id, verdict="CREATED", to_stage="FORWARD",
+                      rationale=f"registered {idea_id} on {account_id} (Gate 7 passed)")
     return deploy_id
 
 
 def get_deploy_config(deploy_id: str) -> dict:
-    """Return the deploy_strategies row as a dict (empty if not found)."""
+    """Return the deployments row as a dict (empty if not found)."""
     with _conn() as conn:
         row = conn.execute(
-            "SELECT * FROM deploy_strategies WHERE deploy_id=?", (deploy_id,)
+            "SELECT * FROM deployments WHERE deploy_id=?", (deploy_id,)
         ).fetchone()
     return dict(row) if row else {}
 
@@ -506,83 +537,132 @@ def get_account_rules(account_id: str) -> dict:
     return dict(row) if row else {}
 
 
-# ── Layer 2 — GATE ──────────────────────────────────────────────────────────────
-def open_deploy_gate(deploy_id: str, gate_number: int, pass_criteria: str,
+def get_instrument(symbol: str) -> dict:
+    """Return the instruments row as a dict (empty if not found)."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM instruments WHERE symbol=?", (symbol,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+# ── Layer 2 — GATE (FORWARD only; FIDELITY is research Gate 7) ───────────────────
+def open_deploy_gate(deploy_id: str, pass_criteria: str, sub_stage: str = None,
                      attempt: int = 1) -> int:
-    """Open a D-gate (D0-D3) with a pre-committed pass criterion. Returns gate_id."""
-    if gate_number not in range(4):
-        raise ValueError(f"D-gate_number must be 0-3, got {gate_number}")
+    """Open the FORWARD gate with a pre-committed pass criterion. Returns gate_id.
+
+    GUARDRAIL: refuses to open unless research Gate 7 (FIDELITY) is 'passed' for the
+    deployment's idea_id — a failing port never reaches a forward gate. demo sub_stage
+    is the normal first leg before live (enforced at pass time)."""
+    if sub_stage is not None and sub_stage not in VALID_SUB_STAGE:
+        raise ValueError(f"sub_stage must be one of {VALID_SUB_STAGE} or None")
+    dep = get_deploy_config(deploy_id)
+    if not dep:
+        raise ValueError(f"deployment not found: {deploy_id}")
+    if not tester.gate7_passed(dep["idea_id"]):
+        raise ValueError(
+            f"Cannot open FORWARD for {deploy_id}: research Gate 7 (FIDELITY) not passed "
+            f"for {dep['idea_id']}."
+        )
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO deploy_gates
-                (deploy_id, gate_number, attempt, pass_criteria, status,
+                (deploy_id, gate_name, sub_stage, attempt, pass_criteria, status,
                  created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'open', ?, ?)
-        """, (deploy_id, gate_number, attempt, pass_criteria, now, now))
+            VALUES (?, 'FORWARD', ?, ?, ?, 'open', ?, ?)
+        """, (deploy_id, sub_stage, attempt, pass_criteria, now, now))
         conn.commit()
         gate_id = cur.lastrowid
-    print(f"[execution] {deploy_id} D{gate_number} attempt {attempt}: opened")
+    print(f"[execution] {deploy_id} FORWARD/{sub_stage} attempt {attempt}: opened (gate_id={gate_id})")
     return gate_id
 
 
-def _has_recon(deploy_id: str, gate_number: int) -> bool:
+def _has_recon(deploy_id: str, gate_id: int) -> bool:
     with _conn() as conn:
         row = conn.execute(
-            "SELECT 1 FROM recon_results WHERE deploy_id=? AND gate_number=? LIMIT 1",
-            (deploy_id, gate_number),
+            "SELECT 1 FROM recon_results WHERE deploy_id=? AND gate_id=? LIMIT 1",
+            (deploy_id, gate_id),
         ).fetchone()
     return row is not None
 
 
-def pass_deploy_gate(deploy_id: str, gate_number: int, gate_answer: str,
-                     answered_by: str = "human", attempt: int = 1,
-                     allow_incomplete: bool = False) -> None:
-    """Mark a D-gate passed.
+def _gate_row(deploy_id: str, sub_stage: str, attempt: int) -> dict:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM deploy_gates WHERE deploy_id=? AND gate_name='FORWARD' "
+            "AND sub_stage IS ? AND attempt=?",
+            (deploy_id, sub_stage, attempt),
+        ).fetchone()
+    return dict(row) if row else {}
 
-    GUARDRAIL (twin of pass_gate(6)): refuses unless supporting recon_results exist
-    for this deploy_id/gate_number — a D-gate cannot pass without reconciliation
-    evidence. Pass allow_incomplete=True ONLY with a logged waiver in gate_answer.
-    """
-    if not allow_incomplete and not _has_recon(deploy_id, gate_number):
+
+def _sub_stage_passed(deploy_id: str, sub_stage: str) -> bool:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM deploy_gates WHERE deploy_id=? AND gate_name='FORWARD' "
+            "AND sub_stage IS ? AND status='passed' LIMIT 1",
+            (deploy_id, sub_stage),
+        ).fetchone()
+    return row is not None
+
+
+def pass_deploy_gate(deploy_id: str, gate_answer: str, sub_stage: str = None,
+                     answered_by: str = "human", attempt: int = 1,
+                     evidence_ref: str = None, allow_incomplete: bool = False) -> None:
+    """Mark a FORWARD gate passed.
+
+    GUARDRAILS: (1) supporting recon_results must exist for the gate (twin of
+    pass_gate(6)); (2) the 'live' sub_stage cannot pass until 'demo' has passed.
+    allow_incomplete=True bypasses (1) ONLY with a logged waiver in gate_answer."""
+    if sub_stage is not None and sub_stage not in VALID_SUB_STAGE:
+        raise ValueError(f"sub_stage must be one of {VALID_SUB_STAGE} or None")
+    gate = _gate_row(deploy_id, sub_stage, attempt)
+    if not gate:
+        raise ValueError(f"Gate not found: {deploy_id} FORWARD/{sub_stage} attempt={attempt}")
+    if sub_stage == "live" and not _sub_stage_passed(deploy_id, "demo"):
         raise ValueError(
-            f"Cannot pass D{gate_number} for {deploy_id}: no recon_results exist for it. "
-            f"A deployment gate passes on reconciliation evidence (log_recon_result first), "
-            f"or pass allow_incomplete=True with a waiver reason in gate_answer."
+            f"Cannot pass FORWARD/live for {deploy_id}: the demo sub_stage has not passed. "
+            f"Demo reconciles before live capital."
+        )
+    if not allow_incomplete and not _has_recon(deploy_id, gate["gate_id"]):
+        raise ValueError(
+            f"Cannot pass FORWARD/{sub_stage} for {deploy_id}: no recon_results for "
+            f"gate_id={gate['gate_id']}. A forward gate passes on reconciliation evidence "
+            f"(log_recon_result first), or pass allow_incomplete=True with a waiver."
         )
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             UPDATE deploy_gates
-            SET status='passed', gate_answer=?, answered_by=?, updated_at=?, answered_at=?
-            WHERE deploy_id=? AND gate_number=? AND attempt=?
-        """, (gate_answer, answered_by, now, now, deploy_id, gate_number, attempt))
-        if cur.rowcount == 0:
-            raise ValueError(f"Gate not found: {deploy_id} D{gate_number} attempt={attempt}")
+            SET status='passed', gate_answer=?, evidence_ref=COALESCE(?, evidence_ref),
+                answered_by=?, updated_at=?, answered_at=?
+            WHERE gate_id=?
+        """, (gate_answer, evidence_ref, answered_by, now, now, gate["gate_id"]))
         conn.commit()
-    print(f"[execution] {deploy_id} D{gate_number}: PASSED")
+    print(f"[execution] {deploy_id} FORWARD/{sub_stage}: PASSED")
 
 
-def block_deploy_gate(deploy_id: str, gate_number: int, gate_answer: str,
+def block_deploy_gate(deploy_id: str, gate_answer: str, sub_stage: str = None,
                       answered_by: str = "human", attempt: int = 1) -> None:
-    """Mark a D-gate blocked with a reason."""
+    """Mark a FORWARD gate blocked with a reason."""
+    gate = _gate_row(deploy_id, sub_stage, attempt)
+    if not gate:
+        raise ValueError(f"Gate not found: {deploy_id} FORWARD/{sub_stage} attempt={attempt}")
     now = _now()
     with _conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
+        conn.execute("""
             UPDATE deploy_gates
             SET status='blocked', gate_answer=?, answered_by=?, updated_at=?, answered_at=?
-            WHERE deploy_id=? AND gate_number=? AND attempt=?
-        """, (gate_answer, answered_by, now, now, deploy_id, gate_number, attempt))
-        if cur.rowcount == 0:
-            raise ValueError(f"Gate not found: {deploy_id} D{gate_number} attempt={attempt}")
+            WHERE gate_id=?
+        """, (gate_answer, answered_by, now, now, gate["gate_id"]))
         conn.commit()
-    print(f"[execution] {deploy_id} D{gate_number}: BLOCKED — {gate_answer[:80]}")
+    print(f"[execution] {deploy_id} FORWARD/{sub_stage}: BLOCKED — {gate_answer[:80]}")
 
 
-def kill_deployment(deploy_id: str, rationale: str, gate_number: int = None,
+def kill_deployment(deploy_id: str, rationale: str, sub_stage: str = None,
                     attempt: int = 1) -> None:
     """Kill a deployment: flip status to 'killed', kill the open gate if given,
     and record a KILLED row in log_deploy."""
@@ -590,16 +670,17 @@ def kill_deployment(deploy_id: str, rationale: str, gate_number: int = None,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            UPDATE deploy_strategies SET status='killed', updated_at=? WHERE deploy_id=?
+            UPDATE deployments SET status='killed', updated_at=? WHERE deploy_id=?
         """, (now, deploy_id))
         if cur.rowcount == 0:
             raise ValueError(f"deployment not found: {deploy_id}")
-        if gate_number is not None:
+        gate = _gate_row(deploy_id, sub_stage, attempt)
+        if gate:
             cur.execute("""
                 UPDATE deploy_gates
                 SET status='killed', gate_answer=?, updated_at=?, answered_at=?
-                WHERE deploy_id=? AND gate_number=? AND attempt=?
-            """, (rationale, now, now, deploy_id, gate_number, attempt))
+                WHERE gate_id=?
+            """, (rationale, now, now, gate["gate_id"]))
         conn.commit()
     print(f"[execution] {deploy_id}: KILLED — {rationale[:80]}")
     log_deploy_change(deploy_id, verdict="KILLED", rationale=rationale)
@@ -610,7 +691,7 @@ def log_signal(deploy_id: str, direction: str, signal_ts: str, session_date: str
                intended_entry_px: float = None, intended_stop_px: float = None,
                intended_target_px: float = None, intended_size: float = None,
                expected_R: float = None, meta: dict = None) -> int:
-    """Author an intended trade (exec_signals) — Python's recompute, not the EA.
+    """Author an intended trade (signals) — Python's recompute, not the EA.
     signal_ts/session_date are MARKET time (UTC / anchor-tz); meta is Pydantic-
     validated against the idea family's schema. Returns signal_id."""
     if direction not in VALID_DIRECTION:
@@ -621,7 +702,7 @@ def log_signal(deploy_id: str, direction: str, signal_ts: str, session_date: str
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO exec_signals
+            INSERT INTO signals
                 (deploy_id, signal_ts, session_date, direction, intended_entry_px,
                  intended_stop_px, intended_target_px, intended_size, expected_R,
                  meta, meta_schema_version, created_at)
@@ -639,7 +720,7 @@ def ingest_order(deploy_id: str, signal_id: int = None, venue_order_id: str = No
                  order_type: str = None, side: str = None, requested_px: float = None,
                  requested_size: float = None, status: str = "sent",
                  reject_reason: str = None, placed_ts: str = None) -> int:
-    """Normalize a broker order into exec_orders. Returns order_id."""
+    """Normalize a broker order into orders. Returns order_id."""
     if side is not None and side not in VALID_SIDE:
         raise ValueError(f"side must be one of {VALID_SIDE} or None")
     if status not in VALID_ORDER_STATUS:
@@ -648,7 +729,7 @@ def ingest_order(deploy_id: str, signal_id: int = None, venue_order_id: str = No
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO exec_orders
+            INSERT INTO orders
                 (signal_id, deploy_id, venue_order_id, order_type, side,
                  requested_px, requested_size, status, reject_reason, placed_ts, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -664,7 +745,7 @@ def ingest_fill(deploy_id: str, order_id: int, leg: str, fill_px: float,
                 fill_size: float, fill_ts: str, magic_number: int = None,
                 venue_deal_id: str = None, slippage_px: float = None,
                 commission: float = None, swap: float = None) -> int:
-    """Normalize a broker fill into exec_fills. Asserts the deal's magic matches the
+    """Normalize a broker fill into fills. Asserts the deal's magic matches the
     deployment (mismatch → config_mismatch incident). Returns fill_id."""
     if leg not in VALID_LEG:
         raise ValueError(f"leg must be one of {VALID_LEG}")
@@ -672,9 +753,9 @@ def ingest_fill(deploy_id: str, order_id: int, leg: str, fill_px: float,
     if not dep:
         raise ValueError(f"deployment not found: {deploy_id}")
     if magic_number is not None and magic_number != dep["magic_number"]:
-        log_incident(deploy_id, severity="critical", kind="config_mismatch",
+        log_incident(severity="critical", kind="config_mismatch",
                      detail=f"fill magic {magic_number} != deploy magic {dep['magic_number']} "
-                            f"(deal {venue_deal_id})", incident_ts=fill_ts)
+                            f"(deal {venue_deal_id})", deploy_id=deploy_id, incident_ts=fill_ts)
         raise ValueError(
             f"magic mismatch on fill: deal magic={magic_number}, deploy magic="
             f"{dep['magic_number']} — logged config_mismatch incident"
@@ -683,7 +764,7 @@ def ingest_fill(deploy_id: str, order_id: int, leg: str, fill_px: float,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO exec_fills
+            INSERT INTO fills
                 (order_id, deploy_id, venue_deal_id, leg, fill_px, fill_size,
                  fill_ts, slippage_px, commission, swap, magic_number, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -700,12 +781,12 @@ def ingest_trade(deploy_id: str, signal_id: int = None, entry_ts: str = None,
                  exit_reason: str = None, risk_unit: float = None,
                  realized_R: float = None, expected_R: float = None,
                  realized_pnl_usd: float = None) -> int:
-    """Record a closed round-trip (exec_trades) — the reconciliation unit. Returns trade_id."""
+    """Record a closed round-trip (trades) — the reconciliation unit. Returns trade_id."""
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO exec_trades
+            INSERT INTO trades
                 (deploy_id, signal_id, entry_ts, entry_px, exit_ts, exit_px,
                  exit_reason, risk_unit, realized_R, expected_R, realized_pnl_usd, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -717,9 +798,31 @@ def ingest_trade(deploy_id: str, signal_id: int = None, entry_ts: str = None,
     return trade_id
 
 
-# ── Layer 4 — RECONCILE ─────────────────────────────────────────────────────────
+# ── Layer 4 — STATE ───────────────────────────────────────────────────────────
+def log_equity_snapshot(account_id: str, snapshot_ts: str, equity: float,
+                        balance: float, open_pnl: float = None,
+                        margin_used: float = None, deploy_id: str = None) -> int:
+    """Record a periodic account-value reading (trailing-DD + kill-switch audit).
+    snapshot_ts is MARKET time (UTC). Keyed at account_id (trailing-DD is an
+    account-level rule). Returns snapshot_id."""
+    now = _now()
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO equity_snapshots
+                (account_id, deploy_id, snapshot_ts, equity, balance,
+                 open_pnl, margin_used, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (account_id, deploy_id, snapshot_ts, equity, balance,
+              open_pnl, margin_used, now))
+        conn.commit()
+        snapshot_id = cur.lastrowid
+    return snapshot_id
+
+
+# ── Layer 5 — RECONCILE ─────────────────────────────────────────────────────────
 def log_recon_result(deploy_id: str, metric_key: str, metric_value: float,
-                     n_obs: int = None, gate_number: int = None,
+                     n_obs: int = None, gate_id: int = None,
                      period_start: str = None, period_end: str = None) -> int:
     """Log one reconciliation metric (the step4_results of the live world). Returns recon_id."""
     now = _now()
@@ -727,19 +830,19 @@ def log_recon_result(deploy_id: str, metric_key: str, metric_value: float,
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO recon_results
-                (deploy_id, gate_number, period_start, period_end,
+                (deploy_id, gate_id, period_start, period_end,
                  metric_key, metric_value, n_obs, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (deploy_id, gate_number, period_start, period_end,
+        """, (deploy_id, gate_id, period_start, period_end,
               metric_key, metric_value, n_obs, now))
         conn.commit()
         recon_id = cur.lastrowid
-    g = f" D{gate_number}" if gate_number is not None else ""
+    g = f" gate#{gate_id}" if gate_id is not None else ""
     print(f"[execution] {deploy_id}{g} recon {metric_key}={metric_value} (n={n_obs})")
     return recon_id
 
 
-# ── Layer 5 — RECORD ────────────────────────────────────────────────────────────
+# ── Layer 6 — RECORD ────────────────────────────────────────────────────────────
 def log_deploy_change(deploy_id: str, verdict: str, from_stage: str = None,
                       to_stage: str = None, rationale: str = "", recon_id: int = None,
                       event: str = None, decided_by: str = "human") -> int:
@@ -765,152 +868,32 @@ def log_deploy_change(deploy_id: str, verdict: str, from_stage: str = None,
     return log_id
 
 
-def log_incident(deploy_id: str, severity: str, kind: str, detail: str = "",
-                 incident_ts: str = None, resolved: int = 0) -> int:
-    """Record a live incident (the black-box recorder). incident_ts is MARKET time
-    (UTC); defaults to now-MYT only if unknown. Returns incident_id."""
+def log_incident(severity: str, kind: str, detail: str = "", deploy_id: str = None,
+                 account_id: str = None, incident_ts: str = None, resolved: int = 0) -> int:
+    """Record a live incident (the black-box recorder). At least one of deploy_id /
+    account_id should be set (some incidents are account-level, e.g. prop_rule_breach).
+    incident_ts is MARKET time (UTC); defaults to now-MYT only if unknown. Returns incident_id."""
     if severity not in VALID_SEVERITY:
         raise ValueError(f"severity must be one of {VALID_SEVERITY}")
     if kind not in VALID_INCIDENT_KIND:
         raise ValueError(f"kind must be one of {VALID_INCIDENT_KIND}")
     if resolved not in (0, 1):
         raise ValueError("resolved must be 0 or 1")
+    if deploy_id is None and account_id is None:
+        raise ValueError("log_incident needs at least one of deploy_id / account_id")
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO log_incidents
-                (deploy_id, incident_ts, severity, kind, detail, resolved, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (deploy_id, incident_ts or now, severity, kind, detail, resolved, now))
+                (deploy_id, account_id, incident_ts, severity, kind, detail, resolved, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (deploy_id, account_id, incident_ts or now, severity, kind, detail, resolved, now))
         conn.commit()
         incident_id = cur.lastrowid
-    print(f"[execution] {deploy_id} INCIDENT [{severity}/{kind}] #{incident_id}")
+    scope = deploy_id or account_id
+    print(f"[execution] {scope} INCIDENT [{severity}/{kind}] #{incident_id}")
     return incident_id
-
-
-# ── TESTER — Strategy Tester capture ──────────────────────────────────────────────
-def log_tester_run(
-    idea_id: str,
-    symbol: str,
-    data_source: str,
-    ea_name: str = None,
-    ea_version: str = None,
-    model_quality: str = None,
-    tester_model: str = None,
-    timeframe: str = None,
-    period_start: str = None,
-    period_end: str = None,
-    tz_offset_hours: int = None,
-    magic_number: int = None,
-    initial_deposit: float = None,
-    leverage: int = None,
-    spread_setting: str = None,
-    params: dict = None,
-    deploy_id: str = None,
-    notes: str = None,
-) -> int:
-    """Open a Strategy Tester run with its data provenance. idea_id is soft-validated
-    against research.db (same as register_deployment). Returns run_id. Summary metrics
-    are filled later via finalize_tester_run()."""
-    if not pipeline.get_idea(idea_id):
-        raise ValueError(
-            f"idea_id '{idea_id}' not found in research.db — register the idea first"
-        )
-    if data_source not in VALID_DATA_SOURCE:
-        raise ValueError(f"data_source must be one of {VALID_DATA_SOURCE}")
-    if tester_model is not None and tester_model not in VALID_TESTER_MODEL:
-        raise ValueError(f"tester_model must be one of {VALID_TESTER_MODEL} or None")
-    params_json = json.dumps(params) if params is not None else None
-    now = _now()
-    with _conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO tester_runs
-                (idea_id, deploy_id, ea_name, ea_version, symbol, data_source,
-                 model_quality, tester_model, timeframe, period_start, period_end,
-                 tz_offset_hours, magic_number, initial_deposit, leverage,
-                 spread_setting, params, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (idea_id, deploy_id, ea_name, ea_version, symbol, data_source,
-              model_quality, tester_model, timeframe, period_start, period_end,
-              tz_offset_hours, magic_number, initial_deposit, leverage,
-              spread_setting, params_json, notes, now, now))
-        conn.commit()
-        run_id = cur.lastrowid
-    print(f"[execution] tester run #{run_id} {idea_id} {symbol} [{data_source}/{tester_model}]")
-    return run_id
-
-
-def ingest_tester_trade(
-    run_id: int,
-    direction: str = None,
-    entry_ts: str = None,
-    entry_px: float = None,
-    exit_ts: str = None,
-    exit_px: float = None,
-    exit_reason: str = None,
-    risk_unit: float = None,
-    realized_R: float = None,
-    realized_pnl_usd: float = None,
-    ticket: int = None,
-    session_date: str = None,
-    or_high: float = None,
-    or_low: float = None,
-    range_w: float = None,
-) -> int:
-    """Record one closed tester round-trip (mirror of ingest_trade). Returns tt_id."""
-    if direction is not None and direction not in VALID_DIRECTION:
-        raise ValueError(f"direction must be one of {VALID_DIRECTION} or None")
-    now = _now()
-    with _conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO tester_trades
-                (run_id, ticket, session_date, direction, entry_ts, entry_px,
-                 exit_ts, exit_px, exit_reason, risk_unit, realized_R,
-                 realized_pnl_usd, or_high, or_low, range_w, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (run_id, ticket, session_date, direction, entry_ts, entry_px,
-              exit_ts, exit_px, exit_reason, risk_unit, realized_R,
-              realized_pnl_usd, or_high, or_low, range_w, now))
-        conn.commit()
-        tt_id = cur.lastrowid
-    return tt_id
-
-
-def finalize_tester_run(run_id: int, n_trades: int = None, net_profit_usd: float = None,
-                        profit_factor: float = None, max_dd_pct: float = None,
-                        win_rate: float = None, notes: str = None) -> None:
-    """Write the run-level summary once trades are captured."""
-    now = _now()
-    with _conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE tester_runs
-            SET n_trades=COALESCE(?, n_trades),
-                net_profit_usd=COALESCE(?, net_profit_usd),
-                profit_factor=COALESCE(?, profit_factor),
-                max_dd_pct=COALESCE(?, max_dd_pct),
-                win_rate=COALESCE(?, win_rate),
-                notes=COALESCE(?, notes),
-                updated_at=?
-            WHERE run_id=?
-        """, (n_trades, net_profit_usd, profit_factor, max_dd_pct, win_rate,
-              notes, now, run_id))
-        if cur.rowcount == 0:
-            raise ValueError(f"tester run not found: {run_id}")
-        conn.commit()
-    print(f"[execution] tester run #{run_id} finalized: n={n_trades} net={net_profit_usd}")
-
-
-def get_tester_run(run_id: int) -> dict:
-    """Return the tester_runs row as a dict (empty if not found)."""
-    with _conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM tester_runs WHERE run_id=?", (run_id,)
-        ).fetchone()
-    return dict(row) if row else {}
 
 
 if __name__ == "__main__":

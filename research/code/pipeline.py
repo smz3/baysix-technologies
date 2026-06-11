@@ -35,6 +35,7 @@ GATE_QUESTIONS = {
     4: "Does the sophisticated model confirm or challenge the baseline?",
     5: "Is there a tradeable signal with positive net edge?",
     6: "Does the edge survive walk-forward and out-of-sample?",
+    7: "Does the deployed artifact reproduce the validated backtest on the same data?",
 }
 
 
@@ -81,8 +82,8 @@ def open_gate(
     attempt: int = 1,
 ) -> int:
     """Create a gate row at status=open. Returns gate_id."""
-    if gate_number not in range(7):
-        raise ValueError(f"gate_number must be 0–6, got {gate_number}")
+    if gate_number not in range(8):
+        raise ValueError(f"gate_number must be 0–7, got {gate_number}")
 
     _check_previous_gate_passed(idea_id, gate_number)
 
@@ -123,6 +124,18 @@ def _gate6_missing_stages(idea_id: str) -> list[str]:
     return [s for s in _GATE6_REQUIRED_STAGES if s not in present]
 
 
+def _gate7_has_pass_evidence(idea_id: str) -> bool:
+    """True if a tester_runs row for this idea has fidelity_verdict='pass'. Gate 7
+    (FIDELITY) passes on a tester-vs-research diff, not free assertion (the normal
+    path is tester.log_fidelity_diff, which sets the verdict then calls pass_gate)."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM tester_runs WHERE idea_id=? AND fidelity_verdict='pass' LIMIT 1",
+            (idea_id,),
+        ).fetchone()
+    return row is not None
+
+
 def pass_gate(
     idea_id: str,
     gate_number: int,
@@ -136,6 +149,10 @@ def pass_gate(
     Gate 6 guardrail: refuses unless walk-forward + Monte Carlo + OOS results are
     all logged for the idea (protocol L204-226). Pass allow_incomplete=True ONLY
     with a logged waiver in gate_answer.
+
+    Gate 7 (FIDELITY) guardrail: refuses unless a tester_runs row for the idea has
+    fidelity_verdict='pass' — the port must be diffed against the research backtest
+    (tester.log_fidelity_diff), not asserted. allow_incomplete=True needs a waiver.
     """
     if gate_number == 6 and not allow_incomplete:
         missing = _gate6_missing_stages(idea_id)
@@ -145,6 +162,14 @@ def pass_gate(
                 f"{missing}. Gate 6 = walk-forward + Monte Carlo + OOS (protocol "
                 f"L204-226). Log the missing legs first, or pass allow_incomplete=True "
                 f"with a waiver reason in gate_answer."
+            )
+    if gate_number == 7 and not allow_incomplete:
+        if not _gate7_has_pass_evidence(idea_id):
+            raise ValueError(
+                f"Cannot pass Gate 7 (FIDELITY) for {idea_id}: no tester_runs row with "
+                f"fidelity_verdict='pass'. Run the MT5 tester on Dukascopy and diff vs the "
+                f"research backtest via tester.log_fidelity_diff() first, or pass "
+                f"allow_incomplete=True with a waiver reason in gate_answer."
             )
     now = _now()
     with _conn() as conn:
