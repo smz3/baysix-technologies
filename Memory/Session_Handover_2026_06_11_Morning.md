@@ -9,7 +9,7 @@ This session was **discuss + prep only** after the build — design decisions lo
 1. **Task 37** — mt5 reorg: move EA → `Experts/orb_system/baysix_orb_001_v1.mq5`, create `Include/orb_system/` + `Documentation/orb_system/`, **fresh symlinks** repo→JM terminal (hash E7DB). Conventions in [[orb_ea_deployment_conventions]].
 2. **Task 38** — Syafiq tops up JM demo to **$50** (REQUIRED: at $0.17 the 5% cap skips every trade).
 3. **Task 39** — EA revision: auto tester-mode UTC offset (`MQL_TESTER`→offset=3) + **FULL chart visuals** via `orb_visualizer.mqh` mirroring [Visualizer.mqh](../mt5/Include/Sigma_System/V5.0/Visualization/Visualizer.mqh) style (Calibri Light, • bullets, OBJ_TREND ray lines, OR box/lines, entry/exit markers, ratcheting trail line; NO panel). Compile via MetaEditor64 CLI to 0/0.
-4. **Task 40** — MT5 Strategy Tester (Visual, every-tick): mechanical check only, not edge validation.
+4. **Task 40** — MT5 Strategy Tester (Visual, every-tick): mechanical check only, not edge validation. Pair with **Task 42** — build the execution.db **tester schema** (`tester_runs` + `tester_trades`, mirrors exec_trades; first-class `data_source` provenance) so the run is captured, not just watched.
 5. **Task 35** — D1 forward parity + MT5 fill adapter (HistoryDeal* → execution.db) once demo trades land.
 
 ## Blockers
