@@ -26,8 +26,9 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 │   └── docs/                 ← B2B knowledge base (overview, zone lifecycle, russian doll, etc.)
 ├── brokers/                  ← venue specs: justmarkets.yaml (TCM-001 cost model) + .md per broker
 ├── research/
-│   ├── db/                   ← all SQLite databases
-│   │   └── research.db       ← single DB · pipeline: step1_ideas · step2_papers · step3_gates · step4_results · logs: log_agent · log_tasks · log_strategy
+│   ├── db/                   ← all SQLite databases (2-DB design: workstation + VPS)
+│   │   ├── research.db       ← pipeline: step1_ideas · step2_papers · step3_gates (Gates 0-7) · step4_results · tester_runs/tester_trades (Gate 7 FIDELITY) · logs: log_agent · log_tasks · log_strategy
+│   │   └── execution.db      ← live deployment ledger (downstream twin · 12 tables · spec: braindump/execution_schema.md · rebuild in progress)
 │   ├── code/                 ← shared DB layer (db_init · pipeline · agent_log)
 │   ├── models/               ← one folder per foundational model
 │   │   ├── cusum/            ← CUSUM-001 (parked · no code yet · awaiting gates)

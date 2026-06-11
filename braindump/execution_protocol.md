@@ -6,14 +6,14 @@ Same rigor as the research ladder. Same discipline: pre-committed gates, a guard
 
 These are not novel inventions — they're the solo-scale collapse of three named institutional controls: **shadow / parallel running** (validate live behaviour before scaling capital), **product control / "shadow P&L"** (an independent function recomputes and reconciles, investigating every *break*), and **back-office reconciliation** (internal records vs the broker's). A bank splits these across three desks; we run them as one Python layer.
 
-Status: **DESIGN — decisions locked, not yet built.** Build target is **MT5-only** (Just Markets, XAUUSD live); IBKR is a parked column, not code (see §6). Updated 2026-06-10 — the §8 EA/Python fork is now resolved (§2).
+Status: **RE-LOCKED 2026-06-11 PM — rebuilding execution.db from scratch, TWO databases.** The earlier 3-store plan (`research.db` / `execution.db` / `tester.db`) collapsed to **two**: `research.db` (workstation) + `execution.db` (VPS). Port-fidelity is the *last research gate* (**Gate 7 — FIDELITY**, in research.db), so the MT5 Strategy Tester evidence (`tester_runs`/`tester_trades`) lives **inside research.db**, not a third file. The live deployment ladder is then a **single FORWARD gate** (demo→live sub-stages; §3). `venue` now = **protocol** (`mt5`/`ibkr`), broker is a column; **`instruments`** + **`equity_snapshots`** are built day-one. Build target is **MT5-only** (Just Markets, XAUUSD live); IBKR is a parked `venue` value, not code (§6). The §8 EA/Python fork was resolved 2026-06-10 (§2).
 
 ---
 
 ## 0. First principles
 
 1. **research.db owns "what to trade"; execution.db owns "what happened when we traded it."** The execution layer *reads* the frozen config from research via `strategy_log.get_live_config(idea_id)` and **never re-defines it**.
-2. **Two physical databases.** `research.db` (calm, deliberate, validated lineage) and `execution.db` (live, high-cadence, real-money record) are separate files. Settled 2026-06-10 — see §1.
+2. **Two physical databases, split on machine + tempo.** `research.db` (workstation — calm, deliberate, validated lineage + the Strategy-Tester FIDELITY evidence, since port-fidelity is the last *research* gate) and `execution.db` (the VPS live deployment ledger — **real fills only**) are separate files. The wall is forced by where they run, not by simulated-vs-real (§1). Simulated fills are still walled off — they sit in `research.db`'s `tester_runs`/`tester_trades` (Gate 7 evidence), never in `execution.db`'s `signals`/`orders`/`fills`/`trades`. Re-locked 2026-06-11 PM (was a 3-store plan with a separate `tester.db`).
 3. **Everything is keyed by `idea_id × venue × instrument`, never by strategy name.** This is what makes the schema survive past ORB into any future strategy and any future broker.
 4. **Venue ≠ account.** *Venue* = the wire protocol / adapter ("how do I talk to this broker" — MT5 vs IBKR; code). *Account* = the rulebook ("what am I allowed to do" — leverage, prop loss-limits; data). Just Markets, Darwinex, and FTMO are all MT5 → **one adapter**; what differs between them is a *row* in `accounts`, not a code path.
 5. **The broker is the source of truth.** We do not hand-journal executions. We *normalize* each venue's native execution ledger into one canonical schema (see §6).
@@ -37,6 +37,8 @@ A wall earns its cost only when the two sides differ on a **non-negotiable opera
 
 The **near-term decisive pair is Uptime + Location**: going live for real puts the writer on a 24/7 VPS next to the broker while research keeps migrating on the workstation — one SQLite file can't straddle that. (Note: broker *credentials* never live in the DB at all — they stay in `.env`. The Isolation trigger is about account/position *data*, not secrets.)
 
+**Why this is two databases and not three.** The cut is **machine + tempo**, not simulated-vs-real. The MT5 Strategy Tester runs on the *workstation*, in *batch*, on *research data* (Dukascopy) — every property of the research world, none of the VPS world. So its evidence belongs in `research.db` (as **Gate 7 — FIDELITY**, the last research gate), not in a peer file to `execution.db`. A separate `tester.db` would have bought only "isolation," which a separate *table* already gives. And it is venue-specific scaffolding regardless: FIDELITY exists *only because MQL5 is a language port* — a Python→Python deployment (IBKR) has no port and skips it entirely.
+
 The two DBs link by `idea_id` as a **soft key**, validated in the code layer on every write (the ingester checks the `idea_id` exists in research.db). SQLite `ATTACH` lets the dashboard/recon query across both files when a join is needed; only *constraint enforcement* can't cross the boundary, and code-layer validation replaces it.
 
 ---
@@ -51,7 +53,7 @@ The fork — *native MQL5 EA does everything* vs *Python brain + thin EA* — is
 | Place / modify / close orders | **EA** | same |
 | **Kill-switch** (account rules: daily-loss, max-DD) | **EA** | a hard risk-stop cannot wait for Python to be up — irreversible |
 | Read broker ledger → normalize → `execution.db` | **Python** | source of truth is `HistoryDeal*`; replayable, can lag |
-| Author `exec_signals` (intent + `expected_R` + `meta`) | **Python** | it recomputes the model — see below |
+| Author `signals` (intent + `expected_R` + `meta`) | **Python** | it recomputes the model — see below |
 | Recon (live vs model) → `recon_results` | **Python** | must call the research model |
 | Incidents from the Journal log | **Python** | forensic, replayable |
 
@@ -65,38 +67,50 @@ Python does **not** trust the EA's word for what it did. It reconstructs the ses
 
 Recon = subtract the two. This makes Python an **independent auditor**, not a stenographer: if it just logged the EA's claim, a buggy EA would look perfectly "matched" to its own mistake. Recomputing is what turns `signal_match_pct` into a lie-detector (the "shadow P&L break" of the live world).
 
-**What it is and isn't:** once live, the auditor is a fast **detector** (catches drift seconds-to-minutes after a trade → pause before the *next* one), **not** a real-time **preventer** — the EA acts autonomously by design. True prevention happens earlier at D0/D1 (demo, before real money) and via the EA's own kill-switch. Detector (Python) and preventer (EA kill-switch) are different jobs.
+**What it is and isn't:** once live, the auditor is a fast **detector** (catches drift seconds-to-minutes after a trade → pause before the *next* one), **not** a real-time **preventer** — the EA acts autonomously by design. True prevention happens earlier at FIDELITY (port proven on identical data) and FORWARD-demo (before real money), plus the EA's own kill-switch. Detector (Python) and preventer (EA kill-switch) are different jobs.
 
 ---
 
-## 3. The deployment-gate ladder (D0 → D3)
+## 3. The gate ladder: research Gate 7 (FIDELITY) → FORWARD
 
-The research ladder validates the edge. The deployment ladder validates the edge **transfers to live and keeps tracking**. Each D-gate has a **pre-committed pass criterion** set before results are seen, logged in `deploy_gates`. A guardrail (twin of the `pass_gate(6)` fix) refuses promotion until the supporting `recon_results` exist.
+The research ladder validates the edge (Gates 0–6). Two more gates carry it to live: **Gate 7 (FIDELITY)** proves the edge **transferred from research code to the deployed MQL5 artifact**, and **FORWARD** proves it **survives a real broker**. Each has a **pre-committed pass criterion** set before results are seen. A guardrail (twin of the `pass_gate(6)` fix) refuses promotion until the supporting evidence exists.
 
-### D0 — Parity
-**Question:** Does the live EA reproduce the research backtest, and does the live feed match the research feed?
-**Two checks:**
-- **Logic parity:** feed the EA and the Python model the *same* bars; diff the trade lists (entry/exit/direction/day). Pass: trade diff = 0 (or a fully explained, bounded discrepancy).
-- **Feed divergence:** the ORB signal *is* one candle's high/low, so a vendor difference breaks it. Quantify Just Markets bars vs Dukascopy research bars at the anchor (median |Δhigh|, |Δlow| in pips); pre-commit a tolerance.
-**Kill/Block:** unexplained logic divergence → the live code is not the validated strategy; or feed divergence beyond tolerance → the live signal isn't the validated signal. Fix before anything else.
+**Where each gate lives:** FIDELITY is the *last research gate* — it runs on the workstation, in batch, on research data, so it lives in **research.db** (`step3_gates` `gate_number=7`, evidenced by `tester_runs`/`tester_trades`). FORWARD is the *deployment* gate — it lives in **execution.db** (`deploy_gates`). The handoff between the two databases is exactly the handoff between "validated artifact" and "live deployment."
 
-### D1 — Demo fidelity
-**Question:** On a live demo feed, do fills match the model's assumptions?
-**Method:** broker demo; reconcile live fills vs the Python recompute (§2). Watch slippage vs the spread assumption, `signal_match_pct`, live E[R] vs the IS band.
-**Pass (pre-committed):** slippage ≤ modeled spread assumption; `signal_match_pct` ≥ threshold; live E[R] inside IS band. *(Exact tolerances set per deployment before the run.)*
-**Kill/Block:** slippage materially worse than modeled, or signals diverging → re-examine cost model / execution logic.
+**Why FORWARD is a single gate (D0–D3 collapsed on 2026-06-11):** the old **D0 "feed/logic parity"** gate compared the Python model against the *live broker feed* before any EA existed — and for a path-dependent signal like ORB, a ~$1 feed drift flips long↔short, so "signals don't match" was **noise, not a verdict** ([[d0_feed_drift_reframe]]). The fix is not a better metric; it is **sequencing**. Feed reality can only be judged by P&L with the actual EA running — which is FORWARD. So **D0 is deleted**, its real concern absorbed into FORWARD. Old D1/D2/D3 (demo / live-micro / steady-state) collapse into the **single FORWARD gate** with demo→live sub-stages; steady-state becomes an ongoing *status*, not a promotion checkpoint.
 
-### D2 — Live micro
-**Question:** With real money at min lot, does live P&L track expected?
-**Method:** $50 live, min lot, Mode-A cap. Reconcile continuously.
-**Pass:** live E[R] / drawdown inside the **Gate-6 Monte-Carlo survival bands** (e.g. ORB-002: 0% blow-up, ~9% DD) — **but only assessed after a minimum trade count** (`n ≥ N_min`, pre-committed, e.g. 30). Below that, D2 is a *catastrophic-divergence smoke test only*, not a statistical verdict — you cannot test an MC band on a handful of trades.
-**Kill/Block:** live outside MC bands (once powered), or any catastrophic divergence → pause, diagnose.
+**The principle:** each gate changes one thing.
 
-### D3 — Steady-state
-**Question:** Is it still tracking, or drifting/decaying?
-**Method:** rolling live-vs-recompute drift t-stat; ongoing incident monitoring; kill-switch criteria.
-**Pass (to stay live):** drift t-stat below threshold; no critical unresolved incidents.
-**Kill/Block:** sustained drift → demote/retire via `log_deploy`.
+| Gate | Lives in | Changes | Holds fixed | Isolates |
+|------|----------|---------|-------------|----------|
+| **7 — FIDELITY** | research.db | the code (Python → MQL5 EA) | the data (Dukascopy) | **port bugs** |
+| **FORWARD** | execution.db | the feed + fills (broker reality) | the code (verified EA) | **broker/execution drift** |
+
+```
+research.db Gates 0–6 PASS  →  [MQL5 port: build the EA]  →  research.db GATE 7 FIDELITY
+                                                                      │ pass
+                                                  execution.db  →  FORWARD (demo→live)  →  STEADY (status)
+```
+
+### Gate 7 — FIDELITY  (the last research gate — port-fidelity)
+**Question:** Does the compiled EA reproduce the research backtest on the *same* data?
+**Method:** run the `.ex5` in the **MT5 Strategy Tester** on the **research feed** (Dukascopy custom symbol, 100% real ticks), same OOS window, at a **fair deposit** (large enough that the risk cap never binds — a too-small deposit makes the cap drop the volatile days and the tester takes a biased subsample). Ingest every tester trade into **research.db** (`tester_runs`/`tester_trades`); diff vs the Python research trade list (`step4_results`), per-trade and aggregate — a single-file join, no cross-DB `ATTACH`.
+**Pass (statistical-equivalence, pre-committed):** trade-set overlap (same `session_date` + `direction`) ≥ 95%; E[R], win-rate and $/trade each inside the research 95% CI; per-trade R correlation high. The tester runs the *identical data*, so it should **not** drift — any material gap is a **port bug**, not noise.
+**Block/Kill:** material divergence → the deployed code is not the validated strategy. Fix the EA; nothing goes near an account. No `deployments` row may even be registered until this passes (`register_deployment` enforces it). *(ORB-001 sits here now — FAILED: win-rate 56.7%→33.2%, trail exit.)*
+**Hard rule:** FIDELITY **must** use the research data source (Dukascopy), never the broker's native history — otherwise it conflates a port bug with a feed difference (D0's original mistake). The broker feed is introduced for the first time at FORWARD, on purpose.
+**Only for language ports:** FIDELITY exists *because* MQL5 is a re-implementation of the Python research code. A Python→Python deployment (e.g. IBKR via `ib_insync`) runs the same code it was validated on — there is no port to verify, so Gate 7 is N/A and it goes straight to FORWARD.
+**Evidence:** research.db `tester_runs` + `tester_trades` — **never** the live execution.db `signals`/`orders`/`fills`/`trades`.
+
+### FORWARD  (the deployment gate — single gate, demo→live sub-stages)
+**Question:** Does the FIDELITY-verified EA keep the edge against a real broker feed and real fills?
+**Sub-stages (one gate):** **demo** first (feed + execution realism, no capital at risk), then **live micro** ($50, min lot, Mode-A cap — real B-book fills). demo vs live is the deployment's `accounts.mode`; promotion = standing up the live deployment once the demo one tracks.
+**Method:** deploy the EA; the Python **independent auditor** (§2) recomputes from live bars and reconciles vs the broker ledger → `recon_results`. Watch slippage vs the modeled spread, `signal_match_pct`, live E[R].
+**Pass (pre-committed):** *demo* — fills track the tester within tolerance; slippage ≤ modeled; no catastrophic divergence. *live* — live E[R] / DD inside the **Gate-6 Monte-Carlo survival bands**, assessed only after `n ≥ N_min` trades (below that it is a catastrophic-divergence smoke test, not a statistical verdict).
+**Block/Kill:** slippage materially worse than modeled, signals diverging, or live outside MC bands → pause, diagnose, `log_incidents` + `log_deploy`.
+**Evidence:** execution.db `signals`/`orders`/`fills`/`trades` (real fills only) + `recon_results` + `equity_snapshots` (trailing-DD / kill-switch audit).
+
+### STEADY — a status, not a gate
+Once FORWARD-live passes, the deployment is `status='active'` and **monitored continuously** (rolling live-vs-recompute drift t-stat, incident watch, EA kill-switch). Sustained drift → demote/retire via `log_deploy`. This is ongoing operations, not a promotion checkpoint — which is exactly why FORWARD is a single gate, not three.
 
 ---
 
@@ -105,11 +119,12 @@ The research ladder validates the edge. The deployment ladder validates the edge
 `execution.db` tracks the **life of a deployed strategy**, in the order it lives through:
 
 ```
-1. REGISTER   →  what's deployed (idea, venue, instrument, account, frozen config, D-gate)
-2. GATE       →  the D0–D3 checkpoints
-3. OBSERVE    →  what it actually did: signal → order → fill → trade
-4. RECONCILE  →  live vs model (the lie-detector)
-5. RECORD     →  decisions made + incidents that happened
+1. REGISTER   →  what's deployed (idea, venue, instrument spec, account, frozen config, stage)
+2. GATE       →  the FORWARD checkpoint (FIDELITY is research Gate 7; evidence: recon_results)
+3. OBSERVE    →  what it actually did LIVE: signal → order → fill → trade (real fills only)
+4. STATE      →  account value over time: equity_snapshots (trailing-DD / kill-switch audit)
+5. RECONCILE  →  live vs model (the lie-detector)
+6. RECORD     →  decisions made + incidents that happened
 ```
 
 ---
@@ -125,7 +140,8 @@ The research ladder validates the edge. The deployment ladder validates the edge
 | Column | Role |
 |--------|------|
 | `account_id` (PK) | the account handle |
-| `venue` | wire protocol / adapter: `justmarkets` (MT5), `ibkr`, … |
+| `venue` | wire protocol / adapter: `mt5`, `ibkr` (NOT the broker) |
+| `broker` | who it is: `justmarkets` / `darwinex` / `ftmo` / `ibkr` — all of the first three are `venue='mt5'` |
 | `account_type` | `retail_highlev` / `darwinex_alloc` / `ftmo_challenge` / `ftmo_funded` / `ibkr_dma` |
 | `mode` | `demo` / `live` |
 | `base_currency`, `leverage` | sizing context |
@@ -138,40 +154,54 @@ The research ladder validates the edge. The deployment ladder validates the edge
 
 The prop kill-lines are **typed columns, not JSON** — the kill-switch reconciles on them, so by the §7 golden rule they can't live in `meta`.
 
-**`deploy_strategies`** — one row per `(idea_id × venue × instrument)` deployment. The anchor every other table references.
+**`instruments`** — the tradable-product spec; built day-one so P&L / risk math is generic past XAU spot.
+
+| Column | Role |
+|--------|------|
+| `symbol` (PK) | `XAUUSD.s` |
+| `instrument_type` | `spot` / `fx` / `cfd` / `future` |
+| `tick_size`, `tick_value`, `contract_size` | the money-math (`realized_pnl_usd`, `risk_unit` depend on these) |
+| `expiry` | NULL for spot/fx; set for futures (rollover hook) |
+
+Hardcoding XAU's `contract_size=100` is the regret the day a future arrives. `deployments.instrument` FK-references this.
+
+**`deployments`** — one row per `(idea_id × venue × instrument)` deployment. The anchor every other table references. *(Renamed from `deploy_strategies`.)*
 
 | Column | Role |
 |--------|------|
 | `deploy_id` (PK) | the handle everything else points to |
-| `idea_id` | soft link to research.db (code-layer validated) |
-| `venue` | `justmarkets`, `ibkr`, … — first-class |
-| `instrument` | `XAUUSD.s`, … — first-class |
+| `idea_id` | soft link to research.db (code-layer validated; **must be Gate-7-FIDELITY-passed**) |
+| `venue` | `mt5`, `ibkr` — the protocol/adapter |
+| `instrument` (FK → `instruments`) | `XAUUSD.s`, … |
 | `account_id` (FK → `accounts`) | which account it runs on |
 | `config_snapshot` (JSON) | **frozen copy** of the live config at deploy time (the deployment manifest) |
 | `config_source` | `strategy_log` log_id / git sha the config came from |
-| `stage` | current D-gate: `D0`/`D1`/`D2`/`D3` |
+| `stage` | live-side lifecycle: `FORWARD` / `STEADY` / `RETIRED` (FIDELITY is upstream in research.db) |
 | `status` | `pending`/`active`/`paused`/`killed`/`retired` |
 
-`config_snapshot` is the **contract** between the two databases: research can re-tune ORB-002 later, but this deployment knows exactly what version it is running.
+`config_snapshot` is the **contract** between the two databases: research can re-tune ORB-001 later, but this deployment knows exactly what version it is running. A `deployments` row only exists *after* Gate 7 (FIDELITY) passed upstream.
 
 ### Layer 2 — GATE
 
-**`deploy_gates`** — mirror of research `step3_gates`, for D0–D3.
+**`deploy_gates`** — the FORWARD checkpoint; mirror of research `step3_gates`. Kept as its own table (not folded into `log_deploy`) for **symmetry with the research ladder** — decision locked 2026-06-11. Only `FORWARD` lives here (FIDELITY is research Gate 7).
 
 | Column | Role |
 |--------|------|
 | `gate_id` (PK), `deploy_id` (FK) | which deployment |
-| `gate_number` | 0–3 |
-| `pass_criteria` | the pre-committed kill-line (text) |
+| `gate_name` | `FORWARD` (single-value CHECK, room to extend) |
+| `sub_stage` | `demo` / `live` |
+| `pass_criteria` | the pre-committed kill-line (text, set before results seen) |
 | `status` | `open`/`passed`/`blocked`/`killed` |
 | `gate_answer` | verdict + the numbers behind it |
 | `answered_by`, `answered_at`, `attempt` | |
+
+**Guardrail:** FORWARD cannot *open* until research Gate 7 (FIDELITY) is `passed` for the `idea_id` (cross-DB soft check); cannot *pass* until `recon_results` exist; `live` sub_stage needs `demo` passed.
 
 ### Layer 3 — OBSERVE (the live event stream)
 
 A trade's life: **signal → order → fill → trade.**
 
-**`exec_signals`** — what the strategy *wanted* (intent). **Authored by Python's recompute** (§2), not emitted by the EA.
+**`signals`** — what the strategy *wanted* (intent). **Authored by Python's recompute** (§2), not emitted by the EA. *(Un-prefixed: the `exec_` is redundant inside `execution.db`.)*
 
 | Column | Role |
 |--------|------|
@@ -183,16 +213,16 @@ A trade's life: **signal → order → fill → trade.**
 | `expected_R` | model's predicted R — stored here for per-trade recon |
 | `meta` (JSON) | **strategy-private context only** — ORB `{or_high, or_low, range_w, anchor}`, MR `{zscore, lookback}`, … authored in Python, schema-validated (§7) |
 
-**`exec_orders`** — what was *sent to the broker*. Normalized from the venue ledger (§6).
+**`orders`** — what was *sent to the broker*. Normalized from the venue ledger (§6).
 
 `order_id` (PK), `signal_id` (FK), `deploy_id` (FK), `venue_order_id` (broker ticket), `order_type`, `side`, `requested_px`, `requested_size`, `status` (`sent`/`accepted`/`rejected`/`filled`/`cancelled`), `reject_reason`. *(The EA's actual SL/TP live here — Python reads them from the order record, never from the EA.)*
 
-**`exec_fills`** — what the broker *gave us*. Normalized from the venue's native ledger.
+**`fills`** — what the broker *gave us*. Normalized from the venue's native ledger. One order → N fills (partials/scaling) is why `orders` and `fills` stay separate.
 
 `fill_id` (PK), `order_id` (FK), `deploy_id` (FK), `venue_deal_id` (MT5 deal / IBKR execId), `fill_px`, `fill_size`, `fill_ts`, **`slippage_px`** (fill − requested, captured at **both legs** — entry *and* exit), `commission`, `swap`.
-→ `slippage_px` is the single most important number for D1. `commission`/`swap` come from `HistoryDealGetDouble(DEAL_COMMISSION / DEAL_SWAP)`, **not** the event payload (§6). Capture `swap` even though Just Markets is swap-free today — swap-free is a broker plugin with a grace period that can start charging.
+→ `slippage_px` is the single most important number at FORWARD. `commission`/`swap` come from `HistoryDealGetDouble(DEAL_COMMISSION / DEAL_SWAP)`, **not** the event payload (§6). Capture `swap` even though Just Markets is swap-free today — swap-free is a broker plugin with a grace period that can start charging.
 
-**`exec_trades`** — the closed round-trip; the reconciliation unit.
+**`trades`** — the closed round-trip; the reconciliation unit.
 
 | Column | Role |
 |--------|------|
@@ -205,20 +235,26 @@ A trade's life: **signal → order → fill → trade.**
 
 `realized_R` and `expected_R` side-by-side make reconciliation a subtraction, not a project.
 
-### Layer 4 — RECONCILE
+### Layer 4 — STATE
+
+**`equity_snapshots`** — periodic account-value readings (UTC `snapshot_ts`, `equity`, `balance`, `open_pnl`). Keyed at `account_id` (account-level rule, aggregates across strategies).
+
+`trades` only records *closed* round-trips; trailing drawdown (FTMO) is measured on the **equity peak including floating profit**, so a winning trade can still breach a trailing-DD line mid-flight. Without sampled equity you cannot reconcile a trailing-DD breach or audit whether the EA kill-switch (which acts on `ACCOUNT_EQUITY`) fired correctly. **Cadence is an ingester policy, not schema:** per-fill + a fixed interval (default 1-min while a position is open), **never per-tick** (the real row-volume driver).
+
+### Layer 5 — RECONCILE
 
 **`recon_results`** — the `step4_results` of the live world. Flexible `metric_key`/`metric_value` rows so any strategy logs any metric. Written by the recon job (§9).
 
 | Column | Role |
 |--------|------|
 | `recon_id` (PK), `deploy_id` (FK) | |
-| `gate_number` | which D-gate this recon feeds (nullable) |
+| `gate_id` | which FORWARD gate this recon feeds (nullable FK → `deploy_gates`) |
 | `period_start`, `period_end` | window reconciled |
 | `metric_key`, `metric_value`, `n_obs` | flexible (twin of step4_results) |
 
-Core metrics: `signal_match_pct` (runtime parity, from the recompute), `slippage_median_px` (cost-model check), `feed_divergence_px` (D0), `live_E_R` + `drift_t_vs_IS` (edge tracking).
+Core metrics: `signal_match_pct` (runtime parity, from the recompute), `slippage_median_px` (cost-model check), `feed_divergence_px` (FORWARD-demo, vs the verified tester baseline), `live_E_R` + `drift_t_vs_IS` (edge tracking). At scalping rates these become **distributional** metrics over a window — same row shape, no schema change. FIDELITY-gate diff metrics (`trade_overlap_pct`, `ER_delta_vs_research`, `R_corr`) live in **research.db** (`tester_runs`), not here.
 
-### Layer 5 — RECORD
+### Layer 6 — RECORD
 
 **`log_deploy`** — mirror of `log_strategy`. Deployment decision lineage.
 `log_id` (PK), `deploy_id` (FK), `event`, `from_stage`, `to_stage`, `verdict` (`CREATED`/`PROMOTED`/`PAUSED`/`KILLED`/`RESUMED`/`RETIRED`), `rationale`, `recon_id` (the evidence), `decided_by`.
@@ -235,7 +271,7 @@ Both brokers maintain an authoritative, structured execution ledger. We **consum
 - **MetaTrader 5:** [`OnTradeTransaction`](https://www.mql5.com/en/docs/event_handlers/ontradetransaction) is the real-time **doorbell** ("something changed — go look"), **not** the ledger — never compute P&L/commission/swap from its payload. The authoritative numbers come from [`HistorySelect` + `HistoryDealGetTicket`](https://www.mql5.com/en/docs/trading/historydealgetticket): price, volume, `DEAL_COMMISSION`, `DEAL_SWAP`, profit, time. Two caveats the normalizer must handle: deals arrive **asynchronously** (the commission row can land separately from the fill), and **swap** is realized into `DEAL_SWAP` at close (sum across deals — never `POSITION_SWAP`, which double-counts on partial closes).
 - **Interactive Brokers (parked):** [`execDetails` + `commissionReport`](https://interactivebrokers.github.io/tws-api/executions_commissions.html) per fill (async; `ib_insync` wraps it), corrections via amended execId.
 
-**The venue-adapter pattern:** one thin, **fully isolated** adapter per venue maps that venue's native records into the canonical `exec_orders` / `exec_fills` / `exec_trades` columns. MT5 and IBKR adapters share **no code** — only the output table shape. `venue_order_id` / `venue_deal_id` retain the broker's native identifiers for audit traceability.
+**The venue-adapter pattern:** one thin, **fully isolated** adapter per venue maps that venue's native records into the canonical `orders` / `fills` / `trades` columns. MT5 and IBKR adapters share **no code** — only the output table shape. `venue_order_id` / `venue_deal_id` retain the broker's native identifiers for audit traceability.
 
 ```
 MT5 deal (HistoryDeal*, triggered by OnTradeTransaction) ─┐
@@ -266,7 +302,7 @@ MQL5 *does* have native SQLite ([`DatabaseOpen/Prepare/Bind`](https://www.mql5.c
 
 The EA must run the *exact* validated config — and prove it. The mechanism:
 
-1. At deploy, **Python** reads `strategy_log.get_live_config(idea_id)` + the `accounts` row → writes the EA's inputs (an MT5 `.set` file or input block) **and** the `config_snapshot` into `deploy_strategies`.
+1. At deploy, **Python** reads `strategy_log.get_live_config(idea_id)` + the `accounts` row → writes the EA's inputs (an MT5 `.set` file or input block) **and** the `config_snapshot` into `deployments`.
 2. On init, the **EA asserts** its loaded params equal `config_snapshot`; any mismatch → `log_incidents(kind='config_mismatch')` and refuse to arm.
 
 This is a **one-time handoff at deploy, not a live dependency** — the EA needs no running Python thereafter. It carries the kill-switch parameters (`max_daily_loss_pct`, `max_total_dd_pct`, `daily_reset_tz`) into the EA, which enforces them live via `AccountInfoDouble(ACCOUNT_EQUITY)`. Time handling uses MT5's native `TimeTradeServer/TimeGMT/TimeGMTOffset/TimeDaylightSavings`; note the Strategy Tester does **not** simulate DST — anchors and `daily_reset_tz` are tested explicitly, never assumed.
@@ -278,12 +314,13 @@ This is a **one-time handoff at deploy, not a live dependency** — the EA needs
 ```
 EA decides + places order            (self-contained; emits NOTHING to Python)
 broker books the deal                → HistoryDeal* (ground truth)
-                       ┌─ Python recomputes signal from live bars  → exec_signals (intent + expected_R)
+                       ┌─ Python recomputes signal from live bars  → signals (intent + expected_R)
 Python (own process) ──┤
-                       └─ Python reads the ledger                  → exec_orders / exec_fills / exec_trades
+                       ├─ Python reads the ledger                  → orders / fills / trades
+                       └─ Python polls account value (per-fill/1-min) → equity_snapshots
 end of session         → recon job (subtract recompute vs ledger)  → recon_results
    break?              → log_incidents + log_deploy(pause)
-   clean?              → D-gate review reads recon → log_deploy(promote)
+   clean?              → FORWARD-gate review reads recon → log_deploy(promote)
 EA, independently      → kill-switch on ACCOUNT_EQUITY vs accounts rules → (halt) + log_incidents
 ```
 
@@ -302,15 +339,17 @@ The schema is already idea-agnostic (keyed by `idea_id × venue × instrument`, 
 
 ---
 
-## 11. Build order (when we leave design)
+## 11. Build order (rebuild from scratch — 2026-06-11)
 
-1. `execution.py` code layer (schema DDL + validated write functions) + `execution.db` — finalize `execution_schema.md` with Syafiq first.
-2. MT5 venue adapter (normalize `HistoryDeal*`, triggered by `OnTradeTransaction`; handle async + swap-at-close).
-3. Python recompute auditor + recon job (recompute vs ledger → `recon_results`).
-4. D0 harness for ORB-001: logic parity **and** feed-divergence check (the real content of task 4).
-5. Config-handoff generator (`get_live_config` + `accounts` → EA `.set`; EA self-assert).
-6. D1 demo run on Just Markets → reconcile → promote.
-7. IBKR adapter (task 30, separate venue research) when/if pursued.
+0. **research.db migration** — add `tester_runs` + `tester_trades`; ensure `step3_gates.gate_number` admits `7` (Gate 7 — FIDELITY). Preserves all research data.
+1. **execution.db rebuild migration** — drop the old D0-era `execution.db` (43 obsolete D0-parity signals + biased $50 tester run + the misplaced tester tables from migration 021; nothing precious lost). Create the fresh **12-table** `execution.db` from the locked `execution_schema.md` DDL (`venue`=protocol + `broker`, `instruments`, `equity_snapshots`, real-fills-only `signals`/`orders`/`fills`/`trades`, FORWARD-only `deploy_gates`).
+2. **Code layers** — `execution.py` (`_SCHEMA` + validated write functions) for `execution.db`; tester writers (`ingest_tester_run/trade`, `log_fidelity_diff` → `pass_gate(7)`) added to the **research** code layer (they write `research.db`). Smoke test the FORWARD-needs-Gate-7-FIDELITY guardrail.
+3. **Gate 7 / FIDELITY for ORB-001** — ingest the $10k tester trades into research.db → diff vs Python research `step4_results` (per-trade + aggregate, statistical-equivalence). This is task 43; currently FAILING (trail-exit port bug — a separate EA fix).
+4. MT5 venue adapter (normalize `HistoryDeal*`, triggered by `OnTradeTransaction`; async + swap-at-close) — for FORWARD.
+5. Python recompute auditor + recon job (recompute vs ledger → `recon_results`) + equity-snapshot poller.
+6. Config-handoff generator (`get_live_config` + `accounts` → EA `.set`; EA self-assert).
+7. FORWARD-demo run on Just Markets → reconcile → promote to FORWARD-live.
+8. IBKR adapter (task 30, separate venue research) when/if pursued — `venue='ibkr'` + abstract gate names already make this additive; no Gate 7 (Python→Python, no port).
 
 ---
 
@@ -327,4 +366,8 @@ The schema is already idea-agnostic (keyed by `idea_id × venue × instrument`, 
 
 ---
 
-*Design agreed 2026-06-10 (Syafiq + Claude). Locked: two DBs (Uptime+Location); normalize-from-native-ledgers; JSON-safety; venue≠account (+`accounts` table); EA/Python boundary — self-contained native EA (signal+order+kill-switch) + Python independent auditor (recomputes from live bars, reads ledger, emits-nothing-from-EA); MT5-only build, IBKR a kept column. D0 gains a feed-divergence check; D2 gains a min-trade-count gate. Next: finalize `execution_schema.md` (full DDL) with Syafiq, then build. No tables built yet.*
+*Design agreed 2026-06-10 (Syafiq + Claude). Locked: normalize-from-native-ledgers; JSON-safety; venue≠account (+`accounts` table); EA/Python boundary — self-contained native EA (signal+order+kill-switch) + Python independent auditor (recomputes from live bars, reads ledger, emits-nothing-from-EA); MT5-only build, IBKR a kept column.*
+
+*Redesigned 2026-06-11 AM (Syafiq + Claude). **D0 scrapped** (feed-parity-pre-EA was the wrong tool for a path-dependent signal). **FORWARD** = single gate, demo→live sub-stages; steady-state is a status. (Superseded that morning's tester.db split — see below.)*
+
+*RE-LOCKED 2026-06-11 PM (Syafiq + Claude). Collapsed 3 stores → **2 databases** (cut on machine+tempo, not simulated-vs-real). The MT5 Strategy Tester is the *last research gate* — **Gate 7 — FIDELITY** in `research.db` (`tester_runs`/`tester_trades` next to `step4_results`), not a third file. Live ladder = the single **FORWARD** gate in `execution.db`. `venue` = protocol (`mt5`/`ibkr`) + new `broker` column; **`instruments`** + **`equity_snapshots`** built day-one; `deploy_gates` kept for symmetry but `FORWARD`-only; OBSERVE tables un-prefixed; `deploy_strategies`→`deployments`; all 12 tables built in one migration. FIDELITY is N/A for Python→Python venues (IBKR). Next: research.db migration + execution.db rebuild per the new `execution_schema.md`.*

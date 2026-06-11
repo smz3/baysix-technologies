@@ -1,5 +1,5 @@
 # Baysix Research Protocol
-_Last updated: 2026-05-29_
+_Last updated: 2026-06-11 (added Gate 7 — FIDELITY, the port-fidelity bridge to deployment)_
 
 ---
 
@@ -28,9 +28,11 @@ We are a quant fund. We apply proven, peer-reviewed models with the precision of
 
 ---
 
-## The 7 Gates
+## The Gates (0 → 6 validate the edge; 7 validates the port)
 
-Every idea must pass gates in order: **0 → 1 → 2 → 3 → 4 → 5 → 6.**
+Every idea must pass gates in order: **0 → 1 → 2 → 3 → 4 → 5 → 6**, then — only if it is re-implemented in another language for deployment — **7**.
+
+**Gates 0–6 validate the *edge*** (does the signal exist and survive OOS?). Passing Gate 6 sets `step1_ideas.status='graduated'` — the research is complete. **Gate 7 validates the *port*** (did the deployed artifact faithfully reproduce the validated code?). It is a different *kind* of gate — about the artifact, not the edge — and it is the bridge between `research.db` and `execution.db` (a `deployments` row cannot be registered until Gate 7 is `passed`). See [execution_protocol.md](execution_protocol.md) §3.
 
 A gate cannot be marked `passed` unless the previous gate is `passed`.
 An idea can be `killed` at any gate. The kill reason must be logged.
@@ -225,6 +227,36 @@ _The HMM-specific checks (EM convergence, volatility separation, fixed-persisten
 - `data_hash` mandatory on OOS run — proves data seal was respected
 - `step3_gates` — gate_number=6, gate_answer = walk-forward + OOS + MC summary
 - Update `step1_ideas` status to `graduated` (pass) or `killed` (fail)
+
+---
+
+### Gate 7 — Fidelity  (the port-fidelity bridge to deployment)
+
+**Question:** Does the deployed artifact reproduce the validated research backtest on the *same* data?
+
+**What this means:**
+- Applies **only when the strategy is re-implemented in another language** to run live — for us, the MQL5 Expert Advisor (the EA) that ports the Python research code. A Python→Python deployment (e.g. IBKR via `ib_insync`) runs the *same* validated code, has no port, and **skips Gate 7 entirely.**
+- This gate isolates **port bugs**: it changes the *code* (Python → MQL5) while holding the *data* fixed (Dukascopy). Anything that drifts is a translation error, not an edge failure — the edge already passed Gate 6.
+- Run the compiled `.ex5` in the **MT5 Strategy Tester** on the **research feed** (Dukascopy custom symbol, 100% real ticks), same OOS window, at a **fair deposit** (large enough that the risk cap never binds — too small biases the tester to a quiet-day subsample).
+- Diff the tester trade-list against the Python research trade-list, per-trade **and** aggregate. The tester runs *identical data*, so it should **not** drift; a material gap is a port bug to fix in the EA.
+
+**Pass looks like (statistical-equivalence, pre-committed before results seen):**
+- Trade-set overlap (same `session_date` + `direction`) ≥ 95%
+- E[R], win-rate, and $/trade each inside the research 95% CI
+- Per-trade R correlation high
+
+**Blocked / Kill looks like:**
+- Material divergence → the deployed code is **not** the validated strategy. Fix the EA; nothing goes near a broker account. *(ORB-001 sits here now — FAILED: win-rate 56.7%→33.2%, a trailing-exit port bug.)*
+
+**Hard rule:** FIDELITY **must** use the research data source (Dukascopy), never the broker's native history — that would conflate a port bug with a feed difference. The broker feed is introduced for the first time downstream at FORWARD (execution.db), on purpose.
+
+**DB log:**
+- `tester_runs` — one row per Strategy-Tester run (config + summary + the diff verdict)
+- `tester_trades` — per-trade tester ledger (join key = `session_date`)
+- `step3_gates` — gate_number=7, gate_answer = overlap % + E[R]/win/$per-t diff + verdict
+- `log_agent` — if an agent ran the diff
+
+*(Gate 7 lives in research.db because the tester is a workstation/batch activity on research data. Its pass is the precondition the execution layer checks before registering a deployment — see [execution_schema.md](execution_schema.md).)*
 
 ---
 
