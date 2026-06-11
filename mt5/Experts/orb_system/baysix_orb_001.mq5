@@ -54,6 +54,8 @@ input int    InpMaxSpreadPoints        = 0;           // 0=off; else skip entry 
 input string InpComment                = "ORB001";    // Order comment (execution.db reconcile key)
 input bool   InpVerbose                = true;        // Log session/decision events
 input bool   InpShowVisuals            = true;        // Draw OR box / entry / trail / exit on chart
+input bool   InpDiag                 = true;        // DIAGNOSTIC: dump per-session OR time-base CSV
+input string InpDiagFile             = "orb001_diag.csv"; // -> Common/Files (FILE_COMMON)
 
 //--- Session state machine (per UTC day) ---
 enum ORB_STATE { ST_WAIT_OR, ST_ARMED, ST_IN_TRADE, ST_DONE };
@@ -84,6 +86,9 @@ int OnInit()
    PrintFormat("[ORB-001] init | magic=%I64d | anchor=%02d:%02d UTC | N=%d | EOD=%02d UTC | lot=%.2f | cap=%.1f%%",
                InpMagic, InpAnchorHourUTC, InpAnchorMinuteUTC, InpORMinutes, InpSessionEndHourUTC,
                InpLot, InpRiskCapPct);
+
+   // DIAGNOSTIC: start each run with a fresh CSV (Common\Files persists across runs).
+   if(InpDiag) { FileDelete(InpDiagFile, FILE_COMMON); }
 
    // Adopt any pre-existing ORB position (EA restart mid-trade).
    if(AdoptExistingPosition())
@@ -207,7 +212,47 @@ bool ComputeOpeningRange(datetime anchor, datetime or_close)
    if(hi <= 0 || lo >= DBL_MAX || hi <= lo) return(false);
 
    g_or_high = hi; g_or_low = lo; g_range_w = hi - lo;
+   DiagOR(r, n, srv_from, srv_to);
    return(true);
+  }
+
+//+------------------------------------------------------------------+
+//| DIAGNOSTIC: dump the OR time-base for one session (FILE_COMMON).   |
+//| Logs the REQUESTED OR window vs the bars CopyRates actually        |
+//| returned (time + OHLC), the resulting OR, the live tick, and all   |
+//| three clocks — so we can see exactly where the OR is mis-timed.    |
+//+------------------------------------------------------------------+
+void DiagOR(const MqlRates &r[], const int n, const datetime req_from, const datetime req_to)
+  {
+   if(!InpDiag) return;
+   int h = FileOpen(InpDiagFile, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI, ',');
+   if(h == INVALID_HANDLE)
+     { PrintFormat("[ORB-001] diag open failed: %d", GetLastError()); return; }
+   if(FileSize(h) == 0)
+      FileWrite(h, "utc_date","time_current","time_gmt","utc_now","req_from","req_to",
+                "n_bars","bar0_time","bar0_o","bar0_h","bar0_l","bar0_c",
+                "barN_time","barN_o","barN_h","barN_l","barN_c",
+                "or_high","or_low","range_w","tick_bid","tick_ask");
+   FileSeek(h, 0, SEEK_END);
+   const int D = _Digits;
+   FileWrite(h,
+      TimeToString(g_session_day, TIME_DATE),
+      TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+      TimeToString(TimeGMT(),     TIME_DATE|TIME_SECONDS),
+      TimeToString(UtcNow(),      TIME_DATE|TIME_SECONDS),
+      TimeToString(req_from,      TIME_DATE|TIME_SECONDS),
+      TimeToString(req_to,        TIME_DATE|TIME_SECONDS),
+      (string)n,
+      TimeToString(r[0].time,     TIME_DATE|TIME_SECONDS),
+      DoubleToString(r[0].open,D), DoubleToString(r[0].high,D),
+      DoubleToString(r[0].low,D),  DoubleToString(r[0].close,D),
+      TimeToString(r[n-1].time,   TIME_DATE|TIME_SECONDS),
+      DoubleToString(r[n-1].open,D), DoubleToString(r[n-1].high,D),
+      DoubleToString(r[n-1].low,D),  DoubleToString(r[n-1].close,D),
+      DoubleToString(g_or_high,D), DoubleToString(g_or_low,D), DoubleToString(g_range_w,D),
+      DoubleToString(SymbolInfoDouble(_Symbol,SYMBOL_BID),D),
+      DoubleToString(SymbolInfoDouble(_Symbol,SYMBOL_ASK),D));
+   FileClose(h);
   }
 
 //+------------------------------------------------------------------+
