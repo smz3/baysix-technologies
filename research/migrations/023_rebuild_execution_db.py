@@ -1,14 +1,14 @@
 """
 Migration 023 — rebuild execution.db from the re-locked 12-table schema.
 
-The old execution.db is D0-era and obsolete (43 D0-parity signals, the JM-DEMO-ORB
+The old execution.db is D0-era and obsolete (43 D0-parity d3_signals, the JM-DEMO-ORB
 D0 deployment, the biased $50 tester run, and the misplaced tester_runs/tester_trades
 from migration 021 — tester now lives in research.db, migration 022). Nothing precious.
 
 This renames the old file aside (execution.db.d0obsolete — a safety net, not a hard
 delete) and recreates execution.db from research.code.execution._SCHEMA (12 tables:
-accounts, instruments, deployments, deploy_gates, signals, orders, fills, trades,
-equity_snapshots, recon_results, log_deploy, log_incidents).
+d1_accounts, d1_instruments, d1_deployments, d2_deploy_gates, d3_signals, d3_orders, d3_fills, d3_trades,
+d4_equity_snapshots, d5_recon_results, log_deploy, log_incidents).
 
 Spec: braindump/execution_schema.md (RE-LOCKED 2026-06-11, two databases).
 Run: python research/migrations/023_rebuild_execution_db.py
@@ -23,9 +23,9 @@ from research.code import execution
 DB = Path(__file__).resolve().parents[1] / "db" / "execution.db"
 
 _EXPECTED = {
-    "accounts", "instruments", "deployments", "deploy_gates",
-    "signals", "orders", "fills", "trades",
-    "equity_snapshots", "recon_results", "log_deploy", "log_incidents",
+    "d1_accounts", "d1_instruments", "d1_deployments", "d2_deploy_gates",
+    "d3_signals", "d3_orders", "d3_fills", "d3_trades",
+    "d4_equity_snapshots", "d5_recon_results", "log_deploy", "log_incidents",
 }
 
 

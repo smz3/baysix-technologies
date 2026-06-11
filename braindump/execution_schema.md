@@ -6,6 +6,8 @@ Status: **SPEC RE-LOCKED 2026-06-11 (session 2) — rebuilding from scratch, TWO
 
 Build = a **research.db migration** (adds `tester_runs` + `tester_trades`, enables `gate_number=7`) **+** an **execution.db rebuild migration** (drops the old D0-era DB + the misplaced tester tables from migration 021, creates the 12 tables below). MT5-only; IBKR is a kept `venue` value, no code.
 
+> **Naming update (2026-06-11 PM2, built):** tables carry a **layer-number prefix** so a DB browser lists them in pipeline order (mirrors research's `step1_`…`step4_`). The DDL blocks below use the bare names for readability; the **live names** are: REGISTER → `d1_accounts` / `d1_instruments` / `d1_deployments`; GATE → `d2_deploy_gates`; OBSERVE → `d3_signals` / `d3_orders` / `d3_fills` / `d3_trades`; STATE → `d4_equity_snapshots`; RECONCILE → `d5_recon_results`; RECORD → `log_deploy` / `log_incidents` (ledgers keep `log_`, as in research.db). The canonical schema is [research/code/execution.py](../research/code/execution.py) `_SCHEMA`.
+
 ---
 
 ## What changed vs the 2026-06-10 spec (read this if you knew the old one)

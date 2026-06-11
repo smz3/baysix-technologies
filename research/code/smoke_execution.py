@@ -8,7 +8,7 @@ can drive both the blocked and happy paths deterministically.
 Asserts the headline guardrails of the re-locked 12-table schema:
   - register_deployment REFUSES until research Gate 7 (FIDELITY) is passed
   - open FORWARD REFUSES until Gate 7 passed
-  - pass FORWARD REFUSES until recon_results exist
+  - pass FORWARD REFUSES until d5_recon_results exist
   - FORWARD/live REFUSES until FORWARD/demo passed
 
 Run: python research/code/smoke_execution.py    (exit 0 = all assertions passed)
@@ -51,9 +51,9 @@ def main():
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
     ).fetchall()}
     conn.close()
-    expected = {"accounts", "instruments", "deployments", "deploy_gates",
-                "signals", "orders", "fills", "trades",
-                "equity_snapshots", "recon_results", "log_deploy", "log_incidents"}
+    expected = {"d1_accounts", "d1_instruments", "d1_deployments", "d2_deploy_gates",
+                "d3_signals", "d3_orders", "d3_fills", "d3_trades",
+                "d4_equity_snapshots", "d5_recon_results", "log_deploy", "log_incidents"}
     print("[schema]")
     check(f"all 12 tables created ({len(tables & expected)}/12)", expected <= tables)
 
@@ -115,13 +115,13 @@ def main():
         execution.pass_deploy_gate(deploy_id, gate_answer="looks fine", sub_stage="demo")
         check("pass FORWARD/demo BLOCKED with no recon", False)
     except ValueError as e:
-        check("pass FORWARD/demo BLOCKED with no recon", "no recon_results" in str(e))
+        check("pass FORWARD/demo BLOCKED with no recon", "no d5_recon_results" in str(e))
 
     execution.log_recon_result(deploy_id, metric_key="slippage_median_px", metric_value=0.4,
                                n_obs=40, gate_id=gate_id)
     execution.pass_deploy_gate(deploy_id, gate_answer="slip 0.4px ok; E[R] in CI", sub_stage="demo")
     demo_status = sqlite3.connect(_tmp).execute(
-        "SELECT status FROM deploy_gates WHERE gate_id=?", (gate_id,)
+        "SELECT status FROM d2_deploy_gates WHERE gate_id=?", (gate_id,)
     ).fetchone()
     check("FORWARD/demo status == passed", demo_status and demo_status[0] == "passed")
 

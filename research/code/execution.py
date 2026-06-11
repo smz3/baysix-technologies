@@ -3,11 +3,11 @@ Execution interface for execution.db — the downstream twin of research.db (VPS
 All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 10).
 
 execution.db tracks the LIFE OF A DEPLOYED STRATEGY in six layers (12 tables):
-    1. REGISTER   — accounts, instruments, deployments (what's deployed)
-    2. GATE       — deploy_gates (FORWARD checkpoint; FIDELITY is research Gate 7)
-    3. OBSERVE    — signals -> orders -> fills -> trades (LIVE accounts only)
-    4. STATE      — equity_snapshots (trailing-DD + kill-switch audit)
-    5. RECONCILE  — recon_results (live vs model; the lie-detector)
+    1. REGISTER   — d1_accounts, d1_instruments, d1_deployments (what's deployed)
+    2. GATE       — d2_deploy_gates (FORWARD checkpoint; FIDELITY is research Gate 7)
+    3. OBSERVE    — d3_signals -> d3_orders -> d3_fills -> d3_trades (LIVE d1_accounts only)
+    4. STATE      — d4_equity_snapshots (trailing-DD + kill-switch audit)
+    5. RECONCILE  — d5_recon_results (live vs model; the lie-detector)
     6. RECORD     — log_deploy, log_incidents
 
 TWO-DATABASE design (re-locked 2026-06-11): the MT5 Strategy-Tester evidence is NOT
@@ -22,11 +22,11 @@ incident_ts, snapshot_ts) = UTC, supplied by the caller/adapter.
 
 Locked decisions baked in:
   - venue = PROTOCOL ('mt5'/'ibkr', the adapter/code path), NOT the broker. The broker
-    is accounts.broker ('justmarkets'/'darwinex'/'ftmo') — all three are venue='mt5'.
+    is d1_accounts.broker ('justmarkets'/'darwinex'/'ftmo') — all three are venue='mt5'.
   - idea_id is a SOFT key into research.db (no FK); register_deployment() validates it
     AND that its Gate 7 (FIDELITY) is 'passed'.
   - magic_number: readable deterministic map owned here (ORB-001 -> 1001).
-  - redeploy = singleton: one deployments row per (idea x account); relaunch flips status.
+  - redeploy = singleton: one d1_deployments row per (idea x account); relaunch flips status.
 
 DB path is env-overridable via EXECUTION_DB_PATH (the smoke test points it at a temp
 file). research.db reads (idea validation, Gate 7, live config) always hit the real
@@ -92,7 +92,7 @@ _SCHEMA = """
 PRAGMA foreign_keys = ON;
 
 -- Layer 1 — REGISTER ---------------------------------------------------------
-CREATE TABLE IF NOT EXISTS accounts (
+CREATE TABLE IF NOT EXISTS d1_accounts (
     account_id         TEXT PRIMARY KEY,
     venue              TEXT NOT NULL CHECK(venue IN ('mt5','ibkr')),  -- PROTOCOL, not broker
     broker             TEXT NOT NULL,                 -- 'justmarkets'/'darwinex'/'ftmo'/'ibkr'
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     updated_at         DATETIME NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS instruments (
+CREATE TABLE IF NOT EXISTS d1_instruments (
     symbol           TEXT PRIMARY KEY,                -- 'XAUUSD.s' (broker-specific)
     display_name     TEXT,
     instrument_type  TEXT NOT NULL CHECK(instrument_type IN ('spot','fx','cfd','future')),
@@ -134,12 +134,12 @@ CREATE TABLE IF NOT EXISTS instruments (
     updated_at       DATETIME NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS deployments (
+CREATE TABLE IF NOT EXISTS d1_deployments (
     deploy_id           TEXT PRIMARY KEY,             -- 'ORB-001@jm-live-01'
     idea_id             TEXT NOT NULL,                -- SOFT key -> research.db (no FK)
     venue               TEXT NOT NULL CHECK(venue IN ('mt5','ibkr')),  -- protocol
-    instrument          TEXT NOT NULL REFERENCES instruments(symbol),
-    account_id          TEXT NOT NULL REFERENCES accounts(account_id),
+    instrument          TEXT NOT NULL REFERENCES d1_instruments(symbol),
+    account_id          TEXT NOT NULL REFERENCES d1_accounts(account_id),
     magic_number        INTEGER NOT NULL,
     config_snapshot     TEXT CHECK(config_snapshot IS NULL OR json_valid(config_snapshot)),
     config_source       TEXT,
@@ -154,9 +154,9 @@ CREATE TABLE IF NOT EXISTS deployments (
 );
 
 -- Layer 2 — GATE -------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS deploy_gates (
+CREATE TABLE IF NOT EXISTS d2_deploy_gates (
     gate_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id     TEXT NOT NULL REFERENCES deployments(deploy_id),
+    deploy_id     TEXT NOT NULL REFERENCES d1_deployments(deploy_id),
     gate_name     TEXT NOT NULL DEFAULT 'FORWARD' CHECK(gate_name IN ('FORWARD')),
     sub_stage     TEXT CHECK(sub_stage IS NULL OR sub_stage IN ('demo','live')),
     attempt       INTEGER NOT NULL DEFAULT 1,
@@ -172,10 +172,10 @@ CREATE TABLE IF NOT EXISTS deploy_gates (
     UNIQUE(deploy_id, gate_name, sub_stage, attempt)
 );
 
--- Layer 3 — OBSERVE (LIVE accounts only) -------------------------------------
-CREATE TABLE IF NOT EXISTS signals (
+-- Layer 3 — OBSERVE (LIVE d1_accounts only) -------------------------------------
+CREATE TABLE IF NOT EXISTS d3_signals (
     signal_id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id           TEXT NOT NULL REFERENCES deployments(deploy_id),
+    deploy_id           TEXT NOT NULL REFERENCES d1_deployments(deploy_id),
     signal_ts           DATETIME NOT NULL,            -- UTC (market time)
     session_date        DATE NOT NULL,                -- anchor-tz session date
     direction           TEXT NOT NULL CHECK(direction IN ('long','short','flat')),
@@ -189,10 +189,10 @@ CREATE TABLE IF NOT EXISTS signals (
     created_at          DATETIME NOT NULL             -- MYT (bookkeeping)
 );
 
-CREATE TABLE IF NOT EXISTS orders (
+CREATE TABLE IF NOT EXISTS d3_orders (
     order_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    signal_id      INTEGER REFERENCES signals(signal_id),
-    deploy_id      TEXT NOT NULL REFERENCES deployments(deploy_id),
+    signal_id      INTEGER REFERENCES d3_signals(signal_id),
+    deploy_id      TEXT NOT NULL REFERENCES d1_deployments(deploy_id),
     venue_order_id TEXT,
     order_type     TEXT,
     side           TEXT CHECK(side IS NULL OR side IN ('buy','sell')),
@@ -205,10 +205,10 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at     DATETIME NOT NULL                  -- MYT
 );
 
-CREATE TABLE IF NOT EXISTS fills (
+CREATE TABLE IF NOT EXISTS d3_fills (
     fill_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id      INTEGER REFERENCES orders(order_id),
-    deploy_id     TEXT NOT NULL REFERENCES deployments(deploy_id),
+    order_id      INTEGER REFERENCES d3_orders(order_id),
+    deploy_id     TEXT NOT NULL REFERENCES d1_deployments(deploy_id),
     venue_deal_id TEXT,
     leg           TEXT NOT NULL CHECK(leg IN ('entry','exit')),
     fill_px       REAL NOT NULL,
@@ -221,10 +221,10 @@ CREATE TABLE IF NOT EXISTS fills (
     created_at    DATETIME NOT NULL                   -- MYT
 );
 
-CREATE TABLE IF NOT EXISTS trades (
+CREATE TABLE IF NOT EXISTS d3_trades (
     trade_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id        TEXT NOT NULL REFERENCES deployments(deploy_id),
-    signal_id        INTEGER REFERENCES signals(signal_id),
+    deploy_id        TEXT NOT NULL REFERENCES d1_deployments(deploy_id),
+    signal_id        INTEGER REFERENCES d3_signals(signal_id),
     entry_ts         DATETIME,                        -- UTC
     entry_px         REAL,
     exit_ts          DATETIME,                        -- UTC
@@ -238,10 +238,10 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 
 -- Layer 4 — STATE ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS equity_snapshots (
+CREATE TABLE IF NOT EXISTS d4_equity_snapshots (
     snapshot_id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id    TEXT NOT NULL REFERENCES accounts(account_id),
-    deploy_id     TEXT REFERENCES deployments(deploy_id),  -- nullable: account-level
+    account_id    TEXT NOT NULL REFERENCES d1_accounts(account_id),
+    deploy_id     TEXT REFERENCES d1_deployments(deploy_id),  -- nullable: account-level
     snapshot_ts   DATETIME NOT NULL,                  -- UTC
     equity        REAL NOT NULL,                      -- balance + floating P&L
     balance       REAL NOT NULL,                      -- realized only
@@ -251,10 +251,10 @@ CREATE TABLE IF NOT EXISTS equity_snapshots (
 );
 
 -- Layer 5 — RECONCILE --------------------------------------------------------
-CREATE TABLE IF NOT EXISTS recon_results (
+CREATE TABLE IF NOT EXISTS d5_recon_results (
     recon_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id    TEXT NOT NULL REFERENCES deployments(deploy_id),
-    gate_id      INTEGER REFERENCES deploy_gates(gate_id),
+    deploy_id    TEXT NOT NULL REFERENCES d1_deployments(deploy_id),
+    gate_id      INTEGER REFERENCES d2_deploy_gates(gate_id),
     period_start DATE,
     period_end   DATE,
     metric_key   TEXT NOT NULL,
@@ -266,22 +266,22 @@ CREATE TABLE IF NOT EXISTS recon_results (
 -- Layer 6 — RECORD -----------------------------------------------------------
 CREATE TABLE IF NOT EXISTS log_deploy (
     log_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id   TEXT NOT NULL REFERENCES deployments(deploy_id),
+    deploy_id   TEXT NOT NULL REFERENCES d1_deployments(deploy_id),
     event       TEXT,
     from_stage  TEXT,
     to_stage    TEXT,
     verdict     TEXT NOT NULL CHECK(verdict IN
                   ('CREATED','PROMOTED','PAUSED','KILLED','RESUMED','RETIRED')),
     rationale   TEXT,
-    recon_id    INTEGER REFERENCES recon_results(recon_id),
+    recon_id    INTEGER REFERENCES d5_recon_results(recon_id),
     decided_by  TEXT NOT NULL DEFAULT 'human' CHECK(decided_by IN ('human','agent')),
     created_at  DATETIME NOT NULL                     -- MYT
 );
 
 CREATE TABLE IF NOT EXISTS log_incidents (
     incident_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    deploy_id   TEXT REFERENCES deployments(deploy_id),   -- nullable: account-level
-    account_id  TEXT REFERENCES accounts(account_id),
+    deploy_id   TEXT REFERENCES d1_deployments(deploy_id),   -- nullable: account-level
+    account_id  TEXT REFERENCES d1_accounts(account_id),
     incident_ts DATETIME NOT NULL,                    -- UTC
     severity    TEXT NOT NULL CHECK(severity IN ('info','warn','critical')),
     kind        TEXT NOT NULL CHECK(kind IN
@@ -300,7 +300,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ORBMeta(BaseModel):
-    """signals.meta for ORB strategies — strategy-private context + feed provenance."""
+    """d3_signals.meta for ORB strategies — strategy-private context + feed provenance."""
     model_config = ConfigDict(extra="forbid")
     or_high: float
     or_low: float
@@ -401,7 +401,7 @@ def register_account(
     rules_json = json.dumps(rules_meta) if rules_meta is not None else None
     with _conn() as conn:
         conn.execute("""
-            INSERT INTO accounts
+            INSERT INTO d1_accounts
                 (account_id, venue, broker, account_type, mode, broker_login,
                  base_currency, leverage, initial_balance, max_daily_loss_pct,
                  max_total_dd_pct, dd_basis, daily_reset_tz, profit_target_pct,
@@ -437,7 +437,7 @@ def register_instrument(
     meta_json = json.dumps(meta) if meta is not None else None
     with _conn() as conn:
         conn.execute("""
-            INSERT INTO instruments
+            INSERT INTO d1_instruments
                 (symbol, display_name, instrument_type, base_asset, quote_currency,
                  tick_size, tick_value, contract_size, min_lot, lot_step, expiry,
                  meta, created_at, updated_at)
@@ -505,7 +505,7 @@ def register_deployment(
     now = _now()
     with _conn() as conn:
         conn.execute("""
-            INSERT INTO deployments
+            INSERT INTO d1_deployments
                 (deploy_id, idea_id, venue, instrument, account_id, magic_number,
                  config_snapshot, config_source, meta_schema_version,
                  stage, status, created_at, updated_at)
@@ -520,28 +520,28 @@ def register_deployment(
 
 
 def get_deploy_config(deploy_id: str) -> dict:
-    """Return the deployments row as a dict (empty if not found)."""
+    """Return the d1_deployments row as a dict (empty if not found)."""
     with _conn() as conn:
         row = conn.execute(
-            "SELECT * FROM deployments WHERE deploy_id=?", (deploy_id,)
+            "SELECT * FROM d1_deployments WHERE deploy_id=?", (deploy_id,)
         ).fetchone()
     return dict(row) if row else {}
 
 
 def get_account_rules(account_id: str) -> dict:
-    """Return the accounts row as a dict (empty if not found)."""
+    """Return the d1_accounts row as a dict (empty if not found)."""
     with _conn() as conn:
         row = conn.execute(
-            "SELECT * FROM accounts WHERE account_id=?", (account_id,)
+            "SELECT * FROM d1_accounts WHERE account_id=?", (account_id,)
         ).fetchone()
     return dict(row) if row else {}
 
 
 def get_instrument(symbol: str) -> dict:
-    """Return the instruments row as a dict (empty if not found)."""
+    """Return the d1_instruments row as a dict (empty if not found)."""
     with _conn() as conn:
         row = conn.execute(
-            "SELECT * FROM instruments WHERE symbol=?", (symbol,)
+            "SELECT * FROM d1_instruments WHERE symbol=?", (symbol,)
         ).fetchone()
     return dict(row) if row else {}
 
@@ -568,7 +568,7 @@ def open_deploy_gate(deploy_id: str, pass_criteria: str, sub_stage: str = None,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO deploy_gates
+            INSERT INTO d2_deploy_gates
                 (deploy_id, gate_name, sub_stage, attempt, pass_criteria, status,
                  created_at, updated_at)
             VALUES (?, 'FORWARD', ?, ?, ?, 'open', ?, ?)
@@ -582,7 +582,7 @@ def open_deploy_gate(deploy_id: str, pass_criteria: str, sub_stage: str = None,
 def _has_recon(deploy_id: str, gate_id: int) -> bool:
     with _conn() as conn:
         row = conn.execute(
-            "SELECT 1 FROM recon_results WHERE deploy_id=? AND gate_id=? LIMIT 1",
+            "SELECT 1 FROM d5_recon_results WHERE deploy_id=? AND gate_id=? LIMIT 1",
             (deploy_id, gate_id),
         ).fetchone()
     return row is not None
@@ -591,7 +591,7 @@ def _has_recon(deploy_id: str, gate_id: int) -> bool:
 def _gate_row(deploy_id: str, sub_stage: str, attempt: int) -> dict:
     with _conn() as conn:
         row = conn.execute(
-            "SELECT * FROM deploy_gates WHERE deploy_id=? AND gate_name='FORWARD' "
+            "SELECT * FROM d2_deploy_gates WHERE deploy_id=? AND gate_name='FORWARD' "
             "AND sub_stage IS ? AND attempt=?",
             (deploy_id, sub_stage, attempt),
         ).fetchone()
@@ -601,7 +601,7 @@ def _gate_row(deploy_id: str, sub_stage: str, attempt: int) -> dict:
 def _sub_stage_passed(deploy_id: str, sub_stage: str) -> bool:
     with _conn() as conn:
         row = conn.execute(
-            "SELECT 1 FROM deploy_gates WHERE deploy_id=? AND gate_name='FORWARD' "
+            "SELECT 1 FROM d2_deploy_gates WHERE deploy_id=? AND gate_name='FORWARD' "
             "AND sub_stage IS ? AND status='passed' LIMIT 1",
             (deploy_id, sub_stage),
         ).fetchone()
@@ -613,7 +613,7 @@ def pass_deploy_gate(deploy_id: str, gate_answer: str, sub_stage: str = None,
                      evidence_ref: str = None, allow_incomplete: bool = False) -> None:
     """Mark a FORWARD gate passed.
 
-    GUARDRAILS: (1) supporting recon_results must exist for the gate (twin of
+    GUARDRAILS: (1) supporting d5_recon_results must exist for the gate (twin of
     pass_gate(6)); (2) the 'live' sub_stage cannot pass until 'demo' has passed.
     allow_incomplete=True bypasses (1) ONLY with a logged waiver in gate_answer."""
     if sub_stage is not None and sub_stage not in VALID_SUB_STAGE:
@@ -628,7 +628,7 @@ def pass_deploy_gate(deploy_id: str, gate_answer: str, sub_stage: str = None,
         )
     if not allow_incomplete and not _has_recon(deploy_id, gate["gate_id"]):
         raise ValueError(
-            f"Cannot pass FORWARD/{sub_stage} for {deploy_id}: no recon_results for "
+            f"Cannot pass FORWARD/{sub_stage} for {deploy_id}: no d5_recon_results for "
             f"gate_id={gate['gate_id']}. A forward gate passes on reconciliation evidence "
             f"(log_recon_result first), or pass allow_incomplete=True with a waiver."
         )
@@ -636,7 +636,7 @@ def pass_deploy_gate(deploy_id: str, gate_answer: str, sub_stage: str = None,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            UPDATE deploy_gates
+            UPDATE d2_deploy_gates
             SET status='passed', gate_answer=?, evidence_ref=COALESCE(?, evidence_ref),
                 answered_by=?, updated_at=?, answered_at=?
             WHERE gate_id=?
@@ -654,7 +654,7 @@ def block_deploy_gate(deploy_id: str, gate_answer: str, sub_stage: str = None,
     now = _now()
     with _conn() as conn:
         conn.execute("""
-            UPDATE deploy_gates
+            UPDATE d2_deploy_gates
             SET status='blocked', gate_answer=?, answered_by=?, updated_at=?, answered_at=?
             WHERE gate_id=?
         """, (gate_answer, answered_by, now, now, gate["gate_id"]))
@@ -670,14 +670,14 @@ def kill_deployment(deploy_id: str, rationale: str, sub_stage: str = None,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            UPDATE deployments SET status='killed', updated_at=? WHERE deploy_id=?
+            UPDATE d1_deployments SET status='killed', updated_at=? WHERE deploy_id=?
         """, (now, deploy_id))
         if cur.rowcount == 0:
             raise ValueError(f"deployment not found: {deploy_id}")
         gate = _gate_row(deploy_id, sub_stage, attempt)
         if gate:
             cur.execute("""
-                UPDATE deploy_gates
+                UPDATE d2_deploy_gates
                 SET status='killed', gate_answer=?, updated_at=?, answered_at=?
                 WHERE gate_id=?
             """, (rationale, now, now, gate["gate_id"]))
@@ -691,7 +691,7 @@ def log_signal(deploy_id: str, direction: str, signal_ts: str, session_date: str
                intended_entry_px: float = None, intended_stop_px: float = None,
                intended_target_px: float = None, intended_size: float = None,
                expected_R: float = None, meta: dict = None) -> int:
-    """Author an intended trade (signals) — Python's recompute, not the EA.
+    """Author an intended trade (d3_signals) — Python's recompute, not the EA.
     signal_ts/session_date are MARKET time (UTC / anchor-tz); meta is Pydantic-
     validated against the idea family's schema. Returns signal_id."""
     if direction not in VALID_DIRECTION:
@@ -702,7 +702,7 @@ def log_signal(deploy_id: str, direction: str, signal_ts: str, session_date: str
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO signals
+            INSERT INTO d3_signals
                 (deploy_id, signal_ts, session_date, direction, intended_entry_px,
                  intended_stop_px, intended_target_px, intended_size, expected_R,
                  meta, meta_schema_version, created_at)
@@ -720,7 +720,7 @@ def ingest_order(deploy_id: str, signal_id: int = None, venue_order_id: str = No
                  order_type: str = None, side: str = None, requested_px: float = None,
                  requested_size: float = None, status: str = "sent",
                  reject_reason: str = None, placed_ts: str = None) -> int:
-    """Normalize a broker order into orders. Returns order_id."""
+    """Normalize a broker order into d3_orders. Returns order_id."""
     if side is not None and side not in VALID_SIDE:
         raise ValueError(f"side must be one of {VALID_SIDE} or None")
     if status not in VALID_ORDER_STATUS:
@@ -729,7 +729,7 @@ def ingest_order(deploy_id: str, signal_id: int = None, venue_order_id: str = No
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO orders
+            INSERT INTO d3_orders
                 (signal_id, deploy_id, venue_order_id, order_type, side,
                  requested_px, requested_size, status, reject_reason, placed_ts, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -745,7 +745,7 @@ def ingest_fill(deploy_id: str, order_id: int, leg: str, fill_px: float,
                 fill_size: float, fill_ts: str, magic_number: int = None,
                 venue_deal_id: str = None, slippage_px: float = None,
                 commission: float = None, swap: float = None) -> int:
-    """Normalize a broker fill into fills. Asserts the deal's magic matches the
+    """Normalize a broker fill into d3_fills. Asserts the deal's magic matches the
     deployment (mismatch → config_mismatch incident). Returns fill_id."""
     if leg not in VALID_LEG:
         raise ValueError(f"leg must be one of {VALID_LEG}")
@@ -764,7 +764,7 @@ def ingest_fill(deploy_id: str, order_id: int, leg: str, fill_px: float,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO fills
+            INSERT INTO d3_fills
                 (order_id, deploy_id, venue_deal_id, leg, fill_px, fill_size,
                  fill_ts, slippage_px, commission, swap, magic_number, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -781,12 +781,12 @@ def ingest_trade(deploy_id: str, signal_id: int = None, entry_ts: str = None,
                  exit_reason: str = None, risk_unit: float = None,
                  realized_R: float = None, expected_R: float = None,
                  realized_pnl_usd: float = None) -> int:
-    """Record a closed round-trip (trades) — the reconciliation unit. Returns trade_id."""
+    """Record a closed round-trip (d3_trades) — the reconciliation unit. Returns trade_id."""
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO trades
+            INSERT INTO d3_trades
                 (deploy_id, signal_id, entry_ts, entry_px, exit_ts, exit_px,
                  exit_reason, risk_unit, realized_R, expected_R, realized_pnl_usd, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -809,7 +809,7 @@ def log_equity_snapshot(account_id: str, snapshot_ts: str, equity: float,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO equity_snapshots
+            INSERT INTO d4_equity_snapshots
                 (account_id, deploy_id, snapshot_ts, equity, balance,
                  open_pnl, margin_used, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -829,7 +829,7 @@ def log_recon_result(deploy_id: str, metric_key: str, metric_value: float,
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO recon_results
+            INSERT INTO d5_recon_results
                 (deploy_id, gate_id, period_start, period_end,
                  metric_key, metric_value, n_obs, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
