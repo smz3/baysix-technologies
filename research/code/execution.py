@@ -67,6 +67,11 @@ VALID_INCIDENT_KIND  = ("disconnect", "missed_fill", "slippage_spike", "reject",
                         "killswitch_fire", "data_gap", "config_mismatch",
                         "prop_rule_breach", "tz_mismatch")
 VALID_DECIDED_BY     = ("human", "agent")
+# TESTER provenance — the headline distinction: where the ticks came from + how MT5
+# modelled them. broker_history = JM's own (weak far back); dukascopy = our trusted
+# tick source loaded as a custom symbol; custom = any other imported feed.
+VALID_DATA_SOURCE    = ("broker_history", "dukascopy", "custom")
+VALID_TESTER_MODEL   = ("real_ticks", "every_tick", "1min_ohlc", "open_only")
 
 # Readable deterministic magic-number map (owned here, §Conventions of the spec):
 # family base + numeric suffix → ORB-001 = 1001, ORB-002 = 1002, HMM-001 = 2001.
@@ -244,6 +249,65 @@ CREATE TABLE IF NOT EXISTS log_incidents (
     detail      TEXT,
     resolved    INTEGER NOT NULL DEFAULT 0 CHECK(resolved IN (0,1)),
     created_at  DATETIME NOT NULL
+);
+
+-- TESTER — MT5 Strategy Tester capture (provenance-first) ---------------------
+-- A tester run is NOT a live deploy: no account, no real fills. It exists to (a)
+-- mechanically check the MQL5 port reproduces the Python logic, and (b) be diffed
+-- trade-for-trade against the Python backtest on the SAME data. data_source is the
+-- first-class fact — the same EA run means different things on dukascopy vs JM.
+CREATE TABLE IF NOT EXISTS tester_runs (
+    run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    idea_id         TEXT NOT NULL,                 -- soft key into research.db
+    deploy_id       TEXT REFERENCES deploy_strategies(deploy_id),  -- optional link
+    ea_name         TEXT,                          -- 'baysix_orb_001'
+    ea_version      TEXT,
+    symbol          TEXT NOT NULL,                 -- e.g. 'XAUUSD_dukas'
+    data_source     TEXT NOT NULL CHECK(data_source IN
+                       ('broker_history','dukascopy','custom')),
+    model_quality   TEXT,                          -- MT5 history quality, e.g. '99%'
+    tester_model    TEXT CHECK(tester_model IS NULL OR tester_model IN
+                       ('real_ticks','every_tick','1min_ohlc','open_only')),
+    timeframe       TEXT,                          -- chart TF of the run, e.g. 'M1'
+    period_start    DATE,
+    period_end      DATE,
+    tz_offset_hours INTEGER,                        -- tester server->UTC offset used (0 = UTC dukas)
+    magic_number    INTEGER,
+    initial_deposit REAL,
+    leverage        INTEGER,
+    spread_setting  TEXT,                           -- 'real' | 'fixed:N'
+    params          TEXT CHECK(params IS NULL OR json_valid(params)),  -- EA inputs snapshot
+    -- run-level summary (filled on finalize) --
+    n_trades        INTEGER,
+    net_profit_usd  REAL,
+    profit_factor   REAL,
+    max_dd_pct      REAL,
+    win_rate        REAL,
+    notes           TEXT,
+    created_at      DATETIME NOT NULL,
+    updated_at      DATETIME NOT NULL
+);
+
+-- Mirrors exec_trades (the reconciliation unit), plus ORB session context so a row
+-- diffs straight against a Python backtest trade keyed on session_date.
+CREATE TABLE IF NOT EXISTS tester_trades (
+    tt_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id           INTEGER NOT NULL REFERENCES tester_runs(run_id),
+    ticket           INTEGER,
+    session_date     DATE,                          -- join key to the Python backtest
+    direction        TEXT CHECK(direction IS NULL OR direction IN ('long','short','flat')),
+    entry_ts         DATETIME,
+    entry_px         REAL,
+    exit_ts          DATETIME,
+    exit_px          REAL,
+    exit_reason      TEXT,
+    risk_unit        REAL,                          -- range_w (1R)
+    realized_R       REAL,
+    realized_pnl_usd REAL,
+    or_high          REAL,
+    or_low           REAL,
+    range_w          REAL,
+    created_at       DATETIME NOT NULL
 );
 """
 
@@ -723,6 +787,130 @@ def log_incident(deploy_id: str, severity: str, kind: str, detail: str = "",
         incident_id = cur.lastrowid
     print(f"[execution] {deploy_id} INCIDENT [{severity}/{kind}] #{incident_id}")
     return incident_id
+
+
+# ── TESTER — Strategy Tester capture ──────────────────────────────────────────────
+def log_tester_run(
+    idea_id: str,
+    symbol: str,
+    data_source: str,
+    ea_name: str = None,
+    ea_version: str = None,
+    model_quality: str = None,
+    tester_model: str = None,
+    timeframe: str = None,
+    period_start: str = None,
+    period_end: str = None,
+    tz_offset_hours: int = None,
+    magic_number: int = None,
+    initial_deposit: float = None,
+    leverage: int = None,
+    spread_setting: str = None,
+    params: dict = None,
+    deploy_id: str = None,
+    notes: str = None,
+) -> int:
+    """Open a Strategy Tester run with its data provenance. idea_id is soft-validated
+    against research.db (same as register_deployment). Returns run_id. Summary metrics
+    are filled later via finalize_tester_run()."""
+    if not pipeline.get_idea(idea_id):
+        raise ValueError(
+            f"idea_id '{idea_id}' not found in research.db — register the idea first"
+        )
+    if data_source not in VALID_DATA_SOURCE:
+        raise ValueError(f"data_source must be one of {VALID_DATA_SOURCE}")
+    if tester_model is not None and tester_model not in VALID_TESTER_MODEL:
+        raise ValueError(f"tester_model must be one of {VALID_TESTER_MODEL} or None")
+    params_json = json.dumps(params) if params is not None else None
+    now = _now()
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO tester_runs
+                (idea_id, deploy_id, ea_name, ea_version, symbol, data_source,
+                 model_quality, tester_model, timeframe, period_start, period_end,
+                 tz_offset_hours, magic_number, initial_deposit, leverage,
+                 spread_setting, params, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (idea_id, deploy_id, ea_name, ea_version, symbol, data_source,
+              model_quality, tester_model, timeframe, period_start, period_end,
+              tz_offset_hours, magic_number, initial_deposit, leverage,
+              spread_setting, params_json, notes, now, now))
+        conn.commit()
+        run_id = cur.lastrowid
+    print(f"[execution] tester run #{run_id} {idea_id} {symbol} [{data_source}/{tester_model}]")
+    return run_id
+
+
+def ingest_tester_trade(
+    run_id: int,
+    direction: str = None,
+    entry_ts: str = None,
+    entry_px: float = None,
+    exit_ts: str = None,
+    exit_px: float = None,
+    exit_reason: str = None,
+    risk_unit: float = None,
+    realized_R: float = None,
+    realized_pnl_usd: float = None,
+    ticket: int = None,
+    session_date: str = None,
+    or_high: float = None,
+    or_low: float = None,
+    range_w: float = None,
+) -> int:
+    """Record one closed tester round-trip (mirror of ingest_trade). Returns tt_id."""
+    if direction is not None and direction not in VALID_DIRECTION:
+        raise ValueError(f"direction must be one of {VALID_DIRECTION} or None")
+    now = _now()
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO tester_trades
+                (run_id, ticket, session_date, direction, entry_ts, entry_px,
+                 exit_ts, exit_px, exit_reason, risk_unit, realized_R,
+                 realized_pnl_usd, or_high, or_low, range_w, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (run_id, ticket, session_date, direction, entry_ts, entry_px,
+              exit_ts, exit_px, exit_reason, risk_unit, realized_R,
+              realized_pnl_usd, or_high, or_low, range_w, now))
+        conn.commit()
+        tt_id = cur.lastrowid
+    return tt_id
+
+
+def finalize_tester_run(run_id: int, n_trades: int = None, net_profit_usd: float = None,
+                        profit_factor: float = None, max_dd_pct: float = None,
+                        win_rate: float = None, notes: str = None) -> None:
+    """Write the run-level summary once trades are captured."""
+    now = _now()
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE tester_runs
+            SET n_trades=COALESCE(?, n_trades),
+                net_profit_usd=COALESCE(?, net_profit_usd),
+                profit_factor=COALESCE(?, profit_factor),
+                max_dd_pct=COALESCE(?, max_dd_pct),
+                win_rate=COALESCE(?, win_rate),
+                notes=COALESCE(?, notes),
+                updated_at=?
+            WHERE run_id=?
+        """, (n_trades, net_profit_usd, profit_factor, max_dd_pct, win_rate,
+              notes, now, run_id))
+        if cur.rowcount == 0:
+            raise ValueError(f"tester run not found: {run_id}")
+        conn.commit()
+    print(f"[execution] tester run #{run_id} finalized: n={n_trades} net={net_profit_usd}")
+
+
+def get_tester_run(run_id: int) -> dict:
+    """Return the tester_runs row as a dict (empty if not found)."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tester_runs WHERE run_id=?", (run_id,)
+        ).fetchone()
+    return dict(row) if row else {}
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                              Sigma_ORB_V1.mq5     |
+//|                                          baysix_orb_001.mq5       |
 //|                          Copyright 2026, Baysix Technologies      |
 //+------------------------------------------------------------------+
 //| ORB-001 — Opening-Range Breakout, XAUUSD, STANDALONE EA.         |
@@ -26,9 +26,11 @@
 //|   5. Sizing: fixed min-lot; SKIP the trade if its $ risk          |
 //|      (range_w * 100 * lot) exceeds InpRiskCapPct % of equity.     |
 //|                                                                  |
-//| Time base: anchors are UTC via TimeGMT() (correct on a PC with a  |
-//| correct clock/timezone). On a VPS with a skewed clock, set        |
-//| InpUTCOffsetOverrideHours to the broker-server->UTC hours.        |
+//| Time base: anchors are UTC. LIVE -> TimeGMT() (correct on a PC    |
+//| with a correct clock). STRATEGY TESTER -> TimeGMT() is unreliable; |
+//| we treat the custom Dukascopy symbol as UTC-stamped (exported      |
+//| "Original" = UTC) so server time IS UTC -> offset 0. On a VPS with |
+//| a skewed clock, set InpUTCOffsetOverrideHours to server->UTC hrs.  |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Baysix Technologies"
 #property version   "1.00"
@@ -36,6 +38,7 @@
 #property description "ORB-001 standalone — 09:00 UTC opening-range breakout, trail_1R, XAUUSD"
 
 #include <Trade/Trade.mqh>
+#include <orb_system/orb_visualizer.mqh>
 
 //--- Inputs (frozen live config; defaults = the validated values) ---
 input long   InpMagic                  = 1001;        // Magic number (ORB family base 1000 + 1)
@@ -45,15 +48,18 @@ input int    InpORMinutes              = 5;           // N — opening-range len
 input int    InpSessionEndHourUTC      = 21;          // EOD-flat / stop hunting for entries (UTC)
 input double InpLot                    = 0.01;        // Fixed lot (Mode-A min lot)
 input double InpRiskCapPct             = 5.0;         // Skip trade if $risk > this % of equity (Mode-A cap)
-input int    InpUTCOffsetOverrideHours = 999;         // 999=use TimeGMT(); else server->UTC offset hrs
+input int    InpUTCOffsetOverrideHours = 999;         // LIVE: 999=use TimeGMT(); else server->UTC offset hrs
+input int    InpTesterUTCOffsetHours    = 0;          // TESTER only: server->UTC offset (Dukascopy custom sym=UTC => 0)
 input int    InpMaxSpreadPoints        = 0;           // 0=off; else skip entry if spread > this (points)
 input string InpComment                = "ORB001";    // Order comment (execution.db reconcile key)
 input bool   InpVerbose                = true;        // Log session/decision events
+input bool   InpShowVisuals            = true;        // Draw OR box / entry / trail / exit on chart
 
 //--- Session state machine (per UTC day) ---
 enum ORB_STATE { ST_WAIT_OR, ST_ARMED, ST_IN_TRADE, ST_DONE };
 
-CTrade   g_trade;
+CTrade         g_trade;
+COrbVisualizer g_viz;
 ORB_STATE g_state          = ST_WAIT_OR;
 datetime g_session_day     = 0;        // UTC midnight of the active session
 double   g_or_high         = 0.0;
@@ -73,6 +79,8 @@ int OnInit()
    g_trade.SetDeviationInPoints(20);
    g_point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
 
+   g_viz.Init(InpComment + "_", InpShowVisuals);   // prefix ORB001_ ties visuals to the reconcile key
+
    PrintFormat("[ORB-001] init | magic=%I64d | anchor=%02d:%02d UTC | N=%d | EOD=%02d UTC | lot=%.2f | cap=%.1f%%",
                InpMagic, InpAnchorHourUTC, InpAnchorMinuteUTC, InpORMinutes, InpSessionEndHourUTC,
                InpLot, InpRiskCapPct);
@@ -90,9 +98,16 @@ void OnDeinit(const int reason) { }
 //+------------------------------------------------------------------+
 datetime UtcNow()
   {
+   // Strategy Tester: TimeGMT() is unreliable. The custom Dukascopy symbol is
+   // UTC-stamped (QDM export "Original"=UTC) => tester server time IS UTC =>
+   // subtract InpTesterUTCOffsetHours (default 0). Sanity check: London open
+   // bar should land at 08:00 server time.
+   if(MQLInfoInteger(MQL_TESTER))
+      return(TimeCurrent() - (datetime)InpTesterUTCOffsetHours * 3600);
+
    if(InpUTCOffsetOverrideHours == 999)
-      return(TimeGMT());                                   // PC-clock GMT
-   return(TimeCurrent() - (datetime)InpUTCOffsetOverrideHours * 3600); // server - offset
+      return(TimeGMT());                                   // live: PC-clock GMT
+   return(TimeCurrent() - (datetime)InpUTCOffsetOverrideHours * 3600); // live: server - offset
   }
 
 datetime DayMidnight(datetime t) { return(t - (t % 86400)); }
@@ -114,6 +129,7 @@ void OnTick()
       g_state       = ST_WAIT_OR;
       g_or_high = g_or_low = g_range_w = 0.0;
       g_ticket  = 0; g_dir = 0; g_peak = 0.0;
+      g_viz.ClearSession();   // fresh visual layer each UTC day
       if(InpVerbose) PrintFormat("[ORB-001] new session %s UTC", TimeToString(today, TIME_DATE));
      }
 
@@ -138,6 +154,8 @@ void OnTick()
             if(ComputeOpeningRange(anchor, or_close))
               {
                g_state = ST_ARMED;
+               int off = (int)(TimeCurrent() - utc);   // UTC -> chart/server time for drawing
+               g_viz.DrawOpeningRange(anchor + off, or_close + off, g_or_high, g_or_low);
                if(InpVerbose)
                   PrintFormat("[ORB-001] OR set: hi=%.2f lo=%.2f range_w=%.2f -> ARMED",
                               g_or_high, g_or_low, g_range_w);
@@ -241,6 +259,7 @@ void TryEnter()
    double fill = g_trade.ResultPrice();
    g_peak   = fill;                       // seed peak at entry fill
    g_state  = ST_IN_TRADE;
+   g_viz.DrawEntry(TimeCurrent(), fill, dir, g_range_w);
    PrintFormat("[ORB-001] ENTER %s @ %.2f | SL=%.2f | range_w=%.2f | risk$=%.2f | ticket=%I64u",
                (dir>0?"LONG":"SHORT"), fill, sl, g_range_w, risk_usd, g_ticket);
   }
@@ -253,6 +272,9 @@ void ManageTrail()
    if(!PositionSelectByTicket(g_ticket))
      {
       // position gone (SL hit / closed) -> done for the session
+      double xp = (g_dir > 0) ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                              : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      g_viz.DrawExit(TimeCurrent(), xp, "STOP");
       if(InpVerbose) Print("[ORB-001] position closed -> DONE (trail/SL or manual)");
       g_state = ST_DONE; g_ticket = 0;
       return;
@@ -279,9 +301,10 @@ void ManageTrail()
    if(MathAbs(new_sl - cur_sl) > g_point)
      {
       double tp = PositionGetDouble(POSITION_TP);
-      if(!g_trade.PositionModify(g_ticket, NormalizeDouble(new_sl, _Digits), tp))
-         if(InpVerbose)
-            PrintFormat("[ORB-001] trail modify failed: ret=%d", g_trade.ResultRetcode());
+      if(g_trade.PositionModify(g_ticket, NormalizeDouble(new_sl, _Digits), tp))
+         g_viz.UpdateTrail(TimeCurrent(), NormalizeDouble(new_sl, _Digits), g_dir);
+      else if(InpVerbose)
+         PrintFormat("[ORB-001] trail modify failed: ret=%d", g_trade.ResultRetcode());
      }
   }
 
@@ -291,8 +314,13 @@ void ManageTrail()
 void ClosePosition(string why)
   {
    if(g_ticket == 0 || !PositionSelectByTicket(g_ticket)) { g_ticket = 0; return; }
+   double xp = (g_dir > 0) ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                           : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    if(g_trade.PositionClose(g_ticket))
+     {
+      g_viz.DrawExit(TimeCurrent(), xp, why);
       PrintFormat("[ORB-001] CLOSE (%s) ticket=%I64u", why, g_ticket);
+     }
    else
       PrintFormat("[ORB-001] CLOSE FAILED (%s): ret=%d", why, g_trade.ResultRetcode());
    g_ticket = 0;
