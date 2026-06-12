@@ -50,6 +50,22 @@ Use the printed path as the filename. Never overwrite an existing file — the s
 
 Keep it under 20 lines total. The next session reads this cold in 10 seconds.
 
+## Step 2.5 — Lint (BLOCKING)
+
+Every result-shaped number (R-multiples, t-stats, win-rates, $/trade, Sharpe, z)
+must cite a backing artifact — a `step4_results` result_id (e.g. "result_id 121")
+or an on-disk artifact path (`ReportTester-*.xlsx`, `outputs/**/*.json|csv`) — in
+the SAME `##` section. This kills the hand-typed-number bug (task 50).
+
+```bash
+python research/code/handover_lint.py <the-handover-path-you-just-wrote>
+```
+
+If it prints **BLOCKED**, the handover is NOT done: add the missing citation
+(re-run `pipeline.log_result()` for the number if no result_id exists yet, then
+cite it), re-write, re-lint until it prints **OK**. Do not hand-wave past this —
+the same gate runs again at `git commit` (`.git/hooks/pre-commit`).
+
 ## Step 3 — Confirm
 
 ```

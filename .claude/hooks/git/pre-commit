@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Baysix pre-commit — BLOCKING handover-lint (task 50).
+# Lints every STAGED memory/*.md handover: result-shaped numbers must cite a
+# step4_results result_id or an on-disk artifact. Exit 1 aborts the commit.
+#
+# Tracked source: .claude/hooks/git/pre-commit
+# Install:        cp .claude/hooks/git/pre-commit .git/hooks/pre-commit  (or run install.sh)
+set -euo pipefail
+
+REPO="$(git rev-parse --show-toplevel)"
+
+# staged (added/copied/modified) markdown under memory/ — case-insensitive
+# (Windows git stores some paths as "Memory/", others "memory/"; match both).
+mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+  | grep -iE '^memory/.*\.md$' || true)
+
+[ "${#FILES[@]}" -eq 0 ] && exit 0
+
+# resolve a python (py launcher on Windows, else python)
+PY="python"; command -v py >/dev/null 2>&1 && PY="py -3"
+
+echo "[pre-commit] handover-lint on ${#FILES[@]} staged handover file(s)…"
+if ! $PY "$REPO/research/code/handover_lint.py" "${FILES[@]}"; then
+  echo ""
+  echo "[pre-commit] COMMIT BLOCKED. Cite each result number, or 'git commit --no-verify' to override (logged to your conscience)."
+  exit 1
+fi
+exit 0
