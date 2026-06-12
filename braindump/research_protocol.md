@@ -83,8 +83,25 @@ An idea can be `killed` at any gate. The kill reason must be logged.
 - Cannot define a simple rule without referencing the complex model
 - Null hypothesis is vague or unstated
 
-**DB log:**
+**Spec-birth (mandatory):** Passing Gate 1 also births the strategy's spec — one
+`CREATED` row per design component in `log_strategy`, each carrying its proposed
+knobs in `params_json`. The five components are **entry · anchor · exit · sizing ·
+filter**; emit a row for every one the idea touches (omit the rest). This is the
+structured form of the simple rule, and it is what `strategy_log.get_spec(idea_id)`
+renders as the spec card (each component tagged live / proposed / dead as the
+lineage evolves). No spec-birth, no Gate 1 pass.
+
+```python
+from research.code import strategy_log
+strategy_log.log_change(idea_id, "spec-birth", "CREATED", component="entry",
+                        to_value="immediate_breakout",
+                        params_json={"trigger": "first_touch_of_OR_boundary", "confirm": False})
+# ...repeat per component the idea defines
+```
+
+**Pass looks like (DB):**
 - `step3_gates` — gate_number=1, gate_answer = simple rule + null hypothesis
+- `log_strategy` — one `CREATED` spec-birth row per component, each with `params_json`
 
 ---
 

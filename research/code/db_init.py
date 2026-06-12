@@ -141,6 +141,7 @@ def init():
             git_sha     TEXT,
             decided_by  TEXT NOT NULL DEFAULT 'human',
             created_at  DATETIME NOT NULL,
+            params_json TEXT,                       -- structured knobs (migration 025)
             CHECK (verdict IN ('CREATED','VALIDATED','PROPOSED','ADOPTED',
                                'REJECTED','FALSIFIED','SUPERSEDED')),
             CHECK (component IN ('exit','anchor','sizing','entry','filter','config')

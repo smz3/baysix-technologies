@@ -3,10 +3,14 @@ Baysix Research Dashboard — Streamlit
 Run: streamlit run research/dashboard/app.py
 """
 
+import sys
 import sqlite3
 import pandas as pd
 import streamlit as st
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[2]))   # repo root, for research.code imports
+from research.code import strategy_log
 
 DB_PATH     = Path(__file__).parents[1] / "db" / "research.db"
 OUTPUTS_DIR = Path(__file__).parents[0].parent / "outputs"
@@ -32,8 +36,9 @@ def safe_style(df, style_map):
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_lifecycle, tab_gates, tab_ideas, tab_results, tab_agents, tab_papers = st.tabs([
-    "Lifecycle", "Gates", "Ideas", "Results", "Agent Calls", "Papers"
+(tab_lifecycle, tab_spec, tab_gates, tab_ideas,
+ tab_results, tab_agents, tab_papers) = st.tabs([
+    "Lifecycle", "Strategy Spec", "Gates", "Ideas", "Results", "Agent Calls", "Papers"
 ])
 
 
@@ -72,7 +77,61 @@ with tab_lifecycle:
         st.error(f"Lifecycle tab error: {e}")
 
 
-# ── Tab 2: Gates ──────────────────────────────────────────────────────────────
+# ── Tab 2: Strategy Spec ──────────────────────────────────────────────────────
+
+with tab_spec:
+    try:
+        st.subheader("Strategy Spec — component design surface")
+        st.caption(
+            "The current knob-set per component, assembled from log_strategy "
+            "(strategy_log.get_spec). live = validated/adopted · proposed = born, "
+            "untested · dead = only rejected/falsified variants survive."
+        )
+
+        ideas = q("SELECT DISTINCT idea_id FROM log_strategy ORDER BY idea_id")
+        if ideas.empty:
+            st.info("No strategies in log_strategy yet.")
+        else:
+            idea_id = st.selectbox("Strategy", ideas["idea_id"].tolist())
+            spec = strategy_log.get_spec(idea_id)
+
+            if not spec:
+                st.info(f"{idea_id} has no component rows yet (spec-birth not run).")
+            else:
+                STATUS_COLOR = {"live": "#1a4a1a", "proposed": "#3a3a1a", "dead": "#4a1a1a"}
+                ORDER = ["entry", "anchor", "exit", "sizing", "filter"]
+                comps = [c for c in ORDER if c in spec] + [c for c in spec if c not in ORDER]
+
+                for comp in comps:
+                    card = spec[comp]
+                    bg = STATUS_COLOR.get(card["status"], "#222")
+                    dead = f" · {card['dead_variants']} dead variant(s)" if card["dead_variants"] else ""
+                    rid = f" · result #{card['result_id']}" if card["result_id"] else ""
+                    st.markdown(
+                        f"<div style='background-color:{bg};padding:10px 14px;"
+                        f"border-radius:6px;margin-bottom:6px'>"
+                        f"<b>{comp.upper()}</b> &nbsp; <code>{card['value']}</code> &nbsp; "
+                        f"<span style='opacity:0.7'>[{card['status']}]{dead}{rid}</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                    if card["params"]:
+                        st.json(card["params"], expanded=False)
+                    else:
+                        st.caption("No params_json knobs recorded for this component.")
+
+            with st.expander("Full lineage (log_strategy)", expanded=False):
+                lin = pd.DataFrame(strategy_log.get_lineage(idea_id))
+                if not lin.empty:
+                    cols = [c for c in ["created_at", "verdict", "component",
+                                        "from_value", "to_value", "result_id", "event"]
+                            if c in lin.columns]
+                    st.dataframe(lin[cols], use_container_width=True, hide_index=True)
+
+    except Exception as e:
+        st.error(f"Strategy Spec tab error: {e}")
+
+
+# ── Tab 3: Gates ──────────────────────────────────────────────────────────────
 
 with tab_gates:
     try:
