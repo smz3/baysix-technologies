@@ -56,6 +56,10 @@ _OUT = REPO / "research" / "outputs" / "orb" / "anchor_oos"
 # ---------------------------------------------------------------------------
 
 def _simulate_day(ts, mid, day0, anchor_hour, n_minutes, slip_extra=0.0, gap_fill=False):
+    # DEPRECATED / RETIRED (task 49, 2026-06-13): idealized mid+tolerance fill path.
+    # Superseded by research/code/fills.py (realistic bid/ask, MT5-faithful). Kept
+    # only because the abandoned ORB-001 tree imports it; do NOT use in new work and
+    # do NOT delete (the handover forbids retrofitting the dead ORB scripts).
     half   = SPREAD * 0.5
     anchor = day0 + int(anchor_hour * NS_H)
     or_end = anchor + n_minutes * NS_M

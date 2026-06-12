@@ -131,6 +131,8 @@ _The HMM-specific checks (EM convergence, volatility separation, fixed-persisten
 - This becomes the benchmark. The sophisticated model at Gate 4 must beat this
 - If the simple rule already has strong edge, question whether we need the complex model at all
 
+**Realistic fills mandatory from Gate 3.** All path-dependent backtests (entries, exits, stops) MUST fill via [research/code/fills.py](../research/code/fills.py) (venue-aware bid/ask, MT5-faithful) — never an idealized mid+tolerance model. The retired idealized path (`anchor_oos._simulate_day`) is deprecated; do not reuse it. Classifier ideas that gate on AUC/IC (e.g. HMM-001) never simulate fills and are exempt. Guarded by `research/tests/test_fills.py::test_may2024_orb_parity_matches_fork_a`.
+
 **Pass looks like:**
 - Raw edge is positive and t-stat > 1.0 (signal exists, even if weak)
 - Net edge logged separately (cost_adjusted=1)
