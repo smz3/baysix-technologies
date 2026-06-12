@@ -42,13 +42,18 @@ void OnStart()
    if(!CustomSymbolCreate(InpSymbol, InpPath, InpOrigin))
      { PrintFormat("[import] CustomSymbolCreate failed: %d", GetLastError()); return; }
 
+   // Override ONLY price precision — inherit every TRADE/MARGIN spec from the
+   // working origin (XAUUSD_dukas). Forcing CFD calc + XAU margin currency made
+   // margin uncomputable in USD (blank usd/lot) -> OrderCalcMargin failed ->
+   // tester opened zero trades. Inherited (Forex) calc computes P&L as
+   // move*contract*lots (digit-independent), so no tick-value scaling needed.
    CustomSymbolSetInteger(InpSymbol, SYMBOL_DIGITS, InpDigits);
    CustomSymbolSetDouble (InpSymbol, SYMBOL_TRADE_TICK_SIZE,  MathPow(10, -InpDigits));
    CustomSymbolSetDouble (InpSymbol, SYMBOL_POINT,            MathPow(10, -InpDigits));
-   CustomSymbolSetDouble (InpSymbol, SYMBOL_TRADE_CONTRACT_SIZE, 100.0);
+   // tick value scaled to 3-digit precision (harmless under Forex calc, correct under CFD)
+   CustomSymbolSetDouble (InpSymbol, SYMBOL_TRADE_TICK_VALUE, 100.0 * MathPow(10, -InpDigits)); // 0.10
    CustomSymbolSetDouble (InpSymbol, SYMBOL_VOLUME_MIN,  0.01);
    CustomSymbolSetDouble (InpSymbol, SYMBOL_VOLUME_STEP, 0.01);
-   CustomSymbolSetInteger(InpSymbol, SYMBOL_TRADE_CALC_MODE, SYMBOL_CALC_MODE_CFD);
    SymbolSelect(InpSymbol, true);
    PrintFormat("[import] symbol '%s' ready (digits=%d) — loading ticks ...", InpSymbol, InpDigits);
 

@@ -35,6 +35,13 @@ REC = struct.Struct("<qddq")   # time_msc, bid, ask, volume
 # structured dtype with the SAME little-endian byte layout as REC (vectorised write)
 RECDT = np.dtype([("t", "<i8"), ("b", "<f8"), ("a", "<f8"), ("v", "<i8")])
 
+# Gate-7 fidelity: replace the parquet's NATIVE Dukascopy spread (~5-pip / $0.50 at the
+# 09:00 open) with the 2-pip JM spread Python validated on (anchor_oos.py SPREAD=2*0.10).
+# Each tick becomes bid/ask = parquet_mid +/- HALF_SPREAD, so the tester pays exactly the
+# $0.20 modeled cost (and the EA's bid-based OR sits symmetric to Python's mid OR). The
+# real JM venue spread is measured later at the FORWARD gate, not here.
+HALF_SPREAD = 0.10   # half of the 2-pip XAUUSD spread (1 pip = $0.10/oz)
+
 
 def _months(a: str, b: str | None) -> list[tuple[int, int]]:
     y0, m0 = int(a[:4]), int(a[5:7])
@@ -65,8 +72,9 @@ def main():
         for f in files:
             df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask", "volume"]).sort_values("ts_utc")
             msc = (df["ts_utc"].values.astype("datetime64[ms]").astype(np.int64))
-            bid = df["bid"].values.astype(np.float64)
-            ask = df["ask"].values.astype(np.float64)
+            mid = (df["bid"].values.astype(np.float64) + df["ask"].values.astype(np.float64)) * 0.5
+            bid = mid - HALF_SPREAD   # synthesize 2-pip JM spread (see HALF_SPREAD note)
+            ask = mid + HALF_SPREAD
             vol = np.nan_to_num(df["volume"].values, nan=0.0).astype(np.int64)
             arr = np.empty(len(df), dtype=RECDT)
             arr["t"] = msc; arr["b"] = bid; arr["a"] = ask; arr["v"] = vol

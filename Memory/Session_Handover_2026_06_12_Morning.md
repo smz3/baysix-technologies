@@ -5,6 +5,8 @@
 
 **Fix tooling BUILT + committed:** [export_ticks_mt5.py](research/code/export_ticks_mt5.py) (parquet→binary in Common/Files; 2024-05 = 5.0M ticks exported, round-trip PASS) + [import_custom_ticks.mq5](mt5/Scripts/orb_system/import_custom_ticks.mq5) (creates `XAUUSD_pq` 3-digit via CustomTicksReplace; compiled 0/0 in JM terminal). Task 45 = the active blocker.
 
+**Discrepencies between xauusd.pq and xauusd.s broker:** pq. script import symbol uses 3 point data. broker xauusd.s uses 2 point data. Ask Syafiq for images between those two. 
+
 ## Next
 1. **Syafiq runs the validation** (handed off, awaiting): Navigator→Refresh → drag `Scripts/orb_system/import_custom_ticks` onto a chart (builds `XAUUSD_pq` from the 5M parquet ticks) → Strategy Tester `baysix_orb_001` on `XAUUSD_pq`, M1, real ticks, 2024-05, $10k, offset 0. Report the **win rate**.
 2. **Claude verifies (3 ways)** once done: win-rate jump 33%→~57%; `orb001_diag.csv` 09:00 bars now match parquet; bridge `mt5.copy_ticks_range('XAUUSD_pq')` == parquet. Re-diff via [fidelity_diff.py](research/models/orb/orb001/fidelity_diff.py) (repoint REPORT to the new run).
