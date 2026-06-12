@@ -98,6 +98,10 @@ security_alerts.log
 *.h5
 *.zip
 
+# ArcticDB local store (LMDB backend — large binary, never commit)
+data/arctic/
+*.lmdb
+
 # Secrets scanner output
 Sandbox/
 
