@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 REPO = Path(__file__).resolve().parents[4]
@@ -27,7 +28,7 @@ def main():
     # Build a true-UTC tick table (mid) over the morning..evening band (hours 4-22)
     mids = []
     for f in tqdm(_tick_files(OOS_MONTHS), desc="raw load"):
-        d = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        d = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         ts = d["ts_utc"].values.astype("datetime64[ns]").astype(np.int64)
         hod = ts % NS_D
         keep = (hod >= 4 * NS_H) & (hod < 22 * NS_H)

@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 
 REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO))
@@ -39,7 +40,7 @@ def per_day_table(files, source_name):
     """Return {date_int: (or_hi, or_lo, rw, R)} for OOS days, one breakout/day."""
     out = {}
     for f in files:
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"]).sort_values("ts_utc")
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         tsv = df["ts_utc"].values
         df = df[tsv >= IS_CUT]
         if df.empty:

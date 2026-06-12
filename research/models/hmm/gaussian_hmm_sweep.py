@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from research.code.arctic_io import daily_bars
 from hmmlearn.hmm import GaussianHMM
 from tqdm import tqdm
 
@@ -25,7 +27,7 @@ THRESHOLDS = {
 
 
 def load_returns():
-    df      = pd.read_parquet("data/parquet/daily/xauusd_daily.parquet")
+    df      = daily_bars()
     df      = df[df.index <= IS_END]
     log_ret = np.log(df["close"] / df["close"].shift(1)).dropna()
     return log_ret

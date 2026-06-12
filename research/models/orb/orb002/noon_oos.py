@@ -29,6 +29,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
@@ -57,7 +58,7 @@ def run_trail(n_minutes: int, spread_price: float, *, oos_only: bool) -> pd.Data
     rows = []
     desc = "OOS" if oos_only else "IS "
     for f in tqdm(files, desc=f"noon {desc} trail N={n_minutes}"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         if oos_only:
             df = df[df["ts_utc"].values >= is_cut]
         else:

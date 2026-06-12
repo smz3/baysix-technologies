@@ -19,12 +19,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import sys
+_REPO = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(_REPO))
+# Canonical tick source = SORTED ArcticDB store via arctic_io (task 51, 2026-06-12).
+from research.code.arctic_io import tick_months, read_tick_month
+
 NY_TZ = pytz.timezone("America/New_York")
 NY_ANCHOR_LOCAL = dtime(9, 30)          # 09:30 ET
 IS_END = pd.Timestamp("2024-05-02")    # shared IS/OOS boundary (matches ORB-001/HMM)
-
-_REPO = Path(__file__).resolve().parents[4]
-_TICK_DIR = _REPO / "data" / "parquet" / "CS-GOLD-DUKAS-TICK"
 
 
 def ny_anchor_ns(day0_ns: int) -> int:
@@ -41,37 +44,32 @@ def ny_anchor_ns(day0_ns: int) -> int:
     return int(dt_ny.timestamp() * 1_000_000_000)
 
 
-def _tick_files(year_months: list[tuple[int, int]] | None = None) -> list[str]:
-    """Resolve parquet partition paths (mirrors orb_core._tick_files)."""
-    if year_months is None:
-        return sorted(str(p) for p in _TICK_DIR.glob("year=*/month=*/*.parquet"))
-    out = []
-    for yr, mo in year_months:
-        out += [str(p) for p in _TICK_DIR.glob(f"year={yr}/month={mo}/*.parquet")]
-    return sorted(out)
+def _tick_files(year_months: list[tuple[int, int]] | None = None) -> list[tuple[int, int]]:
+    """The (year, month) Arctic partitions to iterate (name kept for back-compat;
+    mirrors orb_core._tick_files). Pair with read_tick_month()."""
+    return tick_months(year_months)
 
 
 def load_minute_bars(year_months: list[tuple[int, int]] | None = None,
                      is_only: bool = True) -> pd.DataFrame:
     """
-    Load tick parquet and resample to 1-min mid OHLC (tz-naive UTC).
+    Load ticks (sorted, from Arctic) and resample to 1-min mid OHLC (tz-naive UTC).
     Used primarily for Gate 2 sanity visuals.
     """
-    files = _tick_files(year_months)
-    if not files:
-        raise FileNotFoundError(f"No tick parquet found under {_TICK_DIR}")
+    months = _tick_files(year_months)
+    if not months:
+        raise FileNotFoundError("ArcticDB store returned no months (data/arctic).")
 
     from tqdm import tqdm
     frames = []
-    for f in tqdm(files, desc="load+resample ticks"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+    for ym in tqdm(months, desc="load+resample ticks"):
+        df = read_tick_month(ym, columns=["ts_utc", "bid", "ask"])
         df["mid"] = (df["bid"] + df["ask"]) * 0.5
         bars = (df.set_index("ts_utc")["mid"]
                   .resample("1min").ohlc()
                   .dropna(how="all"))
         frames.append(bars)
-        print(f"  {Path(f).parent.name:>9} {Path(f).parents[1].name}: "
-              f"{len(df):>9,} ticks -> {len(bars):>6,} 1-min bars")
+        print(f"  {ym[0]}-{ym[1]:02d}: {len(df):>9,} ticks -> {len(bars):>6,} 1-min bars")
 
     bars = pd.concat(frames).sort_index()
     bars = bars[~bars.index.duplicated(keep="first")]

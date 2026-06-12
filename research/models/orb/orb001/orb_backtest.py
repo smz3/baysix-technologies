@@ -33,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 
 from research.models.orb.orb001.orb_core import _tick_files, IS_END, LONDON_ANCHOR_HOUR
 
@@ -144,7 +145,7 @@ def run_backtest(year_months: list[tuple[int, int]] | None,
     trades = []
     it = files if quiet else tqdm(files, desc=f"backtest N={n_minutes}m")
     for f in it:
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         if is_only:
             df = df[df["ts_utc"].values < is_cut]
         if df.empty:
@@ -183,7 +184,7 @@ def run_backtest_multi(year_months: list[tuple[int, int]] | None,
 
     trades = {N: [] for N in n_list}
     for f in tqdm(files, desc=f"backtest N={n_list}"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         if oos_only:
             df = df[df["ts_utc"].values >= is_cut]
         elif is_only:

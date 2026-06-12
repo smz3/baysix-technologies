@@ -35,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from research.models.orb.orb001.orb_backtest import edge_stats
@@ -144,7 +145,7 @@ def run() -> dict[str, pd.DataFrame]:
 
     trades = {a: [] for a in ARMS}
     for f in tqdm(files, desc="m15-confirm IS"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         df = df[df["ts_utc"].values < is_cut]      # IS only
         if df.empty:
             continue

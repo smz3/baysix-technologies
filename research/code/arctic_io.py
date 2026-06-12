@@ -98,6 +98,88 @@ def oos_ticks(start=None, end=None, columns=None, *, as_column: bool = False) ->
     return read_ticks(start, end, columns, allow_oos=True, as_column=as_column)
 
 
+def _span() -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Cheap [first, last] tick timestamp from symbol description — no rows read."""
+    desc = _library().get_description(SYMBOL)
+    lo, hi = desc.date_range
+    lo, hi = pd.Timestamp(lo), pd.Timestamp(hi)
+    if lo.tzinfo is not None:
+        lo = lo.tz_localize(None)
+    if hi.tzinfo is not None:
+        hi = hi.tz_localize(None)
+    return lo, hi
+
+
+def tick_months(year_months=None) -> list[tuple[int, int]]:
+    """Drop-in replacement for the old `_tick_files`/`session_files`: the list of
+    (year, month) partitions to iterate. With no arg, every month present in the
+    store (derived from its index span — no rows read)."""
+    if year_months is not None:
+        return [(int(y), int(m)) for (y, m) in year_months]
+    lo, hi = _span()
+    periods = pd.period_range(lo, hi, freq="M")
+    return [(p.year, p.month) for p in periods]
+
+
+def read_tick_month(ym, columns=None, *, as_column: bool = True) -> pd.DataFrame:
+    """Read ONE (year, month) partition, time-SORTED, from the Arctic store.
+
+    Drop-in for the old `pd.read_parquet(f, columns=["ts_utc","bid","ask"])` loop
+    body. `columns` may still name "ts_utc" (it's the index → returned as a column
+    when as_column=True); only bid/ask/volume are actual data columns. Spans the
+    seal freely (allow_oos): callers slice IS/OOS by ts themselves, and the sort —
+    not the seal — is what kills the look-ahead."""
+    y, m = int(ym[0]), int(ym[1])
+    start = pd.Timestamp(year=y, month=m, day=1)
+    end = start + pd.offsets.MonthBegin(1) - pd.Timedelta(microseconds=1)
+    data_cols = None
+    if columns:
+        data_cols = [c for c in columns if c != "ts_utc"] or None
+    return read_ticks(start, end, data_cols, allow_oos=True, as_column=as_column)
+
+
+DAILY_SYMBOL = "XAUUSD_DAILY"
+
+
+def build_daily_symbol() -> int:
+    """One-time (long) derive of a SORTED daily mid-OHLC series from the tick store,
+    written as a second Arctic symbol (XAUUSD_DAILY) — replaces the old, suspect
+    data/parquet/daily/xauusd_daily.parquet whose close was a last-by-POSITION tick
+    on unsorted data. Run explicitly (rule 12, new window):
+        python research/code/arctic_io.py build-daily
+    Returns the number of daily rows written."""
+    from tqdm import tqdm
+    frames = []
+    for ym in tqdm(tick_months(), desc="derive daily OHLC"):
+        df = read_tick_month(ym, columns=["bid", "ask"], as_column=False)
+        mid = (df["bid"] + df["ask"]) * 0.5
+        bars = mid.resample("1D").ohlc().dropna(how="all")
+        frames.append(bars)
+    daily = pd.concat(frames).sort_index()
+    daily = daily[~daily.index.duplicated(keep="first")]
+    daily.index.name = "date"
+    lib = _library()
+    lib.write(DAILY_SYMBOL, daily, metadata={
+        "derived_from": SYMBOL, "seal_date": str(seal_date().date()),
+        "built_at": pd.Timestamp.utcnow().isoformat()})
+    return len(daily)
+
+
+def daily_bars(columns=None) -> pd.DataFrame:
+    """Sorted daily mid-OHLC (open/high/low/close), DatetimeIndex 'date'. Reads the
+    XAUUSD_DAILY Arctic symbol. Drop-in for the old
+    `pd.read_parquet("data/parquet/daily/xauusd_daily.parquet")`."""
+    lib = _library()
+    if DAILY_SYMBOL not in lib.list_symbols():
+        raise FileNotFoundError(
+            f"Arctic symbol {DAILY_SYMBOL} not built. Run (new window): "
+            f"python research/code/arctic_io.py build-daily")
+    df = lib.read(DAILY_SYMBOL, columns=list(columns) if columns else None).data
+    if not df.index.is_monotonic_increasing:
+        raise AssertionError("XAUUSD_DAILY index non-monotonic — rebuild.")
+    return df
+
+
 def store_info() -> dict:
     """Metadata + row count only — never loads tick rows."""
     lib = _library()
@@ -112,6 +194,11 @@ def store_info() -> dict:
 
 
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "build-daily":
+        n = build_daily_symbol()
+        print(f"XAUUSD_DAILY built: {n:,} daily rows.")
+        sys.exit(0)
     # smoke: print store info + a tiny IS aggregate (firewall — no rows printed)
     import json
     info = store_info()

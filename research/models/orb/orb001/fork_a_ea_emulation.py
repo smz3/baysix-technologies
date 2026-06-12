@@ -44,6 +44,7 @@ import json, sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 REPO = Path(__file__).resolve().parents[4]
@@ -149,7 +150,7 @@ def _scan_month(files, model, oos_only=False):
     """model in {'ea','ideal'} -> list of per-trade dicts with R (and pnl for ea)."""
     rows = []
     for f in tqdm(files, desc=f"{model} scan", leave=False):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"]).sort_values("ts_utc")
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         tsv = df["ts_utc"].values
         if oos_only:
             df = df[tsv >= IS_CUT]

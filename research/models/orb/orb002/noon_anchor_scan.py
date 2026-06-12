@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 import pytz
 from tqdm import tqdm
 
@@ -164,7 +165,7 @@ def _run_multi(sim_fn, n_list, is_only=True, **kwargs):
     is_cut = np.datetime64(IS_END)
     trades = {N: [] for N in n_list}
     for f in tqdm(files, desc="noon scan"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         df = df[df["ts_utc"].values < is_cut] if is_only else df
         if df.empty:
             continue

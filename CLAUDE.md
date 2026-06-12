@@ -38,8 +38,11 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 │   ├── outputs/              ← model plot outputs (Plotly HTML + Seaborn PNG)
 │   └── RESEARCH_CODE_PROTOCOL.md ← code rules for research/models/ and research/code/
 ├── data/
-│   └── parquet/              ← CS-GOLD-DUKAS-TICK · 24GB · 2016→2026 · IS/OOS sealed 2024-05-02
-│       └── daily/            ← cached daily XAUUSD close (built on first cusum run)
+│   └── arctic/               ← CANONICAL tick store: ArcticDB (lib 'ticks', symbol 'XAUUSD',
+│                                 511M ticks 2016→2026, SORTED + seal 2024-05-02). Daily =
+│                                 symbol 'XAUUSD_DAILY'. Read ONLY via research/code/arctic_io.py
+│                                 (tick_months/read_tick_month/is_ticks/oos_ticks/daily_bars).
+│                                 Parquet RETIRED+deleted 2026-06-12 (task 51) — sort kills look-ahead.
 ├── .claude/
 │   ├── agents/               ← quant-researcher agent definition
 │   ├── hooks/                ← session hooks + audio notifications

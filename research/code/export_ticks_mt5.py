@@ -28,6 +28,7 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from research.models.orb.orb001.orb_core import _tick_files
+from research.code.arctic_io import read_tick_month
 
 COMMON = Path(os.environ["APPDATA"]) / "MetaQuotes" / "Terminal" / "Common" / "Files"
 OUT_BIN = COMMON / "baysix_XAUUSD_pq_ticks.bin"
@@ -70,7 +71,7 @@ def main():
     with open(OUT_BIN, "wb") as fh:
         fh.write(struct.pack("<q", 0))   # placeholder count
         for f in files:
-            df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask", "volume"]).sort_values("ts_utc")
+            df = read_tick_month(f, columns=["ts_utc", "bid", "ask", "volume"])
             msc = (df["ts_utc"].values.astype("datetime64[ms]").astype(np.int64))
             mid = (df["bid"].values.astype(np.float64) + df["ask"].values.astype(np.float64)) * 0.5
             bid = mid - HALF_SPREAD   # synthesize 2-pip JM spread (see HALF_SPREAD note)

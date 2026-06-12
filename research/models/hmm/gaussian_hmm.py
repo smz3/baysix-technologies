@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import daily_bars
 import plotly.graph_objects as go
 from hmmlearn.hmm import GaussianHMM
 from tqdm import tqdm
@@ -38,7 +39,7 @@ KNOWN_EVENTS = {
 
 
 def load_returns():
-    df      = pd.read_parquet("data/parquet/daily/xauusd_daily.parquet")
+    df      = daily_bars()
     df      = df[df.index <= IS_END]
     log_ret = np.log(df["close"] / df["close"].shift(1)).dropna()
     features = np.column_stack([log_ret.values, np.abs(log_ret.values)])

@@ -21,6 +21,7 @@ import json, sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 REPO = Path(__file__).resolve().parents[4]
@@ -89,7 +90,7 @@ def _simulate_day(ts, mid, day0, anchor_hour, n_minutes):
 def _scan(files, anchor_hour, n_minutes, oos, desc=""):
     rows = []
     for f in tqdm(files, desc=desc, leave=False):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         tsv = df["ts_utc"].values
         df = df[tsv >= IS_CUT] if oos else df[tsv < IS_CUT]
         if df.empty:

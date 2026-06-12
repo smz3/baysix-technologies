@@ -3,6 +3,7 @@ from __future__ import annotations
 import json, sys
 from pathlib import Path
 import numpy as np, pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO))
@@ -52,7 +53,7 @@ def _simulate_day(ts, mid, day0, anchor_hour, n_minutes):
 def _scan_cell(files,anchor_hour,n_minutes,desc=""):
     base_rows,trail_rows=[],[]
     for f in tqdm(files,desc=desc,leave=False):
-        df=pd.read_parquet(f,columns=["ts_utc","bid","ask"])
+        df=read_tick_month(f, columns=["ts_utc","bid","ask"])
         df=df[df["ts_utc"].values<IS_CUT]
         if df.empty: continue
         ts_all=df["ts_utc"].values.astype("datetime64[ns]").astype(np.int64)

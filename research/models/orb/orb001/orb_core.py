@@ -17,28 +17,27 @@ NOTE: NY phase (later) is NOT in any gap and DOES need real DST handling
 """
 from __future__ import annotations
 
-import glob
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-# Resolve repo root from this file so the module runs from anywhere.
+# Canonical tick source is the SORTED, seal-enforced ArcticDB store (data/arctic),
+# read via arctic_io — NOT the old unsorted parquet (retired 2026-06-12, task 51).
+# The look-ahead that the unsorted parquet enabled is structurally impossible here.
+import sys
 _REPO = Path(__file__).resolve().parents[4]
-_TICK_DIR = _REPO / "data" / "parquet" / "CS-GOLD-DUKAS-TICK"
+sys.path.insert(0, str(_REPO))
+from research.code.arctic_io import tick_months, read_tick_month
 
 IS_END = pd.Timestamp("2024-05-02")     # sealed IS/OOS boundary (matches hmm)
 LONDON_ANCHOR_HOUR = 8                   # 08:00:00 UTC, fixed (see docstring)
 
 
-def _tick_files(year_months: list[tuple[int, int]] | None) -> list[str]:
-    """Resolve parquet partition paths for the requested (year, month) list, or all."""
-    if year_months is None:
-        return sorted(str(p) for p in _TICK_DIR.glob("year=*/month=*/*.parquet"))
-    out = []
-    for yr, mo in year_months:
-        out += [str(p) for p in _TICK_DIR.glob(f"year={yr}/month={mo}/*.parquet")]
-    return sorted(out)
+def _tick_files(year_months: list[tuple[int, int]] | None) -> list[tuple[int, int]]:
+    """The (year, month) partitions to iterate. Name kept for back-compat; now
+    returns Arctic month keys, not parquet paths. Pair with read_tick_month()."""
+    return tick_months(year_months)
 
 
 def load_minute_bars(year_months: list[tuple[int, int]] | None = None,
@@ -49,21 +48,20 @@ def load_minute_bars(year_months: list[tuple[int, int]] | None = None,
     Returns a DataFrame indexed by UTC minute with columns [open, high, low, close].
     Empty minutes (incl. the 07-08 UTC gap and weekends) are dropped, not filled.
     """
-    files = _tick_files(year_months)
-    if not files:
-        raise FileNotFoundError(f"No tick parquet found under {_TICK_DIR}")
+    months = _tick_files(year_months)
+    if not months:
+        raise FileNotFoundError("ArcticDB store returned no months (data/arctic).")
 
     from tqdm import tqdm
     frames = []
-    for f in tqdm(files, desc="load+resample ticks"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+    for ym in tqdm(months, desc="load+resample ticks"):
+        df = read_tick_month(ym, columns=["ts_utc", "bid", "ask"])
         df["mid"] = (df["bid"] + df["ask"]) * 0.5
         bars = (df.set_index("ts_utc")["mid"]
                   .resample("1min").ohlc()
                   .dropna(how="all"))
         frames.append(bars)
-        print(f"  {Path(f).parent.name:>9} {Path(f).parents[1].name}: "
-              f"{len(df):>9,} ticks -> {len(bars):>6,} 1-min bars")
+        print(f"  {ym[0]}-{ym[1]:02d}: {len(df):>9,} ticks -> {len(bars):>6,} 1-min bars")
 
     bars = pd.concat(frames).sort_index()
     bars = bars[~bars.index.duplicated(keep="first")]

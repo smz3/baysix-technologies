@@ -3,6 +3,7 @@ import json, sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import daily_bars
 
 REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO))
@@ -13,50 +14,21 @@ TARGET_R    = 3.0
 SPREAD      = 2.0 * 0.10
 IS_END      = pd.Timestamp("2024-05-02")
 BASE_REPRO  = 0.3114
-DAILY_CACHE = REPO / "data" / "parquet" / "daily" / "xauusd_daily.parquet"
-TICK_DIR    = REPO / "data" / "parquet" / "CS-GOLD-DUKAS-TICK"
 _OUT        = REPO / "research" / "outputs" / "orb" / "regime_gate"
 OOS_MONTHS  = [(y, m) for y in range(2024, 2027) for m in range(1, 13) if (y, m) >= (2024, 5)]
 SMA_WINDOWS = [200, 50]
 
 
-def _build_oos_daily() -> 'pd.Series':
-    from tqdm import tqdm
-    files   = sorted(str(p) for p in TICK_DIR.glob("year=*/month=*/*.parquet"))
-    oos_cut = np.datetime64(IS_END)
-    NS_D    = 86_400_000_000_000
-    day_lasts: dict = {}
-    for f in tqdm(files, desc="build OOS daily close"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
-        df = df[df["ts_utc"].values >= oos_cut]
-        if df.empty:
-            continue
-        df["mid"] = (df["bid"] + df["ask"]) * 0.5
-        ts_ns    = df["ts_utc"].values.astype("datetime64[ns]").astype(np.int64)
-        mids     = df["mid"].values
-        day_key  = ts_ns // NS_D
-        for d in np.unique(day_key):
-            mk   = day_key == d
-            date = pd.Timestamp(int(d) * NS_D).date()
-            day_lasts[date] = float(mids[mk][-1])
-    s = pd.Series(day_lasts, name="close")
-    s.index = pd.to_datetime(s.index)
-    s.index.name = "date"
-    return s.sort_index()
-
-
 def build_daily_close() -> 'pd.Series':
-    is_close = pd.read_parquet(DAILY_CACHE)["close"]
-    is_close.index = pd.to_datetime(is_close.index)
-    is_close.index.name = "date"
-    print("Building OOS daily close from tick partitions...")
-    oos_close = _build_oos_daily()
-    oos_close = oos_close[oos_close.index > IS_END]
-    combined  = pd.concat([is_close, oos_close]).sort_index()
-    combined  = combined[~combined.index.duplicated(keep="first")]
-    d0, d1    = combined.index.min().date(), combined.index.max().date()
-    print(f"  Combined: {d0} -> {d1}  ({len(combined)} days)")
-    return combined
+    """Full sorted IS+OOS daily mid-close from the Arctic daily symbol. Replaces the
+    old IS-parquet + OOS-stitched-from-unsorted-ticks path (task 51): daily_bars() is
+    sorted-correct end to end, so the daily CLOSE is the true chronological last tick."""
+    close = daily_bars(columns=["close"])["close"].copy()
+    close.index = pd.to_datetime(close.index)
+    close.index.name = "date"
+    d0, d1 = close.index.min().date(), close.index.max().date()
+    print(f"  Daily close (Arctic): {d0} -> {d1}  ({len(close)} days)")
+    return close
 
 
 def compute_regime(close: 'pd.Series', window: int) -> 'pd.Series':

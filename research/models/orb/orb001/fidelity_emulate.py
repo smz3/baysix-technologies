@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 REPO = Path(__file__).resolve().parents[4]
@@ -75,7 +76,7 @@ def main():
     is_cut = np.datetime64(IS_END_TS)
     rows = []
     for f in tqdm(files, desc="OOS dirs"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         df = df[df["ts_utc"].values >= is_cut]
         if df.empty:
             continue

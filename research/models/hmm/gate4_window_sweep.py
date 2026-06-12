@@ -31,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import daily_bars
 import plotly.graph_objects as go
 from scipy.stats import ttest_ind
 from tqdm import tqdm
@@ -52,7 +53,7 @@ S2I           = {"Bull": 0, "Sideways": 1, "Bear": 2}
 
 # ── load cumW (IS only) — mirrors markov_baseline.load_and_label but parameterised ──
 def load_cumW(W):
-    df  = pd.read_parquet("data/parquet/daily/xauusd_daily.parquet")
+    df  = daily_bars()
     df  = df[df.index <= IS_END]
     ret = df["close"].pct_change()
     cumW = ret.rolling(W).sum().dropna()

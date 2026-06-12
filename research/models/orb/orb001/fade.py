@@ -31,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 REPO = Path(__file__).resolve().parents[4]
@@ -117,7 +118,7 @@ def run_is(fail_win_min):
     is_cut = np.datetime64(IS_END)
     rows = []
     for f in tqdm(files, desc=f"fade win={fail_win_min}", leave=False):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         df = df[df["ts_utc"].values < is_cut]
         if df.empty:
             continue

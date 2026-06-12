@@ -27,6 +27,7 @@ import json, sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 REPO = Path(__file__).resolve().parents[4]
@@ -34,7 +35,8 @@ sys.path.insert(0, str(REPO))
 from research.models.orb.orb001.orb_core import IS_END
 from research.code.session_cache import session_files
 from research.models.orb.orb001.trail_oos import run_trail_mc
-from research.models.orb.orb001.regime_gate import DAILY_CACHE, compute_regime
+from research.models.orb.orb001.regime_gate import compute_regime
+from research.code.arctic_io import daily_bars
 from research.models.orb.orb001.range_filter_stage2 import IS_REF_ER, OOS_MONTHS
 
 ANCHOR_HOUR, N_MIN = 9.0, 5
@@ -120,7 +122,7 @@ def _simulate_day(ts, mid, day0, slip_extra=0.0, gap_fill=False):
 def _scan(files, oos, slip_extra=0.0, gap_fill=False, desc=""):
     rows = []
     for f in tqdm(files, desc=desc, leave=False):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         tsv = df["ts_utc"].values
         df = df[tsv >= IS_CUT] if oos else df[tsv < IS_CUT]
         if df.empty:
@@ -155,7 +157,7 @@ def _mc_rows(rows, which):
 
 def _regime_split(is_rows):
     """IS-only trend/range split (200d SMA). OOS is all-uptrend (degenerate)."""
-    close = pd.read_parquet(DAILY_CACHE)["close"]
+    close = daily_bars(columns=["close"])["close"].copy()
     close.index = pd.to_datetime(close.index)
     reg = compute_regime(close, 200)
     reg_ff = reg.reindex(reg.index.union(pd.to_datetime([r["date"] for r in is_rows]))).ffill()

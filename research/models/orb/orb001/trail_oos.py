@@ -14,6 +14,7 @@ import json, sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import read_tick_month
 from tqdm import tqdm
 
 REPO = Path(__file__).resolve().parents[4]
@@ -136,7 +137,7 @@ def _run_slice(files, is_slice, oos_slice, slip_extra=0.0, gap_fill=False, desc=
     is_cut = np.datetime64(IS_END_TS)
     base_rows, trail_rows = [], []
     for f in tqdm(files, desc=desc or "scan"):
-        df = pd.read_parquet(f, columns=["ts_utc", "bid", "ask"])
+        df = read_tick_month(f, columns=["ts_utc", "bid", "ask"])
         if is_slice:
             df = df[df["ts_utc"].values < is_cut]
         elif oos_slice:

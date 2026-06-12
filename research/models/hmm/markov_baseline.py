@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import daily_bars
 import plotly.graph_objects as go
 from tqdm import tqdm
 
@@ -48,7 +49,7 @@ THRESHOLDS = {
 
 # ── Steps 1-2: load, return, label ────────────────────────────────────────────
 def load_and_label():
-    df = pd.read_parquet("data/parquet/daily/xauusd_daily.parquet")
+    df = daily_bars()
     df = df[df.index <= IS_END]
 
     daily_ret = df["close"].pct_change()                 # R_i, daily % return

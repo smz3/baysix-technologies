@@ -26,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from research.code.arctic_io import daily_bars
 import plotly.graph_objects as go
 from hmmlearn.hmm import GaussianHMM
 from scipy.stats import norm, jarque_bera
@@ -53,7 +54,7 @@ THRESH = {
 
 # ── Load ──────────────────────────────────────────────────────────────────────
 def load():
-    df = pd.read_parquet("data/parquet/daily/xauusd_daily.parquet")
+    df = daily_bars()
     df = df[df.index <= IS_END]
     logret = np.log(df["close"] / df["close"].shift(1)).dropna()
     bclose, cum20, labels = load_and_label()       # 5%/20d baseline (Sideways = Neutral)
