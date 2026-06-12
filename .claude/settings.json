@@ -170,6 +170,12 @@
             "timeout": 5000,
             "async": true,
             "statusMessage": "UserPromptSubmit"
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/context_watch.py\"",
+            "timeout": 5000,
+            "statusMessage": "context-watch"
           }
         ]
       }
