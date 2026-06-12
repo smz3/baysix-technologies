@@ -39,6 +39,7 @@
 
 #include <Trade/Trade.mqh>
 #include <orb_system/orb_visualizer.mqh>
+#include <orb_system/orb_trade_csv.mqh>
 
 //--- Inputs (frozen live config; defaults = the validated values) ---
 input long   InpMagic                  = 1001;        // Magic number (ORB family base 1000 + 1)
@@ -56,12 +57,33 @@ input bool   InpVerbose                = true;        // Log session/decision ev
 input bool   InpShowVisuals            = true;        // Draw OR box / entry / trail / exit on chart
 input bool   InpDiag                 = true;        // DIAGNOSTIC: dump per-session OR time-base CSV
 input string InpDiagFile             = "orb001_diag.csv"; // -> Common/Files (FILE_COMMON)
+input bool   InpTradeLog             = true;        // Feed B: per-trade fidelity CSV (research.db ingest)
+input string InpTradeFile            = "orb001_trades.csv"; // -> Common/Files (FILE_COMMON)
+input int    InpTradeFlushN          = 50;          // Feed B buffer flush size (scale: 100s trades/day)
 
 //--- Session state machine (per UTC day) ---
 enum ORB_STATE { ST_WAIT_OR, ST_ARMED, ST_IN_TRADE, ST_DONE };
 
+//--- Feed B per-trade record: captured at entry, finalized + written at close ---
+struct OrbTradeRec
+  {
+   bool     active;
+   ulong    position_id;   // POSITION_IDENTIFIER (key for HistorySelectByPosition)
+   ulong    ticket;
+   datetime session_day;
+   int      dir;
+   datetime entry_ts;
+   double   entry_px;
+   double   lots;
+   double   risk_unit;     // = range_w (1R)
+   double   or_high;
+   double   or_low;
+  };
+
 CTrade         g_trade;
 COrbVisualizer g_viz;
+CTradeCSV      g_csv;
+OrbTradeRec    g_rec;
 ORB_STATE g_state          = ST_WAIT_OR;
 datetime g_session_day     = 0;        // UTC midnight of the active session
 double   g_or_high         = 0.0;
@@ -90,13 +112,17 @@ int OnInit()
    // DIAGNOSTIC: start each run with a fresh CSV (Common\Files persists across runs).
    if(InpDiag) { FileDelete(InpDiagFile, FILE_COMMON); }
 
+   // Feed B: fresh per-trade fidelity CSV (header written here).
+   if(InpTradeLog) g_csv.Init(InpTradeFile, InpTradeFlushN, true);
+   g_rec.active = false;
+
    // Adopt any pre-existing ORB position (EA restart mid-trade).
    if(AdoptExistingPosition())
       g_state = ST_IN_TRADE;
    return(INIT_SUCCEEDED);
   }
 
-void OnDeinit(const int reason) { }
+void OnDeinit(const int reason) { if(InpTradeLog) g_csv.Close(); }   // final buffer flush
 
 //+------------------------------------------------------------------+
 //| UTC now (broker-server time corrected to UTC)                    |
@@ -304,6 +330,30 @@ void TryEnter()
    double fill = g_trade.ResultPrice();
    g_peak   = fill;                       // seed peak at entry fill
    g_state  = ST_IN_TRADE;
+
+   // Feed B: capture entry snapshot (authoritative fields from the open position).
+   g_rec.active = true;
+   g_rec.ticket = g_ticket;
+   g_rec.session_day = g_session_day;
+   g_rec.dir = dir;
+   g_rec.risk_unit = g_range_w;
+   g_rec.or_high = g_or_high;
+   g_rec.or_low  = g_or_low;
+   if(PositionSelect(_Symbol))            // single position, single symbol -> unambiguous
+     {
+      g_rec.position_id = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      g_rec.entry_ts    = (datetime)PositionGetInteger(POSITION_TIME);
+      g_rec.entry_px    = PositionGetDouble(POSITION_PRICE_OPEN);
+      g_rec.lots        = PositionGetDouble(POSITION_VOLUME);
+     }
+   else
+     {
+      g_rec.position_id = g_ticket;
+      g_rec.entry_ts    = TimeCurrent();
+      g_rec.entry_px    = fill;
+      g_rec.lots        = InpLot;
+     }
+
    g_viz.DrawEntry(TimeCurrent(), fill, dir, g_range_w);
    PrintFormat("[ORB-001] ENTER %s @ %.2f | SL=%.2f | range_w=%.2f | risk$=%.2f | ticket=%I64u",
                (dir>0?"LONG":"SHORT"), fill, sl, g_range_w, risk_usd, g_ticket);
@@ -320,6 +370,7 @@ void ManageTrail()
       double xp = (g_dir > 0) ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
                               : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       g_viz.DrawExit(TimeCurrent(), xp, "STOP");
+      RecordTradeClose("STOP");            // Feed B: trail/SL hit (the common exit)
       if(InpVerbose) Print("[ORB-001] position closed -> DONE (trail/SL or manual)");
       g_state = ST_DONE; g_ticket = 0;
       return;
@@ -354,6 +405,48 @@ void ManageTrail()
   }
 
 //+------------------------------------------------------------------+
+//| Feed B: finalize the closed round-trip and write one CSV row.    |
+//| Pulls authoritative exit price + net PnL from the position's     |
+//| deal history (the trail/SL path has no fill price otherwise).    |
+//+------------------------------------------------------------------+
+void RecordTradeClose(const string reason)
+  {
+   if(!InpTradeLog || !g_rec.active)
+      return;
+   double exit_px = 0.0, pnl = 0.0;
+   datetime exit_ts = 0;
+   if(HistorySelectByPosition((long)g_rec.position_id))
+     {
+      int n = HistoryDealsTotal();
+      for(int i = 0; i < n; i++)
+        {
+         ulong d = HistoryDealGetTicket(i);
+         if(d == 0) continue;
+         pnl += HistoryDealGetDouble(d, DEAL_PROFIT)
+              + HistoryDealGetDouble(d, DEAL_SWAP)
+              + HistoryDealGetDouble(d, DEAL_COMMISSION);
+         if(HistoryDealGetInteger(d, DEAL_ENTRY) == DEAL_ENTRY_OUT)
+           {
+            exit_px = HistoryDealGetDouble(d, DEAL_PRICE);
+            exit_ts = (datetime)HistoryDealGetInteger(d, DEAL_TIME);
+           }
+        }
+     }
+   double rr = (g_rec.risk_unit > 0.0)
+             ? (exit_px - g_rec.entry_px) * g_rec.dir / g_rec.risk_unit : 0.0;
+   string sess = TimeToString(g_rec.session_day, TIME_DATE);   // "2024.05.01"
+   StringReplace(sess, ".", "-");                              // -> "2024-05-01"
+   string dirs = (g_rec.dir > 0 ? "long" : "short");
+   string meta = StringFormat("{\"or_high\":%.*f,\"or_low\":%.*f,\"range_w\":%.*f}",
+                              _Digits, g_rec.or_high, _Digits, g_rec.or_low,
+                              _Digits, g_rec.risk_unit);
+   g_csv.WriteTrade(g_rec.ticket, sess, dirs, g_rec.entry_ts, g_rec.entry_px,
+                    exit_ts, exit_px, reason, g_rec.lots, g_rec.risk_unit,
+                    rr, pnl, meta);
+   g_rec.active = false;
+  }
+
+//+------------------------------------------------------------------+
 //| Close the active position with a reason tag                      |
 //+------------------------------------------------------------------+
 void ClosePosition(string why)
@@ -364,6 +457,7 @@ void ClosePosition(string why)
    if(g_trade.PositionClose(g_ticket))
      {
       g_viz.DrawExit(TimeCurrent(), xp, why);
+      RecordTradeClose(why);               // Feed B: explicit close (NEWDAY/EOD)
       PrintFormat("[ORB-001] CLOSE (%s) ticket=%I64u", why, g_ticket);
      }
    else
@@ -389,6 +483,18 @@ bool AdoptExistingPosition()
       double sl = PositionGetDouble(POSITION_SL);
       double op = PositionGetDouble(POSITION_PRICE_OPEN);
       if(sl > 0) g_range_w = MathAbs(op - sl);
+      // Feed B: reconstruct trade record from the adopted position (or_high/low unknown).
+      g_rec.active      = true;
+      g_rec.position_id = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      g_rec.ticket      = g_ticket;
+      g_rec.session_day = DayMidnight(UtcNow());
+      g_rec.dir         = g_dir;
+      g_rec.entry_ts    = (datetime)PositionGetInteger(POSITION_TIME);
+      g_rec.entry_px    = op;
+      g_rec.lots        = PositionGetDouble(POSITION_VOLUME);
+      g_rec.risk_unit   = g_range_w;
+      g_rec.or_high     = 0.0;
+      g_rec.or_low      = 0.0;
       PrintFormat("[ORB-001] adopted existing position ticket=%I64u dir=%d range_w=%.2f",
                   g_ticket, g_dir, g_range_w);
       return(true);
