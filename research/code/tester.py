@@ -8,7 +8,7 @@ research.db next to step4_results. This module owns their schema and all writes
 
 Flow:
     ingest_tester_run(...)        -> run_id  (run header + config provenance)
-    ingest_tester_trade(run_id, ...) per closed tester round-trip (join key = session_date)
+    ingest_tester_trade(run_id, ...) per closed tester round-trip (join key = ticket + entry_ts)
     log_fidelity_diff(run_id, ...) -> writes the diff vs the Python research result,
                                       sets fidelity_verdict, and on 'pass' calls
                                       pipeline.pass_gate(idea_id, 7, ...).
@@ -83,22 +83,23 @@ CREATE TABLE IF NOT EXISTS tester_runs (
 CREATE TABLE IF NOT EXISTS tester_trades (
     tt_id            INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id           INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    ticket           INTEGER,
-    session_date     DATE,                          -- join key to the Python backtest
+    ticket           INTEGER,                       -- MT5 position id (unique within a run)
+    session_date     DATE,                          -- nullable convenience (daily strategies)
     direction        TEXT CHECK(direction IS NULL OR direction IN ('long','short','flat')),
-    entry_ts         DATETIME,
+    entry_ts         DATETIME,                      -- cross-system join key (with ticket)
     entry_px         REAL,
     exit_ts          DATETIME,
     exit_px          REAL,
     exit_reason      TEXT,
-    risk_unit        REAL,                          -- range_w (1R)
+    lots             REAL,                          -- position size
+    risk_unit        REAL,                          -- generic 1R denominator (price units)
     realized_R       REAL,
     realized_pnl_usd REAL,
-    or_high          REAL,
-    or_low           REAL,
-    range_w          REAL,
+    meta             TEXT CHECK(meta IS NULL OR json_valid(meta)),  -- strategy ctx (ORB: or_high/or_low/range_w)
     created_at       DATETIME NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ix_tester_trades_run    ON tester_trades(run_id);
+CREATE INDEX IF NOT EXISTS ix_tester_trades_run_ts ON tester_trades(run_id, entry_ts);
 """
 
 
@@ -188,30 +189,32 @@ def ingest_tester_trade(
     exit_ts: str = None,
     exit_px: float = None,
     exit_reason: str = None,
+    lots: float = None,
     risk_unit: float = None,
     realized_R: float = None,
     realized_pnl_usd: float = None,
     ticket: int = None,
-    or_high: float = None,
-    or_low: float = None,
-    range_w: float = None,
+    meta: dict = None,
 ) -> int:
-    """Record one closed tester round-trip. session_date is the join key to the
-    Python backtest trade-list. Returns tt_id."""
+    """Record one closed tester round-trip. Cross-system join key = ticket + entry_ts
+    (session_date is a nullable convenience for daily strategies). risk_unit is the
+    generic 1R denominator (price units); strategy-specific context (ORB: or_high/
+    or_low/range_w) goes in `meta` as JSON. Returns tt_id."""
     if direction is not None and direction not in VALID_DIRECTION:
         raise ValueError(f"direction must be one of {VALID_DIRECTION} or None")
+    meta_json = json.dumps(meta) if meta is not None else None
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO tester_trades
                 (run_id, ticket, session_date, direction, entry_ts, entry_px,
-                 exit_ts, exit_px, exit_reason, risk_unit, realized_R,
-                 realized_pnl_usd, or_high, or_low, range_w, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 exit_ts, exit_px, exit_reason, lots, risk_unit, realized_R,
+                 realized_pnl_usd, meta, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (run_id, ticket, session_date, direction, entry_ts, entry_px,
-              exit_ts, exit_px, exit_reason, risk_unit, realized_R,
-              realized_pnl_usd, or_high, or_low, range_w, now))
+              exit_ts, exit_px, exit_reason, lots, risk_unit, realized_R,
+              realized_pnl_usd, meta_json, now))
         conn.commit()
         tt_id = cur.lastrowid
     return tt_id
