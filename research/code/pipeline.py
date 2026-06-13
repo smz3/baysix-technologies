@@ -301,6 +301,19 @@ def log_result(
     return result_id
 
 
+def delete_result(result_id: int) -> None:
+    """Remove one step4_results row. Narrow purpose: the run_and_log harness calls
+    this to compensate (roll back) an already-inserted result when the paired
+    strategy_log.log_change() fails — so a result never lingers without its verdict
+    when one was demanded. Not for hand-editing history."""
+    with _conn() as conn:
+        cur = conn.execute("DELETE FROM step4_results WHERE result_id=?", (result_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise ValueError(f"no step4_results row with result_id={result_id}")
+    print(f"[pipeline] deleted result_id={result_id} (harness compensation)")
+
+
 # ── Read functions ─────────────────────────────────────────────────────────────
 
 def get_idea(idea_id: str) -> dict:
