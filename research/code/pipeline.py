@@ -209,14 +209,44 @@ def block_gate(
     print(f"[pipeline] {idea_id} gate {gate_number}: BLOCKED — {gate_answer[:80]}")
 
 
+def _falsified_count(idea_id: str) -> int:
+    """How many distinct hypotheses have been FALSIFIED for this idea (log_strategy)."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM log_strategy WHERE idea_id=? AND verdict='FALSIFIED'",
+            (idea_id,),
+        ).fetchone()
+    return row[0] if row else 0
+
+
 def kill_idea(
     idea_id: str,
     gate_number: int,
     kill_reason: str,
     answered_by: str = "human",
     attempt: int = 1,
+    force: bool = False,
 ) -> None:
-    """Kill an idea at a gate. Updates both gate row and idea row."""
+    """Kill an idea at a gate. Updates both gate row and idea row.
+
+    Multi-hypothesis kill guard (CLAUDE.md rule 8b): refuses to kill unless >=2
+    hypotheses have been FALSIFIED in log_strategy — the base/symmetric framing
+    PLUS at least one directional/conditional variant. A single dead hypothesis
+    is a REFRAME trigger, not a kill. Pass force=True ONLY for legitimate
+    single-hypothesis kills (e.g. Gate 0 non-novelty, Gate 1 no testable spec) —
+    and say why in kill_reason.
+    """
+    if not force:
+        n = _falsified_count(idea_id)
+        if n < 2:
+            raise ValueError(
+                f"kill_idea BLOCKED (rule 8b): {idea_id} has only {n} FALSIFIED "
+                f"hypothesis(es) in log_strategy; >=2 required before kill. "
+                f"A dead hypothesis is a reframe trigger, not a kill — test a "
+                f"directional/conditional variant first. If this is a legitimate "
+                f"single-hypothesis kill (Gate 0/1 non-novelty/no-spec), pass "
+                f"force=True and justify in kill_reason."
+            )
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()

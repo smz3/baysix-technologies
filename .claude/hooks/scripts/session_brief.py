@@ -52,6 +52,17 @@ def main():
     for idea, stage, key, val in res:
         print(f"   {idea} {stage:4s} {key} = {val}")
 
+    print("\n--- DB WRITE CONTRACT (research/code/ ONLY — never raw sqlite3) ---")
+    print("  gate open/pass/block/kill -> pipeline.open_gate/pass_gate/block_gate/kill_idea")
+    print("  metric result             -> pipeline.log_result()  (n_obs+git_sha required)")
+    print("  strategy lineage event    -> strategy_log.log_change(component/from/to/verdict)")
+    print("  QR find / dissect         -> agent_log.log_agent_call / log_dissect_result")
+    print("  human arch/method call    -> agent_log.log_human_decision")
+    print("  backlog task              -> backlog.add_task / resolve_task")
+    print("  GATING: t-stat is a Gate 3 (>1.0) / Gate 5 (>2.0) CONFIRMATION bar — never")
+    print("          bake a significance cutoff into an anchor/hypothesis (front gate = sense + structure).")
+    print("  KILL:   needs >=2 FALSIFIED hypotheses (rule 8b) — kill_idea blocks otherwise.")
+
     print("\nBefore proposing work: check open_backlog (P1 first) + log_agent "
           "for the active idea (CLAUDE.md rule 6). Never re-surface resolved tasks.")
     c.close()

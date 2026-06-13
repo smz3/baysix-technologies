@@ -15,6 +15,7 @@ Read:
 """
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -30,6 +31,26 @@ _DEAD_VERDICTS  = ("REJECTED", "FALSIFIED")
 _PROP_VERDICTS  = ("CREATED", "PROPOSED")
 # the design knobs a spec card describes (config = whole-strategy verdict, not a knob)
 SPEC_COMPONENTS = ("entry", "exit", "sizing", "anchor", "filter")
+
+# A significance cutoff baked into a hypothesis (t>=2, IC>=0.05, Sharpe t>3) turns a
+# Gate-3/5 CONFIRMATION bar into the FRONT gate — exactly how MSM-001 leaked (anchor
+# read "interaction must carry IC/Sharpe t>=2-3"). Front gate = economic sense +
+# visible structure; t-stat comes LAST. Warn (don't block — anchors may legitimately
+# reference metrics) so the agent re-reads before committing it.
+_THRESHOLD_PAT = re.compile(
+    r"\b(t|t-?stat|ic|sharpe|psr)\b[^.\n]{0,15}[><≥≤=]{1,2}\s*[-+]?\d",
+    re.IGNORECASE,
+)
+
+
+def _warn_threshold_in_anchor(component, to_value):
+    if component in ("anchor", "filter") and to_value and _THRESHOLD_PAT.search(to_value):
+        print(
+            f"[strategy_log] ⚠️  WARNING: this {component} embeds a significance "
+            f"cutoff — t/IC/Sharpe thresholds belong at Gate 3 (>1.0) / Gate 5 "
+            f"(>2.0) as CONFIRMATION, not inside the hypothesis. Front-gate on "
+            f"economic sense + visible cell separation; let the t-stat decide LAST."
+        )
 
 
 def _conn():
@@ -66,6 +87,8 @@ def log_change(
         raise ValueError("decided_by must be 'human' or 'agent'")
     if params_json is not None and not isinstance(params_json, dict):
         raise ValueError("params_json must be a dict (a component's knobs) or None")
+
+    _warn_threshold_in_anchor(component, to_value)
 
     params_str = json.dumps(params_json) if params_json is not None else None
     when = created_at or _now()
