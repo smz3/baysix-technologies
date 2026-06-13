@@ -76,7 +76,7 @@ def sweep(sig: pd.DataFrame, tag: str) -> None:
 
 
 def main(mode: str) -> None:
-    year_months = SLICE_MONTHS if mode == "slice" else None
+    year_months = SLICE_MONTHS if mode == "slice" else None      # full/report = all IS
     print("=" * 72)
     print(f"ORB-004 GATE 3  |  mode={mode}  |  XAUUSD  |  multi-session VWAP/ATR ORB")
     print("=" * 72)
@@ -111,11 +111,11 @@ def main(mode: str) -> None:
         out = run_and_log("ORB-004", runner, gate_number=3)   # fact only, verdict=None
         print(f"\n[logged] result_ids={out['result_ids']} primary={out['primary_result_id']}")
     else:
-        print("\n[slice mode: not logged — full IS only]")
+        print(f"\n[{mode} mode: not logged]")
 
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "slice"
-    if mode not in ("slice", "full"):
-        sys.exit("usage: gate3_edge.py [slice|full]")
+    if mode not in ("slice", "full", "report"):     # report = full IS data, no DB write
+        sys.exit("usage: gate3_edge.py [slice|full|report]")
     main(mode)
