@@ -134,13 +134,22 @@ def rolling_vwap(bars_1m: pd.DataFrame, window: str = "24h") -> pd.Series:
 def build_session_signals(bars_1m: pd.DataFrame,
                           atr: pd.Series | None = None,
                           sessions: tuple[str, ...] = SESSIONS,
-                          regime_lookback: int = 20) -> pd.DataFrame:
-    """One row per (date, session): the first-M15 range, the RAW first breakout, and
-    the filter inputs (vwap-at-break, atr, range_w/atr ratio, vwap_aligned).
+                          regime_lookback: int = 20,
+                          spread_price: float = 0.0) -> pd.DataFrame:
+    """One row per (date, session): the first-M15 range, the RAW first breakout, its
+    simulated outcome (R), and the filter inputs (vwap_aligned, range_w_regime).
 
-    Raw = no filter applied; `taken_*` flags say whether a given filter WOULD admit
-    the trade, so Gate 3 can sweep k and measure each filter's effect.
+    No filter is applied here — every breakout is recorded with its filter flags, so
+    Gate 3 can sweep (vwap_on x regime-k) and measure what each filter buys.
+
+    EXIT SIM (1-min, conservative): risk = range_w (=1R); stop = opposite range edge;
+    exit = flat at session close (anchor + SESSION_HOURS). Spread is a half-spread
+    barrier shift (B-book win-rate drag, NOT a payoff cut — ORB-001 corrected model):
+    a long stops when bar-low <= or_lo + half, the close-out fills a half-spread worse.
+    Same-bar entry+stop -> counted as the stop (conservative; no optimism manufactured).
+    spread_price = round-trip spread in PRICE units (JM 2 pip = 0.20); 0.0 = raw.
     """
+    half = spread_price * 0.5
     from tqdm import tqdm
     if atr is None:
         atr = daily_atr()
@@ -185,12 +194,29 @@ def build_session_signals(bars_1m: pd.DataFrame,
             else:
                 aligned = False
 
+            # exit sim: stop (opposite edge, half-spread shift) vs session-close flat
+            outcome, R = "none", np.nan
+            if direction != "none":
+                seg = g[(g.index >= btime) & (g.index < anchor + pd.Timedelta(hours=SESSION_HOURS))]
+                if direction == "long":
+                    stop_hit = seg.index[seg["low"] <= or_lo + half]
+                else:
+                    stop_hit = seg.index[seg["high"] >= or_hi - half]
+                if len(stop_hit):
+                    outcome, R = "stop", -1.0
+                else:
+                    last = seg["close"].iloc[-1]
+                    exit_fill = last - half if direction == "long" else last + half
+                    R = ((exit_fill - entry) if direction == "long"
+                         else (entry - exit_fill)) / range_w
+                    outcome = "sessionclose"
+
             rows.append({
                 "date": day.date(), "session": session,
                 "or_high": or_hi, "or_low": or_lo, "range_w": range_w,
                 "direction": direction,
                 "break_time": None if btime is None else btime.time(),
-                "entry_px": entry,
+                "entry_px": entry, "outcome": outcome, "R": R,
                 "vwap_at_break": vwap_at_break, "atr": day_atr,
                 "range_w_over_atr": range_w / day_atr if day_atr and day_atr > 0 else np.nan,
                 "vwap_aligned": aligned,
