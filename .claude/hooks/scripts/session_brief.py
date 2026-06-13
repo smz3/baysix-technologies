@@ -62,6 +62,8 @@ def main():
     print("  GATING: t-stat is a Gate 3 (>1.0) / Gate 5 (>2.0) CONFIRMATION bar — never")
     print("          bake a significance cutoff into an anchor/hypothesis (front gate = sense + structure).")
     print("  KILL:   needs >=2 FALSIFIED hypotheses (rule 8b) — kill_idea blocks otherwise.")
+    print("  DRIVER: python research/code/idea_cli.py next <idea_id> -> the ONE next legal")
+    print("          protocol action, computed from DB. Use it instead of recalling gates.")
 
     print("\nBefore proposing work: check open_backlog (P1 first) + log_agent "
           "for the active idea (CLAUDE.md rule 6). Never re-surface resolved tasks.")

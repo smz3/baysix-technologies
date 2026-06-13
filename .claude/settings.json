@@ -97,6 +97,16 @@
             "timeout": 5000
           }
         ]
+      },
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/protocol_guard.py",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "PostToolUse": [

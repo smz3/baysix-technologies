@@ -4,6 +4,7 @@ queries Claude used to type by hand before briefing the QR agent / coding a mode
 Three subcommands, each maps to a CLAUDE.md rule:
     prebrief  <idea_id>   rule 6  — idea + prior agent calls + open tasks (pre-brief check)
     gatecheck <idea_id>   rule 8  — gate table + hard PASS/BLOCK on Gates 0 & 1
+    next      <idea_id>            — the ONE next legal protocol action, computed from DB state
     status    <idea_id>            — one snapshot: status + live config + spec + latest results + tasks
 
 MAINTAINABILITY (the point of keeping it thin): this file holds NO schema or
@@ -26,6 +27,7 @@ import sys
 import agent_log
 import backlog
 import pipeline
+import protocol
 import strategy_log
 
 # rule 9 — never render these in full; truncate hard.
@@ -93,6 +95,20 @@ def cmd_gatecheck(idea_id: str) -> int:
     return 0 if ok else 2
 
 
+def cmd_next(idea_id: str) -> int:
+    d = protocol.next_step(idea_id)
+    if d.get("error"):
+        print(d["error"])
+        return 1
+    _hdr(f"PROTOCOL {idea_id}")
+    print(f"  status    : {d['status']}")
+    print(f"  gates     : {d['gates']}   (P=passed o=open X=blocked K=killed -=none)")
+    print(f"  falsified : {d['falsified']}")
+    print(f"\n  NEXT  -> {d['next']}")
+    print(f"  WHY   -> {d['why']}")
+    return 0
+
+
 def cmd_status(idea_id: str) -> int:
     idea = pipeline.get_idea(idea_id)
     if not idea:
@@ -127,12 +143,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("prebrief", "gatecheck", "status"):
+    for name in ("prebrief", "gatecheck", "next", "status"):
         p = sub.add_parser(name)
         p.add_argument("idea_id")
     args = ap.parse_args()
     return {"prebrief": cmd_prebrief, "gatecheck": cmd_gatecheck,
-            "status": cmd_status}[args.cmd](args.idea_id)
+            "next": cmd_next, "status": cmd_status}[args.cmd](args.idea_id)
 
 
 if __name__ == "__main__":
