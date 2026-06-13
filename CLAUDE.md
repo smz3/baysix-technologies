@@ -92,6 +92,7 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **Communication**
 13. **Smart Summary on research/decisions** — end research findings and strategy decisions with a `## 🧠 Smart Summary` of 2–4 plain-English bullets (point form, zero jargon — no R-multiples/t-stats/regime), explaining what we did/found like to a smart friend who doesn't trade. Technical answer on top. Skip it on pure infra/cleanup/config/chore replies unless asked.
+14. **Brevity (HARD RULE, overrides "be thorough")** — lead with the direct answer in the first 1–2 lines, then stop. Default ceiling ~150 words / ~8 lines for explanation-type replies; go longer ONLY when explicitly asked ("expand", "go deep", "full breakdown"). Depth of topic is NOT license for length. Banned unless asked: comparison tables, multi-point taxonomies, section headers, lead-ins ("Great question", "You're right that…"), restating the question. One example or one table only if it IS the answer. Smart Summary (rule 13) still applies where required, but the technical answer above it stays tight.
 
 ---
 
