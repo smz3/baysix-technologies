@@ -114,10 +114,38 @@ def _citations_in(section: str, valid_ids: set[int]) -> bool:
     return False
 
 
+def _check_state_bullets(text: str, path: Path) -> list[str]:
+    """## State section must use bullet points (lines starting with - or *)."""
+    in_state = False
+    bullet_found = False
+    prose_lines: list[int] = []
+    for i, line in enumerate(text.splitlines(), start=1):
+        if re.match(r"^##\s+State\b", line, re.I):
+            in_state = True
+            continue
+        if in_state:
+            if re.match(r"^#{2,}\s", line):
+                break  # left the section
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith(("-", "*")):
+                bullet_found = True
+            else:
+                prose_lines.append(i)
+    if not in_state:
+        return []  # no ## State section — skip
+    if prose_lines and not bullet_found:
+        return [f"{path.name}  ## State section must be bullet-point form (use - or *); prose found on lines {prose_lines[:3]}"]
+    if prose_lines:
+        return [f"{path.name}  ## State section has mixed prose+bullets; all lines must be bullet-point (lines {prose_lines[:3]})"]
+    return []
+
+
 def lint_file(path: Path, valid_ids: set[int]) -> list[str]:
     """Return a list of violation strings for one handover file. Empty = clean."""
     text = path.read_text(encoding="utf-8", errors="replace")
-    violations: list[str] = []
+    violations: list[str] = _check_state_bullets(text, path)
     for start_ln, section in _split_sections(text):
         # find result-shaped numbers in this section
         hits: list[tuple[str, str]] = []

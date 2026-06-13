@@ -37,7 +37,9 @@ Use the printed path as the filename. Never overwrite an existing file — the s
 # Handover — <Month Day, Year> <TimeOfDay>
 
 ## State
-[2–3 sentences. What exists, what works, what's broken. Current file paths if relevant.]
+- [What exists / current config — file path if relevant]
+- [What works]
+- [What's broken or unresolved]
 
 ## Next
 1. [Exact first action — include file path or command]
@@ -48,7 +50,7 @@ Use the printed path as the filename. Never overwrite an existing file — the s
 [None — or specific blocker and what's needed to unblock]
 ```
 
-Keep it under 20 lines total. The next session reads this cold in 10 seconds.
+Keep it under 50 lines total. The next session reads this cold in 10 seconds.
 
 ## Step 2.5 — Lint (BLOCKING)
 
