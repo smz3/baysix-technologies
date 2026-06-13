@@ -16,8 +16,8 @@ Detection
 | `CheckForSwingLow(rates[], bar_index)` | Method | Test if a bar is a historical swing low |
 | `ValidateSwingPoint(swing, rates[])` | Method | Retroactively validate that an existing swing still holds |
 | `CleanupInvalidatedSwings(swings[])` | Method | Remove swings that have since been broken by price |
-| `IsSwingHigh(rates[], bar_index, window)` | Private | Window-based extrema test: bar's high > all surrounding bars' highs |
-| `IsSwingLow(rates[], bar_index, window)` | Private | Window-based extrema test: bar's low < all surrounding bars' lows |
+| `IsSwingHigh(rates[], bar_index, window)` | Private | Window-based extrema test: bar's **close** strictly > all surrounding bars' **closes** |
+| `IsSwingLow(rates[], bar_index, window)` | Private | Window-based extrema test: bar's **close** strictly < all surrounding bars' **closes** |
 
 ## Inputs / Outputs
 - **`DetectLiveSwing`**: Takes rates array + bar index → appends confirmed `SwingPointInfo` to output array
@@ -29,7 +29,7 @@ Detection
 - `Utils.mqh`
 
 ## Python Equivalent
-`sigma_core/sigma_core/b2b/detectors/swing_points.py` — `detect_swings(df, config)` function. Uses close-based 3-bar comparison (vectorized via pandas). The MQL5 version uses a configurable window (default 3) on bar highs/lows; the Python version uses close prices only — a documented philosophical difference.
+`sigma_core/sigma_core/b2b/detectors/swing_points.py` — `detect_swings(df, config)` function. Uses close-based comparison (vectorized via pandas). **Both** implementations detect on **close** prices — verified against source ([SwingPointDetector.mqh](../../../Include/Sigma_System/V5.0/Detection/SwingPointDetector.mqh) lines 224–261: `candidate_close` vs `neighbor_close`). The configurable window (default 3) sets how many neighbouring bars the candidate close must exceed. (Earlier revisions of this doc claimed the MQL5 used bar highs/lows — that was wrong; `.high`/`.low` are read **only** for the wick-imprint fields below, never for detection.)
 
 ## Notes
 - **STABLE — DO NOT MODIFY**: This file has a freeze tag. Detection logic changes must be discussed and validated against backtest before touching.
