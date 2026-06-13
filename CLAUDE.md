@@ -75,11 +75,11 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **QR agent — paper specialist only**
 5. The QR agent ONLY **finds** papers (Sonnet — cheap fan-out) and **dissects** them (Opus — high-value; only reads keepers the find-phase surfaced). Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. Pass `model` explicitly on every Agent call; tell Syafiq which ran ("find on Sonnet / dissect on Opus"). (Reversed the 2026-05-28 Sonnet-only-dissect call on 2026-06-09.)
-6. **Pre-brief check** — before briefing the agent, query `step1_ideas` + `log_agent` for that `idea_id` (targeted columns — rule 9). Never re-surface resolved decisions or repeat logged work.
+6. **Pre-brief check** — before briefing the agent, run `python research/code/idea_cli.py prebrief <idea_id>` (idea + prior agent calls + open tasks, text-heavy cols auto-truncated). Never re-surface resolved decisions or repeat logged work.
 
 **Research DB**
 7. Before touching anything in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
-8. Gates 0 and 1 must be `passed` in `step3_gates` before writing any model code for an idea — check `pipeline.get_gates(idea_id)`. Gate definitions: [docs/reference/research_protocol.md](docs/reference/research_protocol.md).
+8. Gates 0 and 1 must be `passed` in `step3_gates` before writing any model code for an idea — check via `python research/code/idea_cli.py gatecheck <idea_id>` (hard PASS/BLOCK). Full snapshot: `idea_cli.py status <idea_id>`. Gate definitions: [docs/reference/research_protocol.md](docs/reference/research_protocol.md).
 9. **Query discipline** — never `SELECT` text-heavy columns (`key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`) into main context; use targeted column queries. QR agents query `research.db` inside the subagent, never through main context.
 10. **Writes via code layer only** — all `research.db` writes use `research/code/` functions (`open_gate`, `pass_gate`, `kill_idea`, `log_result`, `log_agent_call`, `log_dissect_result`, `log_human_decision`, `log_change`). Never raw `sqlite3` (timestamps/validation/constraints break).
 11. **Log immediately, before replying to Syafiq** — after every agent call or decision:
