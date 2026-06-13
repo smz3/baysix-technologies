@@ -5,7 +5,7 @@ Thin wrapper over research.code.execution.init_db(): builds all 10 tables from t
 canonical _SCHEMA. Additive + idempotent (CREATE TABLE IF NOT EXISTS throughout) —
 safe to re-run. Creates research/db/execution.db.
 
-Spec: braindump/execution_schema.md. Build task: log_tasks #31.
+Spec: docs/reference/execution_schema.md. Build task: log_tasks #31.
 
 Run: python research/migrations/020_create_execution_db.py
 """

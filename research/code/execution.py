@@ -13,7 +13,7 @@ execution.db tracks the LIFE OF A DEPLOYED STRATEGY in six layers (12 tables):
 TWO-DATABASE design (re-locked 2026-06-11): the MT5 Strategy-Tester evidence is NOT
 here — port-fidelity is the last *research* gate (Gate 7 — FIDELITY) and lives in
 research.db (research.code.tester). A deployment cannot be registered until that gate
-is 'passed'. Spec: braindump/execution_schema.md (what) + execution_protocol.md (why).
+is 'passed'. Spec: docs/reference/execution_schema.md (what) + execution_protocol.md (why).
 
 Conventions mirror pipeline.py / strategy_log.py: _conn() with PRAGMA foreign_keys=ON
 + row_factory, _now() in MYT, VALID_* tuples. Two time bases — bookkeeping

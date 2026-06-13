@@ -19,7 +19,7 @@
 | Create `research/code/fills.py` | `Venue` dataclass + `from_yaml` loader + scalar fill mechanics. No strategy logic, no tick loop. |
 | Create `research/tests/test_fills.py` | Unit tests for the loader + each scalar method, plus the May-2024 ORB parity regression test (with the worked-example day loop as the reference consumer). |
 | Modify `research/models/orb/orb001/anchor_oos.py` | Add a deprecation banner to `_simulate_day` (the retired idealized path). Do NOT delete its body. |
-| Modify `braindump/research_protocol.md` | Add the Gate-3 "realistic fills via fills.py mandatory" rule. |
+| Modify `docs/reference/research_protocol.md` | Add the Gate-3 "realistic fills via fills.py mandatory" rule. |
 
 **Reconciliation note (read before Task 4):** spec acceptance criterion 4 says "delete the idealized `_simulate_day` path." After writing the spec we found `_simulate_day` is defined in `anchor_oos.py` and imported by `fork_a_ea_emulation.py` + `reconcile_cache_vs_parquet.py`, and 17 other ORB scripts each call a local copy. ORB-001 is closed, so all of these are dead-tree tombstones the handover explicitly says NOT to retrofit. Physically deleting `_simulate_day` *is* touching the dead tree (breaks their imports). Resolution: **retire in place** — mark it deprecated so no new/live consumer adopts it. The "no toggle" guarantee is met because `fills.py` offers only realistic mechanics, and there are already zero live consumers of the idealized path (its only non-dead caller, fork_a, died with ORB-001). This is a deliberate, surfaced deviation from the literal spec wording.
 
@@ -398,7 +398,7 @@ git commit -m "test(fills): May-2024 ORB parity guard pinned to Fork A ground tr
 
 **Files:**
 - Modify: `research/models/orb/orb001/anchor_oos.py` (deprecation banner on `_simulate_day`)
-- Modify: `braindump/research_protocol.md`
+- Modify: `docs/reference/research_protocol.md`
 
 - [ ] **Step 1: Add the deprecation banner to `_simulate_day`**
 
@@ -413,7 +413,7 @@ Open `research/models/orb/orb001/anchor_oos.py`, find `def _simulate_day(`, and 
 
 - [ ] **Step 2: Add the protocol rule**
 
-Open `braindump/research_protocol.md` and add this line to the Gate-3 (cost / realistic-execution) section (place it where gate rules are listed; if there is no obvious anchor, add under the Gate 3 heading):
+Open `docs/reference/research_protocol.md` and add this line to the Gate-3 (cost / realistic-execution) section (place it where gate rules are listed; if there is no obvious anchor, add under the Gate 3 heading):
 
 ```markdown
 - **Realistic fills mandatory from Gate 3.** All path-dependent backtests (entries, exits, stops) must fill via `research/code/fills.py` (venue-aware bid/ask, MT5-faithful) — never an idealized mid+tolerance model. Classifier ideas that gate on AUC/IC (e.g. HMM-001) never simulate fills and are exempt. Guarded by `research/tests/test_fills.py::test_may2024_orb_parity_matches_fork_a`.
@@ -427,7 +427,7 @@ Expected: no output (only dead ORB-001 tree files import it; no live/cross-model
 - [ ] **Step 4: Commit**
 
 ```bash
-git add research/models/orb/orb001/anchor_oos.py braindump/research_protocol.md
+git add research/models/orb/orb001/anchor_oos.py docs/reference/research_protocol.md
 git commit -m "docs(fills): retire idealized fill path + Gate-3 realistic-fills rule (task 49)"
 ```
 

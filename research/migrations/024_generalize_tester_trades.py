@@ -12,7 +12,7 @@ SQLite can't transform columns in place, so this is the standard table-rebuild
 (new table -> copy+transform rows -> drop -> rename). The 527 existing ORB-001 rows
 are preserved: {or_high, or_low, range_w} (non-null only) -> meta JSON.
 
-Spec: braindump/mt5_fidelity_flow.md (Feed B contract).
+Spec: docs/reference/mt5_fidelity_flow.md (Feed B contract).
 Run:  python research/migrations/024_generalize_tester_trades.py
 """
 import sys

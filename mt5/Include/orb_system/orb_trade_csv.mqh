@@ -3,7 +3,7 @@
 //|  Buffered per-trade fidelity CSV writer — "Feed B".             |
 //|                                                                  |
 //|  The AUTHORITATIVE per-trade record for the MT5 <-> research.db  |
-//|  fidelity flow. Contract: braindump/mt5_fidelity_flow.md.        |
+//|  fidelity flow. Contract: docs/reference/mt5_fidelity_flow.md.        |
 //|                                                                  |
 //|  Delimiter ';'  — chosen so JSON commas inside `meta` need no    |
 //|  escaping. Ingest reads with sep=';' then json.loads(meta).      |

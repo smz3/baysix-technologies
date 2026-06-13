@@ -10,7 +10,7 @@ Two changes, both additive / data-preserving:
      table-rebuild (new table -> copy rows -> drop -> rename). Views reference the
      table by name and keep working; no FK points at step3_gates.
 
-Spec: braindump/execution_schema.md + braindump/research_protocol.md (Gate 7).
+Spec: docs/reference/execution_schema.md + docs/reference/research_protocol.md (Gate 7).
 Run: python research/migrations/022_gate7_tester_schema.py
 """
 import sys

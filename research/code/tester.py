@@ -16,8 +16,8 @@ Flow:
 Gate 7 is what execution.register_deployment() / open_deploy_gate('FORWARD') read
 before a deployment may touch a broker account.
 
-Spec: braindump/execution_schema.md (§research.db — Gate 7 evidence) +
-braindump/research_protocol.md (Gate 7 — Fidelity).
+Spec: docs/reference/execution_schema.md (§research.db — Gate 7 evidence) +
+docs/reference/research_protocol.md (Gate 7 — Fidelity).
 """
 
 import json

@@ -8,7 +8,7 @@ count transitions into a 3x3 matrix, verify the chain is sane.
 The 5% threshold is FIXED here by design — Gate 4's HMM is what
 cross-examines it (Step 10). No HMM in this file.
 
-4 objective sanity checks (rule-based, see braindump/research_protocol.md Gate 2):
+4 objective sanity checks (rule-based, see docs/reference/research_protocol.md Gate 2):
   1. State occupancy   — every state >= 30 observations (estimability floor)
   2. Stochastic matrix — every populated row of M sums to 1.0
   3. Ergodicity        — one eigenvalue ~1, all others |lambda|<1, row_dev monotone down

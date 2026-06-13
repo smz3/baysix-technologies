@@ -105,7 +105,7 @@ def open_gate(
     return gate_id
 
 
-# Gate 6 (per braindump/research_protocol.md L204-226) is THREE legs, not one:
+# Gate 6 (per docs/reference/research_protocol.md L204-226) is THREE legs, not one:
 # walk-forward + Monte Carlo + OOS. ORB-002/003 were marked passed on OOS alone
 # (task 29 process failure). This guard refuses pass_gate(6) until all three
 # stages have at least one step4_results row for the idea — or an explicit waiver.

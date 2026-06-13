@@ -10,7 +10,7 @@ delete) and recreates execution.db from research.code.execution._SCHEMA (12 tabl
 d1_accounts, d1_instruments, d1_deployments, d2_deploy_gates, d3_signals, d3_orders, d3_fills, d3_trades,
 d4_equity_snapshots, d5_recon_results, log_deploy, log_incidents).
 
-Spec: braindump/execution_schema.md (RE-LOCKED 2026-06-11, two databases).
+Spec: docs/reference/execution_schema.md (RE-LOCKED 2026-06-11, two databases).
 Run: python research/migrations/023_rebuild_execution_db.py
 """
 import sys

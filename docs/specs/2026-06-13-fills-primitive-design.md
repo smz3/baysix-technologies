@@ -107,7 +107,7 @@ recur. Lives in `research/tests/` (or alongside fork_a); runs in the normal test
    per-trade results to the current Fork A output on May-2024.
 3. The May-2024 MT5-tester parity test passes.
 4. The idealized `_simulate_day` path is deleted and no caller references it.
-5. A one-line protocol rule is added to [braindump/research_protocol.md](../../../braindump/research_protocol.md):
+5. A one-line protocol rule is added to [docs/reference/research_protocol.md](../../../docs/reference/research_protocol.md):
    realistic bid/ask fills via `fills.py` are mandatory from Gate 3 (classifier ideas exempt).
 
 ## Out of scope (this task)

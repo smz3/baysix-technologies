@@ -7,7 +7,7 @@ truth); this migration just re-runs init_db(), which is additive + idempotent
 appear. Provenance-first: every tester run records its data_source (broker_history /
 dukascopy / custom) and tick model, so a run is captured, not just watched.
 
-Spec/why: braindump/execution_schema.md + this session's tester discussion. Build
+Spec/why: docs/reference/execution_schema.md + this session's tester discussion. Build
 task: log_tasks #42 (pairs with #40, the first Dukascopy tester run).
 
 Run: python research/migrations/021_create_tester_schema.py

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13, pandas/numpy, sqlite3 (via existing `research/code/` layer), quantstats 0.0.81, plotly 6.5.0, pytest 9.0.2.
 
-**Spec:** [braindump/2026-06-07-orb-equity-sim-and-backlog-design.md](2026-06-07-orb-equity-sim-and-backlog-design.md)
+**Spec:** [2026-06-07-orb-equity-sim-and-backlog-design.md](../specs/2026-06-07-orb-equity-sim-and-backlog-design.md)
 
 ---
 

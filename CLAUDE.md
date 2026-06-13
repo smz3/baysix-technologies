@@ -28,7 +28,7 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 ├── research/
 │   ├── db/                   ← all SQLite databases (2-DB design: workstation + VPS)
 │   │   ├── research.db       ← pipeline: step1_ideas · step2_papers · step3_gates (Gates 0-7) · step4_results · tester_runs/tester_trades (Gate 7 FIDELITY) · logs: log_agent · log_tasks · log_strategy
-│   │   └── execution.db      ← live deployment ledger (downstream twin · 12 tables · spec: braindump/execution_schema.md · rebuild in progress)
+│   │   └── execution.db      ← live deployment ledger (downstream twin · 12 tables · spec: docs/reference/execution_schema.md · rebuild in progress)
 │   ├── code/                 ← shared DB layer (db_init · pipeline · agent_log)
 │   ├── models/               ← one folder per foundational model
 │   │   ├── cusum/            ← CUSUM-001 (parked · no code yet · awaiting gates)
@@ -47,7 +47,7 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 │   ├── agents/               ← quant-researcher agent definition
 │   ├── hooks/                ← session hooks + audio notifications
 │   └── commands/             ← /handover
-├── braindump/                ← active PRDs and build plans only
+├── docs/                     ← plans/ (dated build plans) · specs/ (dated design docs) · reference/ (evergreen schemas + protocols)
 └── memory/                   ← session handovers · _handover_archive/ for older ones
 
 Decoupled repos (Desktop-level, own git remotes):
@@ -74,7 +74,7 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **Research DB**
 7. Before touching anything in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
-8. Gates 0 and 1 must be `passed` in `step3_gates` before writing any model code for an idea — check `pipeline.get_gates(idea_id)`. Gate definitions: [braindump/research_protocol.md](braindump/research_protocol.md).
+8. Gates 0 and 1 must be `passed` in `step3_gates` before writing any model code for an idea — check `pipeline.get_gates(idea_id)`. Gate definitions: [docs/reference/research_protocol.md](docs/reference/research_protocol.md).
 9. **Query discipline** — never `SELECT` text-heavy columns (`key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`) into main context; use targeted column queries. QR agents query `research.db` inside the subagent, never through main context.
 10. **Writes via code layer only** — all `research.db` writes use `research/code/` functions (`open_gate`, `pass_gate`, `kill_idea`, `log_result`, `log_agent_call`, `log_dissect_result`, `log_human_decision`, `log_change`). Never raw `sqlite3` (timestamps/validation/constraints break).
 11. **Log immediately, before replying to Syafiq** — after every agent call or decision:
