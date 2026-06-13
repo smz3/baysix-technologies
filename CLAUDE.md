@@ -17,10 +17,12 @@ Goal: own Quant Pod Shop → Fund → Malaysian institutional name.
 
 ```
 baysix-technologies/          ← single repo · github.com/smz3/baysix-technologies
-├── mt5/                      ← Sigma V5.0 MQL5 EA (XAUUSD live · Just Markets)
-│   ├── Experts/Sigma_System/ ← Sigma_V5.0.mq5 + compiled .ex5
-│   ├── Include/Sigma_System/ ← all .mqh modules (B2B detection, trading, risk, UI)
-│   └── Documentation/        ← EA architecture + SAMTC docs
+├── mt5/                      ← MQL5 EAs (XAUUSD live · Just Markets)
+│   ├── Experts/              ← Sigma_System/ (Sigma_V5.0 B2B EA + .ex5) · orb_system/ (baysix_orb_NNN EAs)
+│   ├── Include/              ← Sigma_System/ (.mqh: B2B detect, trade, risk, UI) · orb_system/ (ORB modules)
+│   ├── Scripts/orb_system/   ← ORB helper scripts
+│   ├── Documentation/        ← Sigma EA architecture + SAMTC · orb_system/ (per-EA docs)
+│   └── strategy_tester_xlsx/ ← MT5 Strategy Tester report exports
 ├── b2b/
 │   ├── code/                 ← B2B Python engine (zone detection, trade logic)
 │   └── docs/                 ← B2B knowledge base (overview, zone lifecycle, russian doll, etc.)
@@ -30,12 +32,14 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 │   │   ├── research.db       ← pipeline: step1_ideas · step2_papers · step3_gates (Gates 0-7) · step4_results · tester_runs/tester_trades (Gate 7 FIDELITY) · logs: log_agent · log_tasks · log_strategy
 │   │   └── execution.db      ← live deployment ledger (downstream twin · 12 tables · spec: docs/reference/execution_schema.md · rebuild in progress)
 │   ├── code/                 ← shared DB layer (db_init · pipeline · agent_log)
-│   ├── models/               ← one folder per foundational model
-│   │   ├── cusum/            ← CUSUM-001 (parked · no code yet · awaiting gates)
-│   │   └── hmm/              ← HMM-001 · nig_hmm.py (Gate 0 passed · awaiting Gate 1)
+│   ├── models/               ← one folder per idea/model
+│   │   ├── orb/              ← ORB-001/002 (opening-range breakout · Gate-7 fidelity work)
+│   │   └── hmm/              ← HMM-001 (regime detection · Gates 0–4 passed · gateN_*.py)
 │   ├── migrations/           ← DB migration scripts (010 create_research_db · 011 migrate_data)
 │   ├── dashboard/            ← Streamlit research dashboard (app.py · localhost:8501)
-│   ├── outputs/              ← model plot outputs (Plotly HTML + Seaborn PNG)
+│   ├── outputs/              ← model plot outputs (Plotly HTML + Seaborn PNG · gitignored)
+│   ├── papers/               ← QR-agent paper dissection notes
+│   ├── tests/                ← pytest suites (test_backlog.py · …)
 │   └── RESEARCH_CODE_PROTOCOL.md ← code rules for research/models/ and research/code/
 ├── data/
 │   └── arctic/               ← CANONICAL tick store: ArcticDB (lib 'ticks', symbol 'XAUUSD',
