@@ -71,6 +71,7 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **Working style**
 4. Only touch code you're meant to · no loose files (everything lives in a folder) · ask when unsure, don't assume · don't overcomplicate. (Brevity + markdown file-links live in the global directives.)
+4b. **Token discipline** — the whole transcript (incl. every tool result) is re-read each turn, so keep it lean. Targeted reads (offset/limit, never whole files when a slice works); greps with `head_limit` + exclude-globs up front; counts over dumps. No pre-tool narration on routine work; fold "what I did" into one closing line — don't narrate mid-stream then re-summarize. Keep intent only before irreversible/non-obvious moves.
 
 **QR agent — paper specialist only**
 5. The QR agent ONLY **finds** papers (Sonnet — cheap fan-out) and **dissects** them (Opus — high-value; only reads keepers the find-phase surfaced). Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. Pass `model` explicitly on every Agent call; tell Syafiq which ran ("find on Sonnet / dissect on Opus"). (Reversed the 2026-05-28 Sonnet-only-dissect call on 2026-06-09.)
@@ -90,7 +91,7 @@ Decoupled repos (Desktop-level, own git remotes):
 12. **Long-running commands (>10s)** — model fits, data loads, migrations — launch in a new PowerShell window via `Start-Process`. Never `run_in_background`; Syafiq needs live output.
 
 **Communication**
-13. **Always end with a Smart Summary** — a `## 🧠 Smart Summary` of 2–4 plain-English bullets (point form, zero jargon — no R-multiples/t-stats/regime), explaining what we did/found like to a smart friend who doesn't trade. Technical answer on top; this is the floor.
+13. **Smart Summary on research/decisions** — end research findings and strategy decisions with a `## 🧠 Smart Summary` of 2–4 plain-English bullets (point form, zero jargon — no R-multiples/t-stats/regime), explaining what we did/found like to a smart friend who doesn't trade. Technical answer on top. Skip it on pure infra/cleanup/config/chore replies unless asked.
 
 ---
 
