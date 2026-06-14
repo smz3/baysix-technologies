@@ -35,7 +35,6 @@ CLR_LOW = "#2f9e8f"    # swing-low marker
 CLR_LINE = "#8a8a8a"
 CLR_BULL = "#26c281"   # bullish breakout
 CLR_BEAR = "#e8467c"   # bearish breakout
-CLR_LVL = "rgba(150,150,150,0.35)"   # broken-swing level segment
 
 
 def _open(out: Path, do_open: bool) -> None:
@@ -84,21 +83,22 @@ def plot_swings(n_bars: int = 300, swing_window: int = 3, do_open: bool = True) 
 
 
 def plot_breakouts(n_bars: int = 300, swing_window: int = 3, do_open: bool = True) -> Path:
-    """D1 close-line + breakouts: arrows at the breakout bar's close + the broken-swing
-    level segment (swing time → breakout time at the broken price). Detected on full
-    history, then windowed to last n_bars."""
+    """D1 close-line + breakouts, MT5-faithful (Visualizer.mqh DrawRawBreakout):
+    the dot+label is anchored ON THE BROKEN SWING (broken_swing_time/price), NOT the
+    breakout bar. The breakout-bar close lives only in the label text — exactly like
+    MQH: '  Bob <swing> (<close>)' bullish / '  Bos …' bearish. No connector line, no
+    breakout-bar arrow. Detected on full history, then windowed to last n_bars."""
     df, _swings, bk = rb.raw_breakouts_d1(swing_window=swing_window)
     df = df.tail(n_bars).reset_index(drop=True)
     tmin = df["time"].iloc[0]
-    bk = [b for b in bk if b.breakout_bar_time >= tmin]
+    # window on the broken-swing anchor (the dot's own x), mirroring where MT5 draws it
+    bk = [b for b in bk if b.broken_swing_time >= tmin]
     bull = [b for b in bk if b.direction == SignalDirection.BULLISH]
     bear = [b for b in bk if b.direction == SignalDirection.BEARISH]
 
-    # broken-swing level segments (None-separated for one trace)
-    lx, ly = [], []
-    for b in bk:
-        lx += [b.broken_swing_time, b.breakout_bar_time, None]
-        ly += [b.broken_swing_price, b.broken_swing_price, None]
+    def _labels(items: list, tag: str) -> list[str]:
+        # MT5 label: "  Bob <swing> (<close>)"  — text right-anchored (grows leftward)
+        return [f"{tag} {b.broken_swing_price:.2f} ({b.breakout_bar_close_price:.2f}) " for b in items]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -107,27 +107,27 @@ def plot_breakouts(n_bars: int = 300, swing_window: int = 3, do_open: bool = Tru
         hovertemplate="%{x|%Y-%m-%d}<br>close %{y:.2f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=lx, y=ly, mode="lines", name="broken swing level",
-        line=dict(color=CLR_LVL, width=1, dash="dot"), hoverinfo="skip", showlegend=True,
+        x=[b.broken_swing_time for b in bull], y=[b.broken_swing_price for b in bull],
+        mode="markers+text", name=f"Bob — bullish break ({len(bull)})",
+        marker=dict(symbol="circle", size=8, color=CLR_BULL),
+        text=_labels(bull, "Bob"), textposition="middle left",
+        textfont=dict(color=CLR_BULL, size=9),
+        customdata=[(b.breakout_bar_time, b.breakout_bar_close_price) for b in bull],
+        hovertemplate="Bob (broke swing HIGH)<br>swing %{x|%Y-%m-%d} @ %{y:.2f}"
+                      "<br>broke on %{customdata[0]|%Y-%m-%d} close %{customdata[1]:.2f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=[b.breakout_bar_time for b in bull], y=[b.breakout_bar_close_price for b in bull],
-        mode="markers", name=f"Bullish break ({len(bull)})",
-        marker=dict(symbol="triangle-up", size=10, color=CLR_BULL),
-        customdata=[(b.broken_swing_price, b.impulse_start_price) for b in bull],
-        hovertemplate="BULLISH break<br>%{x|%Y-%m-%d}<br>close %{y:.2f}"
-                      "<br>broke high %{customdata[0]:.2f}<br>L2 %{customdata[1]:.2f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=[b.breakout_bar_time for b in bear], y=[b.breakout_bar_close_price for b in bear],
-        mode="markers", name=f"Bearish break ({len(bear)})",
-        marker=dict(symbol="triangle-down", size=10, color=CLR_BEAR),
-        customdata=[(b.broken_swing_price, b.impulse_start_price) for b in bear],
-        hovertemplate="BEARISH break<br>%{x|%Y-%m-%d}<br>close %{y:.2f}"
-                      "<br>broke low %{customdata[0]:.2f}<br>L2 %{customdata[1]:.2f}<extra></extra>",
+        x=[b.broken_swing_time for b in bear], y=[b.broken_swing_price for b in bear],
+        mode="markers+text", name=f"Bos — bearish break ({len(bear)})",
+        marker=dict(symbol="circle", size=8, color=CLR_BEAR),
+        text=_labels(bear, "Bos"), textposition="middle left",
+        textfont=dict(color=CLR_BEAR, size=9),
+        customdata=[(b.breakout_bar_time, b.breakout_bar_close_price) for b in bear],
+        hovertemplate="Bos (broke swing LOW)<br>swing %{x|%Y-%m-%d} @ %{y:.2f}"
+                      "<br>broke on %{customdata[0]|%Y-%m-%d} close %{customdata[1]:.2f}<extra></extra>",
     ))
     fig.update_layout(
-        title=f"STRUCT-001 — XAUUSD D1 raw breakouts (window={swing_window}) · last {len(df)} bars",
+        title=f"STRUCT-001 — XAUUSD D1 raw breakouts · MT5-faithful (window={swing_window}) · last {len(df)} bars",
         template="plotly_dark", xaxis_rangeslider_visible=False,
         height=760, hovermode="closest", legend=dict(orientation="h", y=1.02, x=0),
     )
