@@ -26,7 +26,7 @@ import plotly.graph_objects as go
 
 import swingpoints as sp
 import rawbreakout as rb
-from sigma_core.b2b.models.structures import SignalDirection
+from structures import SignalDirection
 
 REPO = Path(__file__).resolve().parents[4]
 OUT_DIR = REPO / "research" / "outputs" / "struct001"

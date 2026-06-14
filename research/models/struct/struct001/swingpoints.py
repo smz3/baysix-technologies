@@ -1,11 +1,12 @@
 """
 swingpoints.py — STRUCT-001 swing-structure module (entry point).
 
-Swing DETECTION itself is the shared, parity-audited engine
-b2b/sigma_core/b2b/detectors/swing_points.py (close-based pivot, honors
-config.swing_window with the MQH odd/>=3 guard; live EA = InpSwingWindow=3).
-This module is STRUCT-001's interface over it: load D1 bars + detect swings, and
-the future home for market-structure labeling (HH/HL/LH/LL) built on the swings.
+Swing DETECTION is STRUCT-001's own close-based pivot engine (detectors.py) — a
+faithful, decoupled port of the parity-audited b2b detector; honors
+config.swing_window with the MQH odd/>=3 guard (live EA = InpSwingWindow=3).
+STRUCT-001 no longer reaches into the b2b package; a parity test guards drift.
+This module is the interface over it: load D1 bars + detect swings, and the
+future home for market-structure labeling (HH/HL/LH/LL) built on the swings.
 
 Render functions live in visual.py (universal struct visualizer), not here —
 detection stays pure.
@@ -16,15 +17,12 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(REPO / "b2b"))
 sys.path.insert(0, str(REPO / "research" / "code"))
 
 import pandas as pd                                                  # noqa: E402
 import arctic_io as aio                                             # noqa: E402
-from sigma_core.b2b.detectors.swing_points import detect_swings     # noqa: E402
-from sigma_core.b2b.models.structures import (                      # noqa: E402
-    DetectionConfig, SwingPointInfo,
-)
+from detectors import detect_swings                                 # noqa: E402
+from structures import DetectionConfig, SwingPointInfo              # noqa: E402
 
 __all__ = ["load_d1", "swings_d1", "detect_swings", "DetectionConfig"]
 

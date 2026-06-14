@@ -40,7 +40,7 @@ import sys
 import pandas as pd
 
 import swingpoints as sp
-from sigma_core.b2b.models.structures import (
+from structures import (
     SwingPointInfo, RawBreakoutInfo, SwingType, SignalDirection, DetectionConfig,
 )
 

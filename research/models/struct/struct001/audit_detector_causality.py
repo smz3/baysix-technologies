@@ -1,8 +1,8 @@
 """
 audit_detector_causality.py — STRUCT-001 task-71 AUDIT (rerunnable).
 
-Proves the Python swing/breakout port [b2b/sigma_core/b2b/detectors/] is CAUSAL
-(no look-ahead) and PARITY-faithful to the live MQL5 EA at InpSwingWindow=3.
+Proves STRUCT-001's OWN swing/breakout port (detectors.py + rawbreakout.py) is
+CAUSAL (no look-ahead) and PARITY-faithful to the live MQL5 EA at InpSwingWindow=3.
 
 5 checks on real D1 bars (Arctic). Verdict logged once as BRK-001/STRUCT-001
 human call 53; this file lets any later session RE-RUN the proof instead of
@@ -14,12 +14,11 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(REPO / "b2b"))           # so 'sigma_core' -> b2b/sigma_core
 sys.path.insert(0, str(REPO / "research" / "code"))
 
 import arctic_io as aio                                              # noqa: E402
-from sigma_core.b2b.detectors.swing_points import detect_swings     # noqa: E402
-from sigma_core.b2b.detectors.breakouts import detect_breakouts     # noqa: E402
+from detectors import detect_swings                                 # noqa: E402
+from rawbreakout import detect_raw_breakouts                        # noqa: E402
 
 RADIUS = 1   # InpSwingWindow=3 -> window_radius = 3//2 = 1 (1 bar each side)
 
@@ -31,7 +30,7 @@ def run() -> bool:
     closes = df["close"].values
 
     sw = detect_swings(df)
-    bk = detect_breakouts(df, sw)
+    bk = detect_raw_breakouts(df, sw)
     print(f"D1 bars={len(df)}  swings={len(sw)}  breakouts={len(bk)}")
 
     # 1 — swings detected on CLOSE only (price == close at pivot bar)
@@ -54,9 +53,9 @@ def run() -> bool:
         if b.direction.name == "BULLISH" and not (b.breakout_bar_close_price > b.broken_swing_price): c4 += 1
         if b.direction.name == "BEARISH" and not (b.breakout_bar_close_price < b.broken_swing_price): c4 += 1
 
-    # 5 — config parity: detect_swings now honors config.swing_window (radius = w//2) + odd/>=3 guard
+    # 5 — config parity: detect_swings honors config.swing_window (radius = w//2) + odd/>=3 guard
     import inspect
-    import sigma_core.b2b.detectors.swing_points as spm
+    import detectors as spm
     uses_window = "config.swing_window" in inspect.getsource(spm.detect_swings)
 
     print(f"[1 close-based]   price!=close[bar]      : {c1}        -> {'PASS' if c1==0 else 'FAIL'}")
