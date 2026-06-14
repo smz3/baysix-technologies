@@ -37,7 +37,9 @@ from __future__ import annotations
 import copy
 import sys
 
+import numpy as np
 import pandas as pd
+from numba import njit
 
 import swingpoints as sp
 from structures import (
@@ -68,12 +70,14 @@ def _find_impulse_swing_price(
     return found_price
 
 
-def detect_raw_breakouts(
+def _detect_raw_breakouts_py(
     df: pd.DataFrame,
     swings: list[SwingPointInfo],
     config: DetectionConfig = None,
 ) -> list[RawBreakoutInfo]:
-    """Faithful per-bar two-pass re-port of MQH Detect(). df oldest→newest."""
+    """FROZEN PARITY ORACLE — faithful per-bar two-pass re-port of MQH Detect().
+    df oldest→newest. Kept verbatim as the byte-identical reference the vectorized
+    `detect_raw_breakouts` is parity-tested against (task 77). Do not optimize."""
     if config is None:
         config = DetectionConfig()
     radius = config.swing_window // 2
@@ -139,6 +143,160 @@ def detect_raw_breakouts(
                 broken_swing_bar_index=s.bar_index,
             ))
 
+    return breakouts
+
+
+# ── Vectorized path (task 77) ─────────────────────────────────────────────────
+# Numba nopython kernel = the EXACT two-pass logic of _detect_raw_breakouts_py,
+# operating on numpy arrays (int64-ns times, float prices, int8 swing types) so
+# the per-bar × per-swing scan runs at native speed. Swing type: 1=HIGH, 2=LOW.
+# Each swing breaks at most once → total breakouts ≤ len(swings), so outputs are
+# preallocated to m and sliced to the count. Byte-identical to the oracle, proven
+# by parity_rawbreakout.py across windows 3/5/7 on D1/H1/M15.
+
+_INT64_MAX = np.int64(9223372036854775807)
+_INT64_MIN = np.int64(-9223372036854775808)
+
+
+@njit(cache=True)
+def _rb_kernel(closes, bar_times, s_time, s_price, s_type, s_bar_index,
+               radius, max_age):
+    n = closes.shape[0]
+    m = s_time.shape[0]
+    broken = np.zeros(m, dtype=np.bool_)
+    out_bar = np.empty(m, dtype=np.int64)
+    out_sidx = np.empty(m, dtype=np.int64)
+    out_dir = np.empty(m, dtype=np.int8)
+    out_l2 = np.empty(m, dtype=np.float64)
+    cnt = 0
+
+    for bar_idx in range(n):
+        bc = closes[bar_idx]
+        bt = bar_times[bar_idx]
+
+        # PASS 1 — earliest unbroken swing broken per direction → shared L2
+        eb_time = _INT64_MAX
+        eb_sidx = -1
+        ebr_time = _INT64_MAX
+        ebr_sidx = -1
+        for j in range(m):
+            if broken[j]:
+                continue
+            if s_time[j] >= bt:
+                continue
+            if bar_idx < s_bar_index[j] + radius:          # confirmation gate
+                continue
+            if max_age > 0 and (bar_idx - s_bar_index[j]) > max_age:
+                continue
+            if s_type[j] == 1 and bc > s_price[j]:
+                if s_time[j] < eb_time:
+                    eb_time = s_time[j]
+                    eb_sidx = j
+            elif s_type[j] == 2 and bc < s_price[j]:
+                if s_time[j] < ebr_time:
+                    ebr_time = s_time[j]
+                    ebr_sidx = j
+
+        # shared L2 = most-recent OPPOSITE swing strictly between earliest-broken
+        # swing's time and this bar (bull→latest LOW, bear→latest HIGH).
+        l2_bull = 0.0
+        if eb_sidx >= 0:
+            bst = s_time[eb_sidx]
+            latest = _INT64_MIN
+            for k in range(m):
+                if s_type[k] != 2:
+                    continue
+                if s_time[k] <= bst or s_time[k] >= bt:
+                    continue
+                if s_time[k] > latest:
+                    latest = s_time[k]
+                    l2_bull = s_price[k]
+        l2_bear = 0.0
+        if ebr_sidx >= 0:
+            bst = s_time[ebr_sidx]
+            latest = _INT64_MIN
+            for k in range(m):
+                if s_type[k] != 1:
+                    continue
+                if s_time[k] <= bst or s_time[k] >= bt:
+                    continue
+                if s_time[k] > latest:
+                    latest = s_time[k]
+                    l2_bear = s_price[k]
+
+        # PASS 2 — emit breakouts in swing-list order, mark broken
+        for j in range(m):
+            if broken[j]:
+                continue
+            if s_time[j] >= bt:
+                continue
+            if bar_idx < s_bar_index[j] + radius:
+                continue
+            if max_age > 0 and (bar_idx - s_bar_index[j]) > max_age:
+                continue
+            is_bull = s_type[j] == 1 and bc > s_price[j]
+            is_bear = s_type[j] == 2 and bc < s_price[j]
+            if not (is_bull or is_bear):
+                continue
+            broken[j] = True
+            out_bar[cnt] = bar_idx
+            out_sidx[cnt] = j
+            out_dir[cnt] = 1 if is_bull else 2
+            out_l2[cnt] = l2_bull if is_bull else l2_bear
+            cnt += 1
+
+    return out_bar[:cnt], out_sidx[:cnt], out_dir[:cnt], out_l2[:cnt]
+
+
+def detect_raw_breakouts(
+    df: pd.DataFrame,
+    swings: list[SwingPointInfo],
+    config: DetectionConfig = None,
+) -> list[RawBreakoutInfo]:
+    """Vectorized (numba) port of _detect_raw_breakouts_py — same output, native
+    speed. df oldest→newest. Falls through to an empty list on empty input."""
+    if config is None:
+        config = DetectionConfig()
+    radius = config.swing_window // 2
+    max_age = config.max_breakout_age
+    n = len(df)
+    m = len(swings)
+    if n == 0 or m == 0:
+        return []
+
+    closes = np.ascontiguousarray(df["close"].values, dtype=np.float64)
+    bar_times = pd.DatetimeIndex(pd.to_datetime(df["time"].values)).asi8.astype(np.int64)
+    times = df["time"].values
+
+    s_time = pd.DatetimeIndex(pd.to_datetime([s.time for s in swings])).asi8.astype(np.int64)
+    s_price = np.array([s.price for s in swings], dtype=np.float64)
+    s_type = np.array(
+        [1 if s.type == SwingType.HIGH else (2 if s.type == SwingType.LOW else 0)
+         for s in swings], dtype=np.int8)
+    s_bar_index = np.array([s.bar_index for s in swings], dtype=np.int64)
+
+    out_bar, out_sidx, out_dir, out_l2 = _rb_kernel(
+        closes, bar_times, s_time, s_price, s_type, s_bar_index,
+        int(radius), int(max_age))
+
+    breakouts: list[RawBreakoutInfo] = []
+    for i in range(out_bar.shape[0]):
+        bidx = int(out_bar[i])
+        s = swings[int(out_sidx[i])]
+        is_bull = out_dir[i] == 1
+        breakouts.append(RawBreakoutInfo(
+            breakout_bar_time=pd.Timestamp(times[bidx]).to_pydatetime(),
+            breakout_bar_close_price=float(closes[bidx]),
+            direction=SignalDirection.BULLISH if is_bull else SignalDirection.BEARISH,
+            timeframe=s.original_tf,
+            broken_swing_price=s.price,
+            broken_swing_time=s.time,
+            broken_swing_close_price=s.close_price,
+            broken_swing_type=s.type,
+            impulse_start_price=float(out_l2[i]),
+            breakout_bar_index=bidx,
+            broken_swing_bar_index=s.bar_index,
+        ))
     return breakouts
 
 
