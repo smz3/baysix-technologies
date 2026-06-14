@@ -33,8 +33,10 @@ OUT_DIR = REPO / "research" / "outputs" / "struct001"
 CLR_HIGH = "#e8467c"   # swing-high marker (MT5: clrMistyRose, recolored for clarity)
 CLR_LOW = "#2f9e8f"    # swing-low marker
 CLR_LINE = "#8a8a8a"
-CLR_BULL = "#26c281"   # bullish breakout
-CLR_BEAR = "#e8467c"   # bearish breakout
+CLR_BULL = "#26c281"   # bullish breakout — broken-swing dot
+CLR_BEAR = "#e8467c"   # bearish breakout — broken-swing dot
+CLR_BULL_BAR = "#7ee787"  # bullish breakout — breakout-BAR close dot (lighter green)
+CLR_BEAR_BAR = "#ff9d6c"  # bearish breakout — breakout-BAR close dot (orange-red)
 
 
 def _open(out: Path, do_open: bool) -> None:
@@ -125,6 +127,28 @@ def plot_breakouts(n_bars: int = 300, swing_window: int = 3, do_open: bool = Tru
         customdata=[(b.breakout_bar_time, b.breakout_bar_close_price) for b in bear],
         hovertemplate="Bos (broke swing LOW)<br>swing %{x|%Y-%m-%d} @ %{y:.2f}"
                       "<br>broke on %{customdata[0]|%Y-%m-%d} close %{customdata[1]:.2f}<extra></extra>",
+    ))
+    # breakout-BAR close dots — the bar whose close confirmed the break (lighter shade),
+    # labelled with that close price so it pairs visually with the broken-swing dot
+    fig.add_trace(go.Scatter(
+        x=[b.breakout_bar_time for b in bull], y=[b.breakout_bar_close_price for b in bull],
+        mode="markers+text", name=f"Bob close ({len(bull)})",
+        marker=dict(symbol="circle", size=7, color=CLR_BULL_BAR),
+        text=[f" {b.breakout_bar_close_price:.2f}" for b in bull], textposition="middle right",
+        textfont=dict(color=CLR_BULL_BAR, size=9),
+        customdata=[(b.broken_swing_price,) for b in bull],
+        hovertemplate="Bob breakout bar<br>%{x|%Y-%m-%d}<br>close %{y:.2f}"
+                      "<br>broke high %{customdata[0]:.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=[b.breakout_bar_time for b in bear], y=[b.breakout_bar_close_price for b in bear],
+        mode="markers+text", name=f"Bos close ({len(bear)})",
+        marker=dict(symbol="circle", size=7, color=CLR_BEAR_BAR),
+        text=[f" {b.breakout_bar_close_price:.2f}" for b in bear], textposition="middle right",
+        textfont=dict(color=CLR_BEAR_BAR, size=9),
+        customdata=[(b.broken_swing_price,) for b in bear],
+        hovertemplate="Bos breakout bar<br>%{x|%Y-%m-%d}<br>close %{y:.2f}"
+                      "<br>broke low %{customdata[0]:.2f}<extra></extra>",
     ))
     fig.update_layout(
         title=f"STRUCT-001 — XAUUSD D1 raw breakouts · MT5-faithful (window={swing_window}) · last {len(df)} bars",
