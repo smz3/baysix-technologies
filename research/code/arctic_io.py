@@ -138,6 +138,66 @@ def read_tick_month(ym, columns=None, *, as_column: bool = True) -> pd.DataFrame
     return read_ticks(start, end, data_cols, allow_oos=True, as_column=as_column)
 
 
+M1_SYMBOL = "XAUUSD_M1"
+
+
+def build_m1_symbol() -> int:
+    """One-time (long) derive of a SORTED 1-minute mid-OHLCV base from the tick
+    store, written as Arctic symbol XAUUSD_M1. This is the CANONICAL multi-TF base
+    (task 76): every higher TF is resampled from it on-read, so there is one source
+    of truth and no cross-TF boundary drift.
+
+    Two deliberate choices, locked in struct001_m1_base_timezone_design:
+      • STORED IN PURE UTC — the Dukascopy tick index is UTC and NO broker offset is
+        baked in here. The venue/DST offset (JM=EET UTC+2/+3, etc.) is applied later
+        at derive/resample time, so this one base serves JM / FTMO / Darwinex.
+      • FULL OHLCV (mid) per minute — not close-only. Storing true per-minute high/low
+        means higher-TF high/low (max/min of M1 H/L) is also exact, so a future
+        wick/high-low rule (task 74) needs NO tick re-scan. Basis is MID (matches
+        XAUUSD_DAILY); MT5 chart bars are bid → a consistent half-spread offset.
+
+    Run explicitly (rule 12, new window):
+        python research/code/arctic_io.py build-m1
+    Returns the number of M1 rows written."""
+    from tqdm import tqdm
+    frames = []
+    for ym in tqdm(tick_months(), desc="derive M1 OHLCV"):
+        df = read_tick_month(ym, columns=["bid", "ask", "volume"], as_column=False)
+        if df.empty:
+            continue
+        mid = (df["bid"] + df["ask"]) * 0.5
+        bars = mid.resample("1min").ohlc()
+        bars["volume"] = df["volume"].resample("1min").sum()
+        bars = bars.dropna(subset=["open"])  # drop minutes with no ticks
+        frames.append(bars)
+    m1 = pd.concat(frames).sort_index()
+    m1 = m1[~m1.index.duplicated(keep="first")]
+    m1.index.name = "ts_utc"
+    lib = _library()
+    lib.write(M1_SYMBOL, m1, metadata={
+        "derived_from": SYMBOL, "tz": "UTC", "price_basis": "mid",
+        "freq": "1min", "seal_date": str(seal_date().date()),
+        "built_at": pd.Timestamp.utcnow().isoformat()})
+    return len(m1)
+
+
+def m1_bars(start=None, end=None, columns=None) -> pd.DataFrame:
+    """Sorted 1-minute mid-OHLCV base (open/high/low/close/volume), DatetimeIndex
+    'ts_utc' in PURE UTC. Reads the XAUUSD_M1 Arctic symbol. Optional [start, end]
+    slice. This is the source the higher-TF derive layer resamples from."""
+    lib = _library()
+    if M1_SYMBOL not in lib.list_symbols():
+        raise FileNotFoundError(
+            f"Arctic symbol {M1_SYMBOL} not built. Run (new window): "
+            f"python research/code/arctic_io.py build-m1")
+    date_range = (_norm(start), _norm(end)) if (start is not None or end is not None) else None
+    df = lib.read(M1_SYMBOL, date_range=date_range,
+                  columns=list(columns) if columns else None).data
+    if not df.index.is_monotonic_increasing:
+        raise AssertionError("XAUUSD_M1 index non-monotonic — rebuild.")
+    return df
+
+
 DAILY_SYMBOL = "XAUUSD_DAILY"
 
 
@@ -195,6 +255,10 @@ def store_info() -> dict:
 
 if __name__ == "__main__":
     import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "build-m1":
+        n = build_m1_symbol()
+        print(f"XAUUSD_M1 built: {n:,} minute rows.")
+        sys.exit(0)
     if len(sys.argv) > 1 and sys.argv[1] == "build-daily":
         n = build_daily_symbol()
         print(f"XAUUSD_DAILY built: {n:,} daily rows.")
