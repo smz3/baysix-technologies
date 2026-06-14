@@ -6,14 +6,14 @@ Proves the Python swing/breakout port [b2b/sigma_core/b2b/detectors/] is CAUSAL
 
 5 checks on real D1 bars (Arctic). Verdict logged once as BRK-001/STRUCT-001
 human call 53; this file lets any later session RE-RUN the proof instead of
-trusting an ephemeral one-off. Run:  python research/models/struct/audit_detector_causality.py
+trusting an ephemeral one-off. Run:  python research/models/struct/struct001/audit_detector_causality.py
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / "b2b"))           # so 'sigma_core' -> b2b/sigma_core
 sys.path.insert(0, str(REPO / "research" / "code"))
 
