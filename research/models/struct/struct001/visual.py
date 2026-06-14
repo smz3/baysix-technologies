@@ -25,12 +25,17 @@ from pathlib import Path
 import plotly.graph_objects as go
 
 import swingpoints as sp
+import rawbreakout as rb
+from sigma_core.b2b.models.structures import SignalDirection
 
 REPO = Path(__file__).resolve().parents[4]
 OUT_DIR = REPO / "research" / "outputs" / "struct001"
 CLR_HIGH = "#e8467c"   # swing-high marker (MT5: clrMistyRose, recolored for clarity)
 CLR_LOW = "#2f9e8f"    # swing-low marker
 CLR_LINE = "#8a8a8a"
+CLR_BULL = "#26c281"   # bullish breakout
+CLR_BEAR = "#e8467c"   # bearish breakout
+CLR_LVL = "rgba(150,150,150,0.35)"   # broken-swing level segment
 
 
 def _open(out: Path, do_open: bool) -> None:
@@ -78,6 +83,63 @@ def plot_swings(n_bars: int = 300, swing_window: int = 3, do_open: bool = True) 
     return out
 
 
+def plot_breakouts(n_bars: int = 300, swing_window: int = 3, do_open: bool = True) -> Path:
+    """D1 close-line + breakouts: arrows at the breakout bar's close + the broken-swing
+    level segment (swing time → breakout time at the broken price). Detected on full
+    history, then windowed to last n_bars."""
+    df, _swings, bk = rb.raw_breakouts_d1(swing_window=swing_window)
+    df = df.tail(n_bars).reset_index(drop=True)
+    tmin = df["time"].iloc[0]
+    bk = [b for b in bk if b.breakout_bar_time >= tmin]
+    bull = [b for b in bk if b.direction == SignalDirection.BULLISH]
+    bear = [b for b in bk if b.direction == SignalDirection.BEARISH]
+
+    # broken-swing level segments (None-separated for one trace)
+    lx, ly = [], []
+    for b in bk:
+        lx += [b.broken_swing_time, b.breakout_bar_time, None]
+        ly += [b.broken_swing_price, b.broken_swing_price, None]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["time"], y=df["close"], mode="lines", name="XAUUSD D1 close",
+        line=dict(color=CLR_LINE, width=1.2),
+        hovertemplate="%{x|%Y-%m-%d}<br>close %{y:.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=lx, y=ly, mode="lines", name="broken swing level",
+        line=dict(color=CLR_LVL, width=1, dash="dot"), hoverinfo="skip", showlegend=True,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[b.breakout_bar_time for b in bull], y=[b.breakout_bar_close_price for b in bull],
+        mode="markers", name=f"Bullish break ({len(bull)})",
+        marker=dict(symbol="triangle-up", size=10, color=CLR_BULL),
+        customdata=[(b.broken_swing_price, b.impulse_start_price) for b in bull],
+        hovertemplate="BULLISH break<br>%{x|%Y-%m-%d}<br>close %{y:.2f}"
+                      "<br>broke high %{customdata[0]:.2f}<br>L2 %{customdata[1]:.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=[b.breakout_bar_time for b in bear], y=[b.breakout_bar_close_price for b in bear],
+        mode="markers", name=f"Bearish break ({len(bear)})",
+        marker=dict(symbol="triangle-down", size=10, color=CLR_BEAR),
+        customdata=[(b.broken_swing_price, b.impulse_start_price) for b in bear],
+        hovertemplate="BEARISH break<br>%{x|%Y-%m-%d}<br>close %{y:.2f}"
+                      "<br>broke low %{customdata[0]:.2f}<br>L2 %{customdata[1]:.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=f"STRUCT-001 — XAUUSD D1 raw breakouts (window={swing_window}) · last {len(df)} bars",
+        template="plotly_dark", xaxis_rangeslider_visible=False,
+        height=760, hovermode="closest", legend=dict(orientation="h", y=1.02, x=0),
+    )
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / "breakouts_d1.html"
+    fig.write_html(str(out))
+    print(f"bars={len(df)}  window={swing_window}  breakouts_in_view={len(bk)} (bull={len(bull)} bear={len(bear)})")
+    _open(out, do_open)
+    return out
+
+
 def _main(argv: list[str]) -> None:
     flags = [a for a in argv if a.startswith("--")]
     pos = [a for a in argv if not a.startswith("--")]
@@ -91,8 +153,10 @@ def _main(argv: list[str]) -> None:
 
     if kind == "swings":
         plot_swings(n_bars=n_bars, swing_window=window, do_open=do_open)
+    elif kind == "breakouts":
+        plot_breakouts(n_bars=n_bars, swing_window=window, do_open=do_open)
     else:
-        raise SystemExit(f"unknown viz '{kind}' (have: swings)")
+        raise SystemExit(f"unknown viz '{kind}' (have: swings, breakouts)")
 
 
 if __name__ == "__main__":
