@@ -26,6 +26,12 @@ def detect_swings(df: pd.DataFrame, config: DetectionConfig = None) -> list[Swin
     Parity contract w/ the live EA: swing_window must be ODD and >= 3, exactly the
     MQH guard `if(swing_window < 3 || swing_window % 2 == 0) return ...`. Live EA
     runs InpSwingWindow=3 (radius 1 = classic 3-bar pivot).
+
+    NOTE (2026-06-14 profiling): the per-bar `break` early-exit makes this ~O(n) in
+    practice — 0.69s on 236k M15 bars. NOT the intraday bottleneck. The cost is
+    detect_raw_breakouts (1.9s at D1 alone, scales as bars x active swings). A
+    vectorize attempt here was reverted (~0x gain). See backlog task for the real
+    target.
     """
     if config is None:
         config = DetectionConfig()

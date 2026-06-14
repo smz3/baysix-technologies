@@ -142,20 +142,27 @@ def detect_raw_breakouts(
     return breakouts
 
 
-def raw_breakouts_d1(swing_window: int = 3):
-    """Convenience: D1 bars + swings + breakouts. Returns (df, swings, breakouts)."""
-    df, swings = sp.swings_d1(swing_window=swing_window)
+def raw_breakouts(tf: str = "D1", swing_window: int = 3, venue: str = "JM_EET"):
+    """Convenience: `tf` bars + swings + breakouts, broker-clock bucketed.
+    Returns (df, swings, breakouts). Any TF in arctic_io.TF_RULE."""
+    df, swings = sp.swings(tf, swing_window=swing_window, venue=venue)
     bk = detect_raw_breakouts(df, swings, DetectionConfig(swing_window=swing_window))
     return df, swings, bk
 
 
+def raw_breakouts_d1(swing_window: int = 3):
+    """Back-compat alias → raw_breakouts('D1')."""
+    return raw_breakouts("D1", swing_window=swing_window)
+
+
 def _main(argv: list[str]) -> None:
     window = int(argv[argv.index("--window") + 1]) if "--window" in argv else 3
-    df, swings, bk = raw_breakouts_d1(swing_window=window)
+    tf = argv[argv.index("--tf") + 1].upper() if "--tf" in argv else "D1"
+    df, swings, bk = raw_breakouts(tf, swing_window=window)
     bull = sum(1 for b in bk if b.direction == SignalDirection.BULLISH)
     bear = len(bk) - bull
     with_l2 = sum(1 for b in bk if b.impulse_start_price != 0.0)
-    print(f"D1 bars={len(df)}  window={window}  swings={len(swings)}  breakouts={len(bk)} "
+    print(f"{tf} bars={len(df)}  window={window}  swings={len(swings)}  breakouts={len(bk)} "
           f"(bull={bull} bear={bear})  with_L2={with_l2}")
 
 

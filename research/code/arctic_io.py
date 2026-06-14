@@ -198,6 +198,72 @@ def m1_bars(start=None, end=None, columns=None) -> pd.DataFrame:
     return df
 
 
+# --- multi-TF derive layer (task 76) -----------------------------------------
+# All higher TFs are resampled on-read from XAUUSD_M1. One source of truth, no
+# cross-TF boundary drift. Bars are bucketed on the BROKER wall clock so edges
+# land where MT5's do — venue/DST handled here, NOT baked into the M1 base.
+
+# Real DST-observing zones (NOT fixed "EET"): JM & most MT5 gold brokers run
+# EET = UTC+2 winter / UTC+3 summer on the EU calendar. Confirm Darwinex before use.
+VENUE_TZ = {
+    "JM_EET": "Europe/Bucharest",    # JustMarkets (XAUUSD live) — EET/EEST
+    "FTMO_EET": "Europe/Bucharest",  # FTMO — same EET family
+    "UTC": "UTC",                    # neutral / Dukascopy-native
+}
+
+# pandas resample rule per TF. Bars are labelled by OPEN time (closed/label left),
+# matching MT5's bar-open convention.
+TF_RULE = {
+    "M1": "1min", "M5": "5min", "M15": "15min", "M30": "30min",
+    "H1": "1h", "H4": "4h", "D1": "1D", "W1": "W-MON", "MN1": "MS",
+}
+_OHLCV_AGG = {"open": "first", "high": "max", "low": "min",
+              "close": "last", "volume": "sum"}
+
+
+@lru_cache(maxsize=64)
+def _bars_cached(tf: str, venue: str) -> pd.DataFrame:
+    rule = TF_RULE[tf]
+    tz = VENUE_TZ[venue]
+    m1 = m1_bars()  # full XAUUSD_M1, UTC, mid-OHLCV
+    if tz != "UTC":
+        # to broker wall clock: localize UTC -> convert -> drop tz (keep wall time).
+        # Integer-hour offset means M5..H1 already align on absolute time; H4/D1/
+        # W1/MN1 need this local anchoring. DST fall-back makes one wall hour repeat
+        # -> sort so resample stays monotonic (the dup hour merges, as MT5 does).
+        local = m1.index.tz_localize("UTC").tz_convert(tz).tz_localize(None)
+        m1 = m1.set_axis(local).sort_index()
+    if tf == "M1":
+        return m1
+    bars = (m1.resample(rule, label="left", closed="left")
+              .agg(_OHLCV_AGG).dropna(subset=["open"]))
+    bars.index.name = "time"
+    return bars
+
+
+def bars(tf: str, venue: str = "JM_EET", *, start=None, end=None,
+         columns=None) -> pd.DataFrame:
+    """Higher-TF OHLCV bars derived on-read from XAUUSD_M1, bucketed on the venue's
+    broker wall clock (DST-aware). tf in {M1,M5,M15,M30,H1,H4,D1,W1,MN1};
+    venue in VENUE_TZ (default JM_EET = JustMarkets). Index 'time' is the bar-OPEN
+    in BROKER local wall time (UTC for venue='UTC'). lru_cached per (tf, venue).
+
+    NOTE: D1 and below are the verified path (M5..H1 align on absolute time; H4/D1
+    anchor to broker midnight). W1/MN1 anchoring is best-effort EU-calendar —
+    cross-check against MT5 before trusting weekly/monthly structure."""
+    tf, venue = tf.upper(), venue.upper()
+    if tf not in TF_RULE:
+        raise ValueError(f"unknown tf {tf!r}; one of {sorted(TF_RULE)}")
+    if venue not in VENUE_TZ:
+        raise ValueError(f"unknown venue {venue!r}; one of {sorted(VENUE_TZ)}")
+    df = _bars_cached(tf, venue)
+    if start is not None or end is not None:
+        df = df.loc[_norm(start):_norm(end)]
+    if columns is not None:
+        df = df[list(columns)]
+    return df.copy()
+
+
 DAILY_SYMBOL = "XAUUSD_DAILY"
 
 

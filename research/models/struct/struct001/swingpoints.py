@@ -24,18 +24,32 @@ import arctic_io as aio                                             # noqa: E402
 from detectors import detect_swings                                 # noqa: E402
 from structures import DetectionConfig, SwingPointInfo              # noqa: E402
 
-__all__ = ["load_d1", "swings_d1", "detect_swings", "DetectionConfig"]
+__all__ = ["load", "load_d1", "swings", "swings_d1", "detect_swings", "DetectionConfig"]
+
+
+def load(tf: str = "D1", venue: str = "JM_EET") -> pd.DataFrame:
+    """OHLC frame for any TF, broker-clock bucketed (task 76 derive layer).
+    Columns time/open/high/low/close. Default D1 on JustMarkets (EET) — the
+    MT5-aligned source that replaces the old UTC-bucketed XAUUSD_DAILY."""
+    d = aio.bars(tf, venue).reset_index()
+    d.columns = [c.lower() for c in d.columns]
+    return d[["time", "open", "high", "low", "close"]]
 
 
 def load_d1() -> pd.DataFrame:
-    """Canonical D1 OHLC frame from Arctic, columns time/open/high/low/close."""
-    d = aio.daily_bars().reset_index()
-    d.columns = [c.lower() for c in d.columns]
-    return d.rename(columns={"date": "time"})[["time", "open", "high", "low", "close"]]
+    """Back-compat alias → broker-aligned D1 (was UTC-bucketed XAUUSD_DAILY)."""
+    return load("D1", "JM_EET")
+
+
+def swings(tf: str = "D1", swing_window: int = 3, venue: str = "JM_EET"
+           ) -> tuple[pd.DataFrame, list[SwingPointInfo]]:
+    """Load `tf` bars + detect swings at `swing_window` (default 3 = live EA).
+    Returns (df, swings). Any TF in arctic_io.TF_RULE."""
+    df = load(tf, venue)
+    swings_ = detect_swings(df, DetectionConfig(swing_window=swing_window))
+    return df, swings_
 
 
 def swings_d1(swing_window: int = 3) -> tuple[pd.DataFrame, list[SwingPointInfo]]:
-    """Load D1 + detect swings at `swing_window` (default 3 = live EA). Returns (df, swings)."""
-    df = load_d1()
-    swings = detect_swings(df, DetectionConfig(swing_window=swing_window))
-    return df, swings
+    """Back-compat alias → swings('D1')."""
+    return swings("D1", swing_window=swing_window)
