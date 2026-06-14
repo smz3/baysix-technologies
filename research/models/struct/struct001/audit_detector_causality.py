@@ -54,17 +54,17 @@ def run() -> bool:
         if b.direction.name == "BULLISH" and not (b.breakout_bar_close_price > b.broken_swing_price): c4 += 1
         if b.direction.name == "BEARISH" and not (b.breakout_bar_close_price < b.broken_swing_price): c4 += 1
 
-    # 5 — config-parity caveat: detect_swings hardcodes 1-each-side (parity ONLY at window=3)
+    # 5 — config parity: detect_swings now honors config.swing_window (radius = w//2) + odd/>=3 guard
     import inspect
     import sigma_core.b2b.detectors.swing_points as spm
-    uses_window = "window" in inspect.getsource(spm.detect_swings).lower()
+    uses_window = "config.swing_window" in inspect.getsource(spm.detect_swings)
 
     print(f"[1 close-based]   price!=close[bar]      : {c1}        -> {'PASS' if c1==0 else 'FAIL'}")
     print(f"[2 pivot geom]    strict-pivot violations: {c2}        -> {'PASS' if c2==0 else 'FAIL'}")
     print(f"[3 causality]     breakout < confirm bar : {len(c3)}        -> {'PASS' if not c3 else 'FAIL'}")
     print(f"[4 breakout rule] close-beyond-swing viol: {c4}        -> {'PASS' if c4==0 else 'FAIL'}")
     print(f"[5 config parity] honors window param    : {uses_window}    -> "
-          f"{'hardcoded 3-bar; parity ONLY at InpSwingWindow=3 (task 73)' if not uses_window else 'check'}")
+          f"{'honors config.swing_window + odd/>=3 guard (task 74)' if uses_window else 'hardcoded — REGRESSED'}")
 
     ok = (c1 == 0 and c2 == 0 and not c3 and c4 == 0)
     print(f"\nVERDICT: {'PASS — causal + parity-faithful at window=3' if ok else 'FAIL'}")
