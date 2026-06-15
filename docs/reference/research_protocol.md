@@ -2,6 +2,29 @@
 _Last updated: 2026-06-15 (reconciled stale table names: `step5_agent_log` → `log_agent`. Faithful mirror of live DB; semantic redesign deferred to a later pass.)_
 _Prior: 2026-06-11 — added Gate 7 (FIDELITY, the port-fidelity bridge to deployment)._
 
+> ## ⚠️ Protocol 3.2 in transition — read this first
+> Full design + rationale: [docs/specs/2026-06-15-research-protocol-3.2-generic-gating.md](../specs/2026-06-15-research-protocol-3.2-generic-gating.md).
+> **One pipeline; an idea's `idea_kind` picks the gate variant.** Tag every idea
+> (`strategy` / `primitive` / `overlay` / `classifier`) + `output_type`
+> (`pnl_stream` / `classifier_score` / `primitive_output`). `idea_cli.py next`
+> surfaces the applicable gates + the resolved significance test — **read it, don't
+> recall the ladder.**
+>
+> | 3.2 change | Status |
+> |---|---|
+> | idea-kind branching — primitives skip Gates 3–5; applicability map | **ACTIVE** (code: `protocol.GATE_APPLICABILITY`) |
+> | significance test resolved from `output_type` (not chosen) | **ACTIVE** (code: `protocol.significance_test_for`, shown by `next`) |
+> | Gate 0 concept/mechanism-first | **ACTIVE** (doc-enforced — see Gate 0) |
+> | Gate 3 tests the *conditioned* rule; base-symmetric = diagnostic, not kill | **ACTIVE** (doc-enforced — see Gate 3) |
+> | Gate 4 = optional overlay; collapses into Gate 5 if none | **ACTIVE** (applicability) |
+> | Gate 2 generic 3-category checker (validity/non-degeneracy/causal-cleanliness) | **PENDING task 82** — Markov-4 below still the live `classifier` check |
+> | `pass_gate(5)` validates logged metric matches resolved test | **PENDING task 80** |
+> | Gate 5 QuantStats tearsheet + pre-committed metrics | **PENDING task 83** |
+> | Gate 1 conditioning/management spec fields | **PENDING task 81** |
+>
+> Where a gate section below still reads "3.1", the **ACTIVE** rows above override it
+> until the full prose rewrite (task 84).
+
 ---
 
 ## Goal Statement Requirement
@@ -115,7 +138,8 @@ strategy_log.log_change(idea_id, "spec-birth", "CREATED", component="entry",
 - For HMM-001 this is the 5%/20-day Markov chain: label states by the fixed 5% threshold, count transitions into a 3×3 matrix
 - The sophisticated model (HMM, etc.) is NOT built here — it lives at Gate 4. The 5% threshold is fixed; Gate 4 is where it gets cross-examined
 - Run it on real XAUUSD data
-- Pass 4 objective sanity checks (defined below) — no human visual confirmation
+- Pass the sanity checks — **[3.2]** for a `classifier` idea this is the 4 Markov checks below; for `strategy` / `primitive` / `overlay` it is the 3 generic categories (validity · non-degeneracy · causal-cleanliness) per the spec. The Markov-4 are NOT universal. Generic checker = task 82 (until then, apply the 3 categories by hand).
+- **[3.2]** Trader's-eye is **per-idea optional** supplementary evidence, not a banned input.
 - Chart is generated as supplementary evidence, not the gating criterion
 
 **Pass looks like (all 4 must pass):**
@@ -156,9 +180,15 @@ _The HMM-specific checks (EM convergence, volatility separation, fixed-persisten
 - Net edge logged separately (cost_adjusted=1)
 - Both numbers in `step4_results`
 
+**[3.2] Test the *conditioned* rule, not a context-stripped strawman.** The Gate-1
+spec declares the idea's conditioning (the mechanism-justified context it trades);
+Gate 3 measures *that*. The bare symmetric base rule is a **diagnostic**, not the
+kill trigger — a flat base with the conditioning declared at Gate 0 is **one
+FALSIFIED hypothesis**, not a death. Conditioning must be born at Gate 0 (not fitted
+after the base failed).
+
 **Blocked / Kill looks like:**
-- Raw edge is negative or t-stat < 1.0 → the signal does not exist even before costs
-- Kill the idea here. Do not proceed.
+- The **conditioned** rule's raw edge is negative or t-stat < 1.0 → signal absent even before costs → **one FALSIFIED hypothesis** (reframe/variant). **[3.2]** Kill needs **≥2 FALSIFIED** (rule 8b, code-enforced) — do **not** kill on the base rule alone.
 
 **DB log:**
 - `step4_results` — two rows per metric: cost_adjusted=0 (raw) and cost_adjusted=1 (net)
