@@ -42,6 +42,16 @@ HEADERS = {
 #   source   -> 'arxiv' | 'ssrn'
 #   url      -> abstract/landing URL (PDF URL is derived per source)
 MANIFEST = [
+    # B2B-001 Gate 0 — Sigma B2B strategy validation prior-art (call_id=69)
+    dict(family="b2b", source="frbny",
+         url="https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr125.pdf",
+         filename="osler_2003_currency_orders_exchange_rate.pdf"),
+    dict(family="b2b", source="arxiv",
+         url="https://arxiv.org/abs/2101.07410",
+         filename="chung_2021_support_resistance_levels.pdf"),
+    dict(family="b2b", source="ssrn",
+         url="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6592020",
+         filename="costa_2026_illusion_of_breakouts.pdf"),
     dict(family="brk", source="arxiv",
          url="https://arxiv.org/abs/2511.08571",
          filename="singha_2025_forecast_to_fill_gold.pdf"),
