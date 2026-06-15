@@ -1,5 +1,6 @@
 # Baysix Research Protocol
-_Last updated: 2026-06-11 (added Gate 7 — FIDELITY, the port-fidelity bridge to deployment)_
+_Last updated: 2026-06-15 (reconciled stale table names: `step5_agent_log` → `log_agent`. Faithful mirror of live DB; semantic redesign deferred to a later pass.)_
+_Prior: 2026-06-11 — added Gate 7 (FIDELITY, the port-fidelity bridge to deployment)._
 
 ---
 
@@ -60,7 +61,7 @@ An idea can be `killed` at any gate. The kill reason must be logged.
 **DB log:**
 - `step2_papers` — one row per paper, dissected=1 with all fields filled
 - `step3_gates` — gate_number=0, status=passed, gate_answer = summary of what working correctly looks like
-- `step5_agent_log` — DISSECT gear entry per paper
+- `log_agent` — DISSECT gear entry per paper
 
 ---
 
@@ -296,11 +297,11 @@ _The HMM-specific checks (EM convergence, volatility separation, fixed-persisten
 
 When a QR agent (GENERATE / DISSECT / VALIDATE gear) is called:
 
-1. Before calling: read `step1_ideas` and `step5_agent_log` for this idea — know what has already been done
+1. Before calling: read `step1_ideas` and `log_agent` for this idea — know what has already been done
 2. After every call: write to DB before responding to Syafiq. No exceptions.
-3. DISSECT gear → update `step2_papers` (dissected=1, fill all fields) + `step5_agent_log`
-4. VALIDATE gear → write `step4_results` + `step5_agent_log`
-5. GENERATE gear → write `step1_ideas` (new idea row) + `step5_agent_log`
+3. DISSECT gear → update `step2_papers` (dissected=1, fill all fields) + `log_agent`
+4. VALIDATE gear → write `step4_results` + `log_agent`
+5. GENERATE gear → write `step1_ideas` (new idea row) + `log_agent`
 6. Always state which model was used: "QR agent ran on Sonnet/Opus"
 7. Default model: Sonnet for all gears. Opus only when Syafiq explicitly says "use Opus"
 
