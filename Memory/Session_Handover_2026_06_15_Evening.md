@@ -15,3 +15,6 @@
 
 ## Blockers
 None hard. Costa PDF needs manual SSRN download before its dissect (task 101).
+
+## Notes
+- TDA files moved to [research/papers/tda/](research/papers/tda/) (were briefly under b2b/). pid27 DB `local_path` still points at the old papers/ root path — stale but harmless (TDA-001 parked, dissect already logged; no sanctioned update_paper in code layer, raw-sqlite3 blocked by protocol_guard).
