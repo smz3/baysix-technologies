@@ -11,7 +11,7 @@ CHECK / UNIQUE / FK constraints below are the **real DB-level constraints** read
 ## Table groups
 
 ```
-PIPELINE CORE      step1_ideas · step2_papers · step3_gates · step4_results
+PIPELINE CORE      step1_ideas · step2_papers · step3_gates · step4_results · trial_family
 LOGS               log_agent · log_strategy · log_tasks
 GATE-7 FIDELITY    tester_runs · tester_trades
 ```
@@ -99,8 +99,11 @@ All quantitative output. Required-field guard in `pipeline.log_result` (git_sha,
 | cost_adjusted | INTEGER | NOT NULL DEFAULT 0, **CHECK(cost_adjusted IN (0,1))** (0=raw, 1=net) |
 | period | TEXT | **CHECK(period IN ('per_trade','daily','annualised'))**. observed: per_trade, daily |
 | n_obs | INTEGER | observation count (required by code layer) |
-| n_trials | INTEGER | for PSR / deflated Sharpe |
-| trial_family_id | TEXT | group of trials compared together |
+| n_trials | INTEGER | for PSR / deflated Sharpe (= `trial_family.n_configs`) |
+| trial_family_id | TEXT | FK-ish → `trial_family.family_id`; the sweep this config belongs to |
+| config_hash | TEXT | identifies this swept config (migration 028) — links row to its family / names the winner |
+| cost_bps | REAL | measured cost in bps — AQR measure-don't-model (migration 028) |
+| cost_basis | TEXT | 'measured' / 'modeled' — discipline flag (migration 028; enforced in code layer) |
 | instrument | TEXT | NOT NULL DEFAULT 'XAUUSD' |
 | data_start | DATE | |
 | data_end | DATE | |
@@ -111,6 +114,24 @@ All quantitative output. Required-field guard in `pipeline.log_result` (git_sha,
 | code_path | TEXT | script that ran this |
 | notes | TEXT | |
 | logged_at | DATETIME | NOT NULL |
+
+---
+
+### trial_family
+The **N_trials ledger** (migration 028, task 96 / Protocol 3.3). One row per *selection decision*: when a sweep compares N configs to pick a winner, this records N and the dispersion of their Sharpes so Gate 5 can compute a **true** Deflated Sharpe (without it, DSR silently degrades to PSR-vs-0). **Scope is PER-IDEA** — one family per sweep, never pooled across strategies. The per-config Sharpes live as `step4_results` rows sharing the `trial_family_id`; `var_sr` caches their variance.
+
+| Column | Type | Constraints / Note |
+|--------|------|--------------------|
+| family_id | TEXT | **PK** (e.g. 'orb001_stop_grid_2026-06-15') |
+| idea_id | TEXT | NOT NULL, FK → step1_ideas |
+| description | TEXT | what was swept |
+| n_configs | INTEGER | NOT NULL DEFAULT 0 — **N** (configs compared) |
+| var_sr | REAL | **V[SR_n]** — variance of per-period Sharpe across the N configs |
+| selected_config_hash | TEXT | the winner fed forward (joins `step4_results.config_hash`) |
+| data_start | DATE | |
+| data_end | DATE | |
+| created_at | DATETIME | NOT NULL |
+| updated_at | DATETIME | NOT NULL |
 
 ---
 

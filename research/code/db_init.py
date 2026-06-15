@@ -88,7 +88,10 @@ def init():
             period          TEXT CHECK(period IN ('per_trade','daily','annualised')),
             n_obs           INTEGER,
             n_trials        INTEGER,
-            trial_family_id TEXT,
+            trial_family_id TEXT,                   -- FK-ish to trial_family (migration 028)
+            config_hash     TEXT,                   -- identifies a swept config (migration 028)
+            cost_bps        REAL,                   -- measured cost in bps (AQR, migration 028)
+            cost_basis      TEXT,                   -- 'measured'|'modeled' (migration 028)
             instrument      TEXT NOT NULL DEFAULT 'XAUUSD',
             data_start      DATE,
             data_end        DATE,
@@ -100,6 +103,24 @@ def init():
             notes           TEXT,
             logged_at       DATETIME NOT NULL
         );
+
+        -- N_trials ledger (migration 028, task 96). One row per selection
+        -- decision: n_configs = N, var_sr = V[SR_n] for the deflated Sharpe.
+        -- Scope is PER-IDEA — never pooled across strategies.
+        CREATE TABLE IF NOT EXISTS trial_family (
+            family_id            TEXT PRIMARY KEY,
+            idea_id              TEXT NOT NULL REFERENCES step1_ideas(idea_id),
+            description          TEXT,
+            n_configs            INTEGER NOT NULL DEFAULT 0,
+            var_sr               REAL,
+            selected_config_hash TEXT,
+            data_start           DATE,
+            data_end             DATE,
+            created_at           DATETIME NOT NULL,
+            updated_at           DATETIME NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_trial_family_idea
+            ON trial_family(idea_id, created_at);
 
         CREATE TABLE IF NOT EXISTS log_agent (
             call_id        INTEGER PRIMARY KEY AUTOINCREMENT,

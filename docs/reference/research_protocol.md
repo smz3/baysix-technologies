@@ -1,6 +1,23 @@
 # Baysix Research Protocol
-_Last updated: 2026-06-15 — **Protocol 3.2 fully shipped** (tasks 78–84): idea-kind branching, generic Gate 2, conditioned Gate 3, output-type-resolved Gate 5, code-enforced metric wall. Prose below reconciled to 3.2._
+_Last updated: 2026-06-15 — **Protocol 3.3** (task 96): infra consolidation of López de Prado + Carver + AQR — true DSR via an N_trials ledger, CSCV/PBO Gate 5b, speed-limit cost gate, measure-don't-model costs, purged/embargoed dev-CV, a vol-target sizing layer, and the craftsmanship-ADR lock. Migration 028 + the consolidation ADR below._
+_Prior: 2026-06-15 — **Protocol 3.2** (tasks 78–84): idea-kind branching, generic Gate 2, conditioned Gate 3, output-type-resolved Gate 5, code-enforced metric wall._
 _Prior: 2026-06-11 — added Gate 7 (FIDELITY, the port-fidelity bridge to deployment)._
+
+> ## Protocol 3.3 — backtest-infra consolidation (LdP + Carver + AQR)
+> Full design + rationale: [docs/specs/2026-06-15-research-infra-consolidation-ldp-carver-aqr.md](../specs/2026-06-15-research-infra-consolidation-ldp-carver-aqr.md).
+> Wisdom from three authorities, locked in one migration (028) + one protocol rev:
+>
+> | 3.3 change | Where |
+> |---|---|
+> | True DSR: `n_configs (=N)` + `var_sr (=V[SR_n])` feed `dsr()`; report states PSR vs DSR | `trial_family` ledger (migration 028); Gate 5 reader (task 87) |
+> | CSCV / PBO for any multi-config idea (losers' PnL retained) | Gate 5b (task 88) |
+> | Speed-limit cost gate `cost/trade × turnover ≤ SR_precost/3` (Carver) | Gate 3 (task: cost layer) |
+> | Measure-don't-model costs → `cost_bps` + `cost_basis='measured'` (AQR) | Gate 3; `step4_results` (migration 028) |
+> | Purged + embargoed K-fold dev-CV (`h≈0.01T`) + triple-barrier event labels | dev-CV (tasks 89/90) |
+> | Vol-target sizing layer: forecast scalar (10/median\|raw\|, ±20) → ex-ante EWMA vol → inverse-vol target | Gate 4→5 (Carver/AQR; config in `log_strategy.params_json`) |
+> | Craftsmanship-ADR lock: pre-commit choices (AQR) AND count each as a trial (LdP) | governance + the ledger |
+>
+> **Trial scope is PER-IDEA** — one family per sweep, never pooled across strategies.
 
 > ## Protocol 3.2 — one pipeline, idea-kind picks the variant
 > Full design + rationale: [docs/specs/2026-06-15-research-protocol-3.2-generic-gating.md](../specs/2026-06-15-research-protocol-3.2-generic-gating.md).
@@ -221,6 +238,8 @@ where the sophisticated model is built — not on the rule-based baseline here._
 
 **Realistic fills mandatory from Gate 3.** All path-dependent backtests (entries, exits, stops) MUST fill via [research/code/fills.py](../research/code/fills.py) (venue-aware bid/ask, MT5-faithful) — never an idealized mid+tolerance model. The retired idealized path (`anchor_oos._simulate_day`) is deprecated; do not reuse it. Classifier ideas that gate on AUC/IC (e.g. HMM-001) never simulate fills and are exempt. Guarded by `research/tests/test_fills.py::test_may2024_orb_parity_matches_fork_a`.
 
+**Speed-limit cost gate (3.3, Carver).** Before a signal earns IS spend, budget its turnover: reject if `cost_per_trade(in SR units) × turnover > SR_precost / 3`. High-turnover signals that cannot clear their own cost are killed here — on XAUUSD (JM spread ~$0.35–0.50) this is binding. **Measure-don't-model costs (3.3, AQR):** cost = realized fill slippage (signal-bar-close vs actual fill) + B-book half-spread, logged to `step4_results.cost_bps` with `cost_basis='measured'`. At $50 we are spread-dominated; the market-impact term ≈ 0 — never borrow an institutional impact model.
+
 **Pass looks like:**
 - Raw edge is positive and t-stat > 1.0 (signal exists, even if weak)
 - Net edge logged separately (cost_adjusted=1)
@@ -307,6 +326,10 @@ annualised), kurtosis term `(kurt − 1)/4` with Pearson kurtosis.
 - Compute the resolved test (PSR/DSR for pnl, IC-t / AUC-CI for classifier); if multiple parameter sets were tested, the **deflated** Sharpe (DSR) applies — log `n_trials` + `trial_family_id`.
 - Net edge must be positive. If not, kill here.
 
+**N_trials ledger — true DSR (3.3, HARD).** "DSR" is **PSR until a trial family is supplied** — `gate5_report.dsr()` degrades to `psr(sr_benchmark=0)` when `var_sr`/`n_trials` are absent, applying *zero* penalty for the number of configs tried. Every swept config MUST log a `step4_results` row under one `trial_family_id`; the [`trial_family`](research_db_schema.md) ledger records `n_configs (=N)` + `var_sr (=V[SR_n])` which feed the deflation. **Scope is PER-IDEA** — one family per sweep, never pooled across strategies (re-running the *same* idea on the *same* IS data does accrue to its family). The Gate-5 report must state which test ran (**PSR if N<2, DSR if N≥2**). A sweep that reaches Gate 5 with an empty family does not pass.
+
+**Gate 5b — PBO / CSCV (3.3).** For any multi-config idea, run Combinatorially-Symmetric Cross-Validation over the retained config PnLs (**losers kept**) → probability of backtest overfitting. A point-Sharpe cannot see what CSCV measures (worked case: PSR 2.83 passed a rule with PBO = 55%). High PBO blocks promotion even if DSR clears.
+
 **Pass looks like:**
 - All pre-committed bars met (e.g. PSR ≥ 0.95, sharpe_t > 2.0, net_mean > 0), and the **matching** metric_key is logged so `pass_gate(5)` clears.
 
@@ -387,6 +410,8 @@ annualised), kurtosis term `(kurt − 1)/4` with Pearson kurtosis.
 6. **OOS is one shot.** Once OOS data is touched, the idea is either graduated or killed. No re-optimisation after seeing OOS.
 7. **Simple before complex.** If the simple version (Gate 2) does not make intuitive sense, do not build the complex version (Gate 4). Fix the foundation first.
 8. **Discuss before build.** "Discuss / dissect / dig into" = talk only. No files, no code until explicit build order.
+9. **Every swept config is logged (3.3).** A sweep selects a winner by comparing N alternatives — all N (winners *and* losers) log a `step4_results` row under one `trial_family_id`. No ledger, no honest DSR, no CSCV. Trial scope is per-idea.
+10. **No grid-search SL/TP (3.3).** Stops/targets are not chosen by backtest grid-search (it manufactured the ORB edge). Set them by theory (O-U Monte-Carlo per regime) or declare them fixed; a swept stop grid counts as trials in the ledger like any other config.
 
 ---
 
