@@ -1,6 +1,6 @@
 # research.db — Schema (mirror of live DB)
 
-_Last updated: 2026-06-15 — regenerated from live `PRAGMA` to match the database exactly. Faithful mirror; **3.2 keystone landed** (migration 026: `step1_ideas.idea_kind` + `output_type`). The protocol-doc rewrite to match 3.2 gate semantics is still pending (task 84)._
+_Last updated: 2026-06-15 — regenerated from live `PRAGMA` to match the database exactly. Faithful mirror; **Protocol 3.2 fully landed** (migration 026: `step1_ideas.idea_kind` + `output_type`; migration 027: `log_strategy.component` += `conditioning`/`management`). Gate semantics rewritten in [research_protocol.md](research_protocol.md) (task 84)._
 
 The DB has **9 tables** + **4 views**. All writes go through [research/code/](../../research/code/) (`pipeline.py`, `agent_log.py`, `strategy_log.py`, `backlog.py`, `tester.py`) — never raw `sqlite3` (CLAUDE.md rule 10, hook-enforced).
 
@@ -143,7 +143,7 @@ Strategy-evolution lineage (birth → live config). Read current setup via `stra
 | log_id | INTEGER | **PK** AUTOINCREMENT |
 | idea_id | TEXT | NOT NULL, FK → step1_ideas |
 | event | TEXT | NOT NULL — free-text event label |
-| component | TEXT | **CHECK(component IN ('exit','anchor','sizing','entry','filter','config') OR NULL)** |
+| component | TEXT | **CHECK(component IN ('exit','anchor','sizing','entry','filter','config','conditioning','management') OR NULL)**. Migration 027 added `conditioning` (regime/state giving the conditional edge — Protocol 3.2 Gate 1 spec-birth) + `management` (trail / partial / breakeven / time-stop). |
 | from_value | TEXT | |
 | to_value | TEXT | |
 | verdict | TEXT | NOT NULL, **CHECK(verdict IN ('CREATED','VALIDATED','PROPOSED','ADOPTED','REJECTED','FALSIFIED','SUPERSEDED'))** |

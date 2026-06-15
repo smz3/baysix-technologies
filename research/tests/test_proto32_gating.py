@@ -114,6 +114,16 @@ def test_classifier_gate5_passes_with_auc(tmp_db):
     pipeline.pass_gate("C-001", 5, gate_answer="AUC CI clears")
 
 
+def test_protocol_doc_gate_questions_match_code():
+    """Single-source guard (task 84): the gate questions in research_protocol.md must
+    mirror pipeline.GATE_QUESTIONS verbatim — code is canonical, the doc is the bug."""
+    from pathlib import Path
+    doc = (Path(__file__).resolve().parents[2]
+           / "docs" / "reference" / "research_protocol.md").read_text(encoding="utf-8")
+    for n, q in pipeline.GATE_QUESTIONS.items():
+        assert q in doc, f"Gate {n} question drifted from code: {q!r} not in protocol doc"
+
+
 def test_untagged_gate5_not_enforced(tmp_db):
     _add("U-001")  # no idea_kind / output_type -> 3.1 back-compat
     _walk_to_gate5("U-001")
