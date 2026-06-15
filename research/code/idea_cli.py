@@ -102,7 +102,10 @@ def cmd_next(idea_id: str) -> int:
         return 1
     _hdr(f"PROTOCOL {idea_id}")
     print(f"  status    : {d['status']}")
+    print(f"  idea_kind : {d['idea_kind']}")
     print(f"  gates     : {d['gates']}   (P=passed o=open X=blocked K=killed -=none)")
+    print(f"  applies   : {d['applies']}   (gates this idea_kind must clear)")
+    print(f"  sig_test  : {d['sig_test']}   (Gate-5 test, resolved from output_type)")
     print(f"  falsified : {d['falsified']}")
     print(f"\n  NEXT  -> {d['next']}")
     print(f"  WHY   -> {d['why']}")

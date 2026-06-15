@@ -29,6 +29,12 @@ def init():
             kill_gate      INTEGER,
             kill_reason    TEXT,
             killed_at      DATETIME,
+            -- Protocol 3.2 declared metadata (migration 026): idea_kind picks the
+            -- gate variant, output_type picks the mandated Gate-5 significance test.
+            idea_kind      TEXT CHECK (idea_kind IS NULL OR idea_kind IN
+                           ('strategy','primitive','overlay','classifier')),
+            output_type    TEXT CHECK (output_type IS NULL OR output_type IN
+                           ('pnl_stream','classifier_score','primitive_output')),
             created_at     DATETIME NOT NULL,
             updated_at     DATETIME NOT NULL
         );
@@ -55,7 +61,7 @@ def init():
         CREATE TABLE IF NOT EXISTS step3_gates (
             gate_id       INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id       TEXT NOT NULL REFERENCES step1_ideas(idea_id),
-            gate_number   INTEGER NOT NULL CHECK(gate_number BETWEEN 0 AND 6),
+            gate_number   INTEGER NOT NULL CHECK(gate_number BETWEEN 0 AND 7),
             attempt       INTEGER NOT NULL DEFAULT 1,
             gate_question TEXT,
             gate_answer   TEXT,

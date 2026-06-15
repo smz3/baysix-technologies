@@ -50,6 +50,16 @@ def _now() -> str:
     return datetime.now(MYT).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _protocol():
+    """Lazy handle on the protocol module (it imports pipeline at load, so a
+    top-level import here would be circular). Dual path: package vs script."""
+    try:                                # package import (pytest: research.code.*)
+        from research.code import protocol
+    except ImportError:                 # script import (own dir on sys.path)
+        import protocol
+    return protocol
+
+
 # ── Idea functions ─────────────────────────────────────────────────────────────
 
 def add_idea(
@@ -85,6 +95,7 @@ def open_gate(
     if gate_number not in range(8):
         raise ValueError(f"gate_number must be 0–7, got {gate_number}")
 
+    _check_gate_applicable(idea_id, gate_number)
     _check_previous_gate_passed(idea_id, gate_number)
 
     now = _now()
@@ -136,6 +147,27 @@ def _gate7_has_pass_evidence(idea_id: str) -> bool:
     return row is not None
 
 
+def _gate5_has_matching_sigtest(idea_id: str) -> tuple[bool, str]:
+    """Protocol 3.2: a Gate-5 pass needs a step4_results row at gate 5 whose
+    metric_key matches the significance test mandated by the idea's output_type
+    (pnl_stream->PSR/DSR, classifier_score->IC-t/AUC). The test is resolved in
+    `protocol`, never chosen here. Returns (ok, required_label). An UNTAGGED idea
+    (output_type NULL) is not enforced -> (True, ...) for 3.1 back-compat."""
+    protocol = _protocol()  # lazy: avoid the protocol<->pipeline import cycle at load
+    idea = get_idea(idea_id)
+    output_type = idea.get("output_type")
+    required = protocol.significance_test_for(idea.get("idea_kind"), output_type)
+    if not output_type:
+        return True, required  # untagged -> no enforcement (back-compat)
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT metric_key FROM step4_results WHERE idea_id=? AND gate_number=5",
+            (idea_id,),
+        ).fetchall()
+    ok = any(protocol.metric_key_matches_sigtest(output_type, r["metric_key"]) for r in rows)
+    return ok, required
+
+
 def pass_gate(
     idea_id: str,
     gate_number: int,
@@ -146,6 +178,11 @@ def pass_gate(
 ) -> None:
     """Mark a gate as passed.
 
+    Gate 5 guardrail (Protocol 3.2): refuses unless a step4_results row at gate 5
+    has a metric_key matching the significance test resolved from the idea's
+    output_type (pnl_stream->psr/dsr, classifier_score->ic_t/auc). Untagged ideas
+    are exempt (back-compat). allow_incomplete=True needs a waiver in gate_answer.
+
     Gate 6 guardrail: refuses unless walk-forward + Monte Carlo + OOS results are
     all logged for the idea (protocol L204-226). Pass allow_incomplete=True ONLY
     with a logged waiver in gate_answer.
@@ -154,6 +191,16 @@ def pass_gate(
     fidelity_verdict='pass' — the port must be diffed against the research backtest
     (tester.log_fidelity_diff), not asserted. allow_incomplete=True needs a waiver.
     """
+    if gate_number == 5 and not allow_incomplete:
+        ok, required = _gate5_has_matching_sigtest(idea_id)
+        if not ok:
+            raise ValueError(
+                f"Cannot pass Gate 5 for {idea_id}: no step4_results row at gate 5 whose "
+                f"metric_key matches the mandated significance test ({required}). "
+                f"Protocol 3.2 resolves the test from output_type — log the matching metric "
+                f"(pnl_stream->psr/dsr, classifier_score->ic_t/auc) first, or pass "
+                f"allow_incomplete=True with a waiver reason in gate_answer."
+            )
     if gate_number == 6 and not allow_incomplete:
         missing = _gate6_missing_stages(idea_id)
         if missing:
@@ -414,21 +461,40 @@ def update_idea(idea_id: str, **fields) -> None:
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
+def _check_gate_applicable(idea_id: str, gate_number: int) -> None:
+    """Protocol 3.2: refuse to open a gate that does not apply to the idea_kind
+    (e.g. Gate 3 on a `primitive`). Untagged ideas get the full ladder (back-compat).
+    docs/specs/2026-06-15-research-protocol-3.2-generic-gating.md."""
+    protocol = _protocol()  # lazy: avoid the protocol<->pipeline import cycle at load
+    kind = get_idea(idea_id).get("idea_kind")
+    gates = protocol.applicable_gates(kind)
+    if gate_number not in gates:
+        raise ValueError(
+            f"Cannot open gate {gate_number}: not applicable to idea_kind={kind!r} "
+            f"(applicable gates: {sorted(gates)}). Protocol 3.2 legal skip."
+        )
+
+
 def _check_previous_gate_passed(idea_id: str, gate_number: int) -> None:
-    """Raise if gate N-1 is not passed (skip check for gate 0)."""
-    if gate_number == 0:
-        return
+    """Raise if the previous APPLICABLE gate is not passed. Protocol 3.2: an
+    idea_kind may legally skip gates (primitive skips 3-6), so the predecessor is
+    the highest applicable gate below this one, not literally N-1."""
+    protocol = _protocol()  # lazy: avoid the protocol<->pipeline import cycle at load
+    gates = protocol.applicable_gates(get_idea(idea_id).get("idea_kind"))
+    prev = max((g for g in gates if g < gate_number), default=None)
+    if prev is None:
+        return  # this is the first applicable gate (normally gate 0)
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT status FROM step3_gates
             WHERE idea_id=? AND gate_number=?
             ORDER BY attempt DESC LIMIT 1
-        """, (idea_id, gate_number - 1))
+        """, (idea_id, prev))
         row = cur.fetchone()
         if not row or row["status"] != "passed":
             raise ValueError(
-                f"Cannot open gate {gate_number}: gate {gate_number - 1} is not passed"
+                f"Cannot open gate {gate_number}: previous applicable gate {prev} is not passed"
             )
 
 

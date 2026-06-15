@@ -23,7 +23,10 @@ This module holds workflow logic ONLY; all DB access is via pipeline getters.
 """
 from __future__ import annotations
 
-import pipeline
+try:                                    # package import (pytest: research.code.*)
+    from research.code import pipeline
+except ImportError:                     # script import (own dir on sys.path)
+    import pipeline
 
 # Gates whose pass requires a LOGGED metric result, not a free assertion.
 EVIDENCE_GATES = {3: "t>1.0 raw+net", 5: "t>2.0 net", 6: "OOS / walk-forward retention"}
@@ -46,6 +49,17 @@ SIGNIFICANCE_TEST = {
     "primitive_output": "correctness (oracle / parity)",
 }
 
+# Which step4_results metric_key family PROVES the mandated Gate-5 test. Single
+# source of truth alongside SIGNIFICANCE_TEST — pipeline.pass_gate(5) validates a
+# logged metric_key against this so a pnl_stream can't pass Gate 5 on an AUC row
+# (3.2 enforcement chain step 4). Substring match, case-insensitive (so 'psr_net'
+# or 'regime_change_auc_hmm' count). primitive_output -> Gate 5 inapplicable.
+SIGTEST_METRIC_KEYS = {
+    "pnl_stream":       ("psr", "dsr", "deflated_sharpe"),
+    "classifier_score": ("ic_t", "auc"),
+    "primitive_output": (),
+}
+
 
 def significance_test_for(idea_kind: str | None, output_type: str | None) -> str:
     """The mandated Gate-5 significance test for an idea, resolved from output_type.
@@ -53,6 +67,16 @@ def significance_test_for(idea_kind: str | None, output_type: str | None) -> str
     if not output_type:
         return "UNDECLARED — set output_type at Gate 1 (pnl_stream/classifier_score/primitive_output)"
     return SIGNIFICANCE_TEST.get(output_type, f"UNKNOWN output_type {output_type!r}")
+
+
+def metric_key_matches_sigtest(output_type: str | None, metric_key: str | None) -> bool:
+    """True if a step4_results metric_key satisfies the Gate-5 test mandated by
+    output_type. Resolved from SIGTEST_METRIC_KEYS — never an agent's free call."""
+    needles = SIGTEST_METRIC_KEYS.get(output_type or "")
+    if not needles:  # undeclared / primitive_output -> nothing satisfies it here
+        return False
+    mk = (metric_key or "").lower()
+    return any(n in mk for n in needles)
 
 
 def applicable_gates(idea_kind: str | None) -> set[int]:
