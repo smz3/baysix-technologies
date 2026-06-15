@@ -33,6 +33,16 @@ from scipy import stats
 _EULER = 0.5772156649015329  # Euler–Mascheroni, for the DSR expected-max-SR deflation
 
 
+def _family_deflation(family_id: str) -> tuple:
+    """(n_trials, var_sr) from the trial_family ledger. Lazy import keeps this
+    module DB-free for pure-math use (ADR 2026-06-15 §52)."""
+    try:
+        from research.code import trial_family
+    except ImportError:
+        import trial_family
+    return trial_family.deflation_inputs(family_id)
+
+
 # ── PSR / DSR (per-period convention) ───────────────────────────────────────────
 
 def _clean(returns) -> np.ndarray:
@@ -127,6 +137,8 @@ class Gate5Report:
         self.bars: dict[str, float] = {}
         self.metrics: dict[str, float] = {}
         self._evaluated = False
+        self._n_trials: int | None = None
+        self._var_sr: float | None = None
 
     def commit_bars(self, **bars) -> "Gate5Report":
         """Declare numeric pass thresholds BEFORE looking at results. 3-4 expected.
@@ -138,10 +150,18 @@ class Gate5Report:
         self.bars = {k: float(v) for k, v in bars.items()}
         return self
 
-    def evaluate_pnl(self, returns, var_sr: float | None = None, n_trials: int | None = None) -> dict:
-        """Compute the pnl_stream metric panel and score against committed bars."""
+    def evaluate_pnl(self, returns, var_sr: float | None = None,
+                     n_trials: int | None = None, family_id: str | None = None) -> dict:
+        """Compute the pnl_stream metric panel and score against committed bars.
+
+        Deflation: pass var_sr + n_trials directly, OR pass family_id to auto-feed
+        them from the trial_family ledger (task 87). DSR is only computed when
+        n_trials >= 2; below that it stays PSR and report() says so — no silent
+        degradation (ADR 2026-06-15 §52)."""
         if self.output_type != "pnl_stream":
             raise ValueError(f"evaluate_pnl is for pnl_stream, not {self.output_type!r}")
+        if family_id is not None and (var_sr is None or n_trials is None):
+            n_trials, var_sr = _family_deflation(family_id)
         r = _clean(returns)
         self.metrics = {
             "psr": psr(r),
@@ -150,7 +170,10 @@ class Gate5Report:
             "net_mean": float(r.mean()),
             "n_obs": float(len(r)),
         }
-        if var_sr is not None and n_trials is not None:
+        self._n_trials = n_trials
+        self._var_sr = var_sr
+        if var_sr is not None and n_trials is not None and n_trials >= 2:
+            self.metrics["sr_benchmark"] = deflated_sr_benchmark(var_sr, n_trials)
             self.metrics["dsr"] = dsr(r, var_sr, n_trials)
         self._evaluated = True
         return self.metrics
@@ -196,12 +219,25 @@ class Gate5Report:
             lines.append("   (NOT evaluated — commit bars then evaluate before viewing)")
             return "\n".join(lines)
         lines.append("   metrics: " + ", ".join(f"{k}={v:.4g}" for k, v in self.metrics.items()))
+        if self.output_type == "pnl_stream":
+            lines.append("   " + self._deflation_label())
         lines.append("   bars (metric >= threshold):")
         for name, thr, actual, ok in self._scored():
             lines.append(f"     [{'PASS' if ok else 'FAIL'}] {name} >= {thr:.4g}  (got {actual:.4g})")
         lines.append("   -> " + ("PASS — log the matching metric, then pass_gate(5)"
                                  if self.verdict() else "FAIL — do NOT pass Gate 5"))
         return "\n".join(lines)
+
+    def _deflation_label(self) -> str:
+        """Honest statement of which test actually ran: DSR needs N>=2 configs in
+        the trial family, else it degrades to PSR (no trial deflation)."""
+        nt = self._n_trials
+        if nt is not None and nt >= 2 and self._var_sr:
+            sr_star = self.metrics.get("sr_benchmark", float("nan"))
+            return (f"deflation: N_trials={int(nt)}, V[SR]={self._var_sr:.4g} "
+                    f"-> DSR ran (deflated benchmark SR*={sr_star:.4g})")
+        shown = 0 if nt is None else int(nt)
+        return f"deflation: N_trials={shown} (<2) -> PSR only, NO trial deflation applied"
 
     def tearsheet(self, returns, output_html: str, title: str | None = None) -> str:
         """Render the QuantStats HTML tearsheet — only AFTER evaluate (pnl_stream).

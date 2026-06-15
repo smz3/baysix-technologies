@@ -341,6 +341,9 @@ def log_result(
     code_path: str,
     n_trials: int = None,
     trial_family_id: str = None,
+    config_hash: str = None,
+    cost_bps: float = None,
+    cost_basis: str = None,
     instrument: str = "XAUUSD",
     parameters: str = None,
     data_hash: str = None,
@@ -369,12 +372,14 @@ def log_result(
             INSERT INTO step4_results
                 (idea_id, gate_number, stage, metric_key, metric_value,
                  cost_adjusted, period, n_obs, n_trials, trial_family_id,
+                 config_hash, cost_bps, cost_basis,
                  instrument, data_start, data_end, parameters,
                  git_sha, data_hash, seed, code_path, notes, logged_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             idea_id, gate_number, stage, metric_key, metric_value,
             cost_adjusted, period, n_obs, n_trials, trial_family_id,
+            config_hash, cost_bps, cost_basis,
             instrument, data_start, data_end, parameters,
             git_sha, data_hash, seed, code_path, notes, now,
         ))
