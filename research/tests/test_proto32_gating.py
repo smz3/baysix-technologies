@@ -15,7 +15,7 @@ import sqlite3
 
 import pytest
 
-from research.code import db_init, pipeline, protocol
+from research.code import db_init, pipeline, protocol, strategy_log
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def tmp_db(tmp_path, monkeypatch):
     db = tmp_path / "research.db"
     monkeypatch.setattr(db_init, "DB_PATH", db)
     monkeypatch.setattr(pipeline, "DB_PATH", db)
+    monkeypatch.setattr(strategy_log, "DB_PATH", db)
     db_init.init()
     return db
 
@@ -125,3 +126,48 @@ def test_gate5_waiver_bypasses(tmp_db):
     _walk_to_gate5("S-004")
     _log5("S-004", "E_R_net_per_trade")
     pipeline.pass_gate("S-004", 5, gate_answer="WAIVER: ...", allow_incomplete=True)
+
+
+# ---- task 81: spec components + driver advisories ----
+
+def test_conditioning_management_are_first_class_components():
+    assert "conditioning" in strategy_log.VALID_COMPONENT
+    assert "management" in strategy_log.VALID_COMPONENT
+    assert "conditioning" in strategy_log.SPEC_COMPONENTS
+    assert "management" in strategy_log.SPEC_COMPONENTS
+
+
+def test_log_change_accepts_conditioning(tmp_db):
+    _add("S-010", kind="strategy", output_type="pnl_stream")
+    log_id = strategy_log.log_change(
+        "S-010", "born", "CREATED", component="conditioning",
+        to_value="trend_up_200d", rationale="mechanism: breakouts persist with HTF trend",
+    )
+    assert log_id
+
+
+def test_advisory_warns_undeclared_output_type(tmp_db):
+    _add("S-011", kind="strategy")  # no output_type
+    _pass("S-011", 0); _pass("S-011", 1)
+    warns = protocol.next_step("S-011")["warnings"]
+    assert any("output_type UNDECLARED" in w for w in warns)
+
+
+def test_advisory_warns_gate3_without_conditioning(tmp_db):
+    _add("S-012", kind="strategy", output_type="pnl_stream")
+    for g in (0, 1, 2):
+        _pass("S-012", g)
+    pipeline.open_gate("S-012", 3, pass_criteria="edge")  # gate 3 reached, no conditioning
+    warns = protocol.next_step("S-012")["warnings"]
+    assert any("no conditioning declared" in w.lower() for w in warns)
+
+
+def test_advisory_silent_once_conditioning_declared(tmp_db):
+    _add("S-013", kind="strategy", output_type="pnl_stream")
+    for g in (0, 1, 2):
+        _pass("S-013", g)
+    strategy_log.log_change("S-013", "born", "CREATED", component="conditioning",
+                            to_value="asia_range_low_vol")
+    pipeline.open_gate("S-013", 3, pass_criteria="edge")
+    warns = protocol.next_step("S-013")["warnings"]
+    assert not any("conditioning" in w.lower() for w in warns)

@@ -150,7 +150,8 @@ def init():
             params_json TEXT,                       -- structured knobs (migration 025)
             CHECK (verdict IN ('CREATED','VALIDATED','PROPOSED','ADOPTED',
                                'REJECTED','FALSIFIED','SUPERSEDED')),
-            CHECK (component IN ('exit','anchor','sizing','entry','filter','config')
+            CHECK (component IN ('exit','anchor','sizing','entry','filter','config',
+                                 'conditioning','management')
                    OR component IS NULL),
             CHECK (decided_by IN ('human','agent'))
         );

@@ -145,6 +145,32 @@ def _compute(idea_id: str, states: dict[int, str], falsified: int,
             "validated end-to-end including Gate 7 fidelity")
 
 
+def _has_conditioning(idea_id: str) -> bool:
+    """True if a conditioning component has been declared in log_strategy. 3.2 wants
+    a `strategy`'s conditional edge declared (mechanism-born) before Gate 3 tests it."""
+    try:                                # package vs script import (mirror pipeline)
+        from research.code import strategy_log
+    except ImportError:
+        import strategy_log
+    return any(r.get("component") == "conditioning" for r in strategy_log.get_lineage(idea_id))
+
+
+def _advisories(idea_id: str, idea: dict, states: dict[int, str], kind: str | None) -> list[str]:
+    """Soft driver warnings (3.2 task 81) — surfaced, not blocking. The hard wall is
+    Gate-5 metric enforcement (task 80); these nudge declaration before you get there."""
+    out: list[str] = []
+    # output_type undeclared -> Gate-5 enforcement is silently skipped (back-compat).
+    if kind in ("strategy", "classifier", "overlay") and not idea.get("output_type"):
+        out.append("output_type UNDECLARED — set it at Gate 1 (pipeline.update_idea); "
+                   "until then the Gate-5 significance-test wall is skipped.")
+    # a strategy that has reached Gate 3 should have declared its conditioning.
+    if kind == "strategy" and states.get(3) is not None and not _has_conditioning(idea_id):
+        out.append("Gate 3 reached with NO conditioning declared — 3.2 tests the "
+                   "CONDITIONED rule. Declare it (strategy_log.log_change component="
+                   "'conditioning') or confirm the edge is genuinely symmetric.")
+    return out
+
+
 def next_step(idea_id: str) -> dict:
     """Compute the single next legal protocol action for an idea from DB state."""
     idea = pipeline.get_idea(idea_id)
@@ -163,6 +189,7 @@ def next_step(idea_id: str) -> dict:
         "applies": " ".join(str(n) for n in sorted(gates)),
         "sig_test": significance_test_for(kind, idea.get("output_type")),
         "falsified": f"{falsified}/2 (kill needs 2)",
+        "warnings": [],
     }
 
     if idea.get("status") == "killed":
@@ -171,4 +198,5 @@ def next_step(idea_id: str) -> dict:
         return out
 
     out["next"], out["why"] = _compute(idea_id, states, falsified, gates)
+    out["warnings"] = _advisories(idea_id, idea, states, kind)
     return out

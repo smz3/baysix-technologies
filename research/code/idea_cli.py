@@ -109,6 +109,8 @@ def cmd_next(idea_id: str) -> int:
     print(f"  falsified : {d['falsified']}")
     print(f"\n  NEXT  -> {d['next']}")
     print(f"  WHY   -> {d['why']}")
+    for w in d.get("warnings", []):
+        print(f"  ⚠️  {w}")
     return 0
 
 

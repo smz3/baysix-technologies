@@ -25,12 +25,18 @@ MYT     = timezone(timedelta(hours=8))
 
 VALID_VERDICT   = ("CREATED", "VALIDATED", "PROPOSED", "ADOPTED",
                    "REJECTED", "FALSIFIED", "SUPERSEDED")
-VALID_COMPONENT = ("exit", "anchor", "sizing", "entry", "filter", "config")
+# Protocol 3.2 (Gate 1 spec-birth) made conditioning + management first-class:
+#   conditioning = the regime/state that gives the CONDITIONAL edge (mechanism-born
+#                  at Gate 0, not fitted); Gate 3 tests the conditioned rule.
+#   management   = trade management (trail / partial / breakeven / time-stop).
+VALID_COMPONENT = ("exit", "anchor", "sizing", "entry", "filter", "config",
+                   "conditioning", "management")
 _LIVE_VERDICTS  = ("VALIDATED", "ADOPTED")
 _DEAD_VERDICTS  = ("REJECTED", "FALSIFIED")
 _PROP_VERDICTS  = ("CREATED", "PROPOSED")
 # the design knobs a spec card describes (config = whole-strategy verdict, not a knob)
-SPEC_COMPONENTS = ("entry", "exit", "sizing", "anchor", "filter")
+SPEC_COMPONENTS = ("entry", "exit", "sizing", "anchor", "filter",
+                   "conditioning", "management")
 
 # A significance cutoff baked into a hypothesis (t>=2, IC>=0.05, Sharpe t>3) turns a
 # Gate-3/5 CONFIRMATION bar into the FRONT gate — exactly how MSM-001 leaked (anchor
@@ -44,7 +50,7 @@ _THRESHOLD_PAT = re.compile(
 
 
 def _warn_threshold_in_anchor(component, to_value):
-    if component in ("anchor", "filter") and to_value and _THRESHOLD_PAT.search(to_value):
+    if component in ("anchor", "filter", "conditioning") and to_value and _THRESHOLD_PAT.search(to_value):
         print(
             f"[strategy_log] ⚠️  WARNING: this {component} embeds a significance "
             f"cutoff — t/IC/Sharpe thresholds belong at Gate 3 (>1.0) / Gate 5 "

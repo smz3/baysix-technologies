@@ -191,6 +191,14 @@ def pass_gate(
     fidelity_verdict='pass' — the port must be diffed against the research backtest
     (tester.log_fidelity_diff), not asserted. allow_incomplete=True needs a waiver.
     """
+    if gate_number == 1:
+        idea = get_idea(idea_id)
+        if idea.get("idea_kind") and not idea.get("output_type"):
+            print(
+                f"[pipeline] ⚠️  {idea_id} passing Gate 1 with output_type UNDECLARED — "
+                f"3.2 spec-birth declares output_type here; the Gate-5 significance-test "
+                f"wall stays OFF until it is set (pipeline.update_idea)."
+            )
     if gate_number == 5 and not allow_incomplete:
         ok, required = _gate5_has_matching_sigtest(idea_id)
         if not ok:
