@@ -29,6 +29,36 @@ import pipeline
 EVIDENCE_GATES = {3: "t>1.0 raw+net", 5: "t>2.0 net", 6: "OOS / walk-forward retention"}
 FIDELITY_GATE = 7
 
+# Protocol 3.2 — idea_kind picks WHICH gates apply (legal skip of vacuous gates).
+# docs/specs/2026-06-15-research-protocol-3.2-generic-gating.md
+# Fallback: an untagged idea (idea_kind NULL) gets the full ladder (3.1 behaviour).
+GATE_APPLICABILITY = {
+    "strategy":   {0, 1, 2, 3, 4, 5, 6, 7},  # 4 collapses into 5 if no overlay
+    "primitive":  {0, 1, 2, 7},              # correctness + port fidelity; no edge/signal gates
+    "overlay":    {0, 1, 2, 4, 5, 6, 7},     # conditional improvement; no standalone baseline (3)
+    "classifier": {0, 1, 2, 3, 4, 5, 6, 7},  # Markov-4 sanity at 2, model at 4
+}
+
+# Significance test is RESOLVED from output_type, never chosen by the agent.
+SIGNIFICANCE_TEST = {
+    "pnl_stream":       "PSR / DSR (deflated Sharpe)",
+    "classifier_score": "IC t-stat / AUC CI",
+    "primitive_output": "correctness (oracle / parity)",
+}
+
+
+def significance_test_for(idea_kind: str | None, output_type: str | None) -> str:
+    """The mandated Gate-5 significance test for an idea, resolved from output_type.
+    Single source of truth — agents read this, they never decide it."""
+    if not output_type:
+        return "UNDECLARED — set output_type at Gate 1 (pnl_stream/classifier_score/primitive_output)"
+    return SIGNIFICANCE_TEST.get(output_type, f"UNKNOWN output_type {output_type!r}")
+
+
+def applicable_gates(idea_kind: str | None) -> set[int]:
+    """Gates that apply to this idea_kind. Untagged -> full ladder (back-compat)."""
+    return GATE_APPLICABILITY.get(idea_kind, {0, 1, 2, 3, 4, 5, 6, 7})
+
 _SYM = {"passed": "P", "open": "o", "blocked": "X", "killed": "K"}
 
 
@@ -64,8 +94,12 @@ def _open_action(n: int) -> tuple[str, str]:
             "sense/structure gate -- no metric required")
 
 
-def _compute(idea_id: str, states: dict[int, str], falsified: int) -> tuple[str, str]:
+def _compute(idea_id: str, states: dict[int, str], falsified: int,
+             gates: set[int] | None = None) -> tuple[str, str]:
+    gates = gates if gates is not None else set(range(8))
     for n in range(8):
+        if n not in gates:
+            continue  # not applicable to this idea_kind — legal skip
         s = states.get(n)
         if s == "passed":
             continue
@@ -95,10 +129,15 @@ def next_step(idea_id: str) -> dict:
 
     states = _gate_states(idea_id)
     falsified = pipeline._falsified_count(idea_id)
+    kind = idea.get("idea_kind")
+    gates = applicable_gates(kind)
     out = {
         "idea": idea_id,
         "status": idea.get("status"),
+        "idea_kind": kind or "UNTAGGED (full ladder; set idea_kind)",
         "gates": _gate_line(states),
+        "applies": " ".join(str(n) for n in sorted(gates)),
+        "sig_test": significance_test_for(kind, idea.get("output_type")),
         "falsified": f"{falsified}/2 (kill needs 2)",
     }
 
@@ -107,5 +146,5 @@ def next_step(idea_id: str) -> dict:
         out["why"] = idea.get("kill_reason") or ""
         return out
 
-    out["next"], out["why"] = _compute(idea_id, states, falsified)
+    out["next"], out["why"] = _compute(idea_id, states, falsified, gates)
     return out

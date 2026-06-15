@@ -385,13 +385,24 @@ def get_lifecycle() -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+IDEA_KINDS = {"strategy", "primitive", "overlay", "classifier"}
+OUTPUT_TYPES = {"pnl_stream", "classifier_score", "primitive_output"}
+
+
 def update_idea(idea_id: str, **fields) -> None:
-    """Update descriptive idea fields (name / description / category / parent_idea_id).
-    Bumps updated_at. Status changes go through the gate/kill functions, not here."""
-    allowed = {"name", "description", "category", "parent_idea_id"}
+    """Update descriptive idea fields (name / description / category / parent_idea_id /
+    idea_kind / output_type). Bumps updated_at. Status changes go through the gate/kill
+    functions, not here. idea_kind + output_type drive Protocol 3.2 gate-variant +
+    significance-test selection (docs/specs/2026-06-15-research-protocol-3.2-generic-gating.md)."""
+    allowed = {"name", "description", "category", "parent_idea_id",
+               "idea_kind", "output_type"}
     bad = set(fields) - allowed
     if bad:
         raise ValueError(f"cannot update {bad}; allowed: {allowed}")
+    if "idea_kind" in fields and fields["idea_kind"] not in IDEA_KINDS:
+        raise ValueError(f"idea_kind must be one of {IDEA_KINDS}")
+    if "output_type" in fields and fields["output_type"] not in OUTPUT_TYPES:
+        raise ValueError(f"output_type must be one of {OUTPUT_TYPES}")
     if not fields:
         return
     sets = ", ".join(f"{k}=?" for k in fields) + ", updated_at=?"
