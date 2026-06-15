@@ -1,6 +1,6 @@
 # research.db — Schema (mirror of live DB)
 
-_Last updated: 2026-06-15 — regenerated from live `PRAGMA` to match the database exactly. This is a **faithful mirror** (3.1); semantic redesign for clarity is a separate later pass (3.2)._
+_Last updated: 2026-06-15 — regenerated from live `PRAGMA` to match the database exactly. Faithful mirror; **3.2 keystone landed** (migration 026: `step1_ideas.idea_kind` + `output_type`). The protocol-doc rewrite to match 3.2 gate semantics is still pending (task 84)._
 
 The DB has **9 tables** + **4 views**. All writes go through [research/code/](../../research/code/) (`pipeline.py`, `agent_log.py`, `strategy_log.py`, `backlog.py`, `tester.py`) — never raw `sqlite3` (CLAUDE.md rule 10, hook-enforced).
 
@@ -36,6 +36,8 @@ The spine. One row per idea. Everything FKs back to `idea_id`.
 | killed_at | DATETIME | |
 | created_at | DATETIME | NOT NULL |
 | updated_at | DATETIME | NOT NULL |
+| idea_kind | TEXT | **CHECK(idea_kind IS NULL OR idea_kind IN ('strategy','primitive','overlay','classifier'))**. Protocol 3.2 — picks the gate variant (`protocol.GATE_APPLICABILITY`). Migration 026. NULL until declared (untagged → full ladder). |
+| output_type | TEXT | **CHECK(output_type IS NULL OR output_type IN ('pnl_stream','classifier_score','primitive_output'))**. Protocol 3.2 — resolves the Gate-5 significance test (`protocol.significance_test_for`). Migration 026. |
 
 ---
 
