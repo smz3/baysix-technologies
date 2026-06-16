@@ -1,0 +1,8 @@
+# Research dependencies that are NOT obvious / standard-scientific-stack.
+# (pandas/numpy/scipy/matplotlib/requests/tqdm assumed present.)
+# Accretion list — add a line when a new non-trivial dep is introduced.
+
+docling        # PDF -> Markdown source extraction for the paper pipeline (extract_pdf.py).
+               # Chosen for table fidelity; replaces pymupdf4llm. First run downloads
+               # the layout/table models (~hundreds of MB).
+numba          # @njit vectorization of detect_raw_breakouts (struct primitive, task 77).

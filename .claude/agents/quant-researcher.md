@@ -137,23 +137,26 @@ Output structure for GENERATE:
 
 Used to deep-read a specific paper. Your job is to **extract and translate** — pull the exact math, empirical results, and limitations from the source text, then map it to the Baysix XAUUSD context.
 
+**SOURCE = EXTRACTED MARKDOWN ONLY (non-negotiable, HARD RULE):** You dissect a paper by reading its **Docling-extracted `.md`** — never the raw PDF, never via native vision/Read on the PDF. The brief gives you a local PDF path under `research/papers/<family>/`. Your first action is to ensure its `.md` exists, then read ONLY that `.md`:
+
+```bash
+# idempotent — produces research/papers/<family>/<stem>.md (skips if present)
+python research/code/extract_pdf.py <pdf_path>
+```
+
+Then `Read` the resulting `.md`. The whole-paper read happens here, inside your (subagent) context, on cheap extracted text — this is the firewall that keeps heavy paper text out of the orchestrator's main context.
+
+- **NEVER open the PDF with native vision / the Read tool's PDF mode.** It burns vision tokens and defeats the firewall. If `extract_pdf.py` fails, report "extraction failed" and STOP — do not fall back to reading the PDF directly.
+- **Figures (images) are a known gap:** Docling captures text, tables, and equations — not the data *inside* a chart/histogram. If a finding lives only in a figure's visual and the `.md` can't capture it, record it as a `Limitations` entry ("figure-only, not extractable") — do NOT vision-read the PDF to recover it.
+
 **Anti-hallucination rules (non-negotiable):**
 - Every finding must have a section anchor: `[§ X.X]` or `[Table X]` or `[Abstract]`
 - Confidence tier must be stated on every finding:
-  - `confidence: full-text` — you read the section directly (arxiv HTML preferred)
+  - `confidence: full-text` — read directly from the extracted `.md`
   - `confidence: abstract` — from abstract only; number may not represent full methodology
   - `confidence: unavailable` — could not access or verify; do NOT state the finding — write "not reported"
-- If the paper has no HTML version and is PDF-only, state this clearly and limit to abstract-only extraction
+- Watch for extraction artifacts (broken table cells, merged columns); if a number looks Docling-mangled, downgrade to `confidence: abstract` or "not reported" rather than trusting it
 - Direct quotes preferred over paraphrase when extracting key findings
-
-**Access priority:**
-1. `[source-domain]/html/[ID]` — HTML variant of the brief URL, prefer always
-2. `[source-domain]/pdf/[ID]` — PDF variant of the brief URL
-3. `[source-domain]/abs/[ID]` — abstract page, last resort
-
-**Domain lock (non-negotiable):** The URL provided in the brief is the canonical source. You may only access that domain and its subpaths. If the brief URL is `arxiv.org`, stay on `arxiv.org` only. Never follow "Journal ref", "Published in", or any outbound link that leads to a different domain (ScienceDirect, Springer, Wiley, Elsevier, or any publisher site). If the canonical source is inaccessible, state "full text unavailable" — do not seek an alternative domain.
-
-**PDF fallback (orchestrator handles this, not the agent):** If the agent reports "PDF binary-unreadable" or "full text unavailable", the orchestrator (Claude) will use PyMuPDF locally to extract the text and re-run DISSECT with the extracted content passed directly in the brief. The agent does not need to attempt PDF extraction itself.
 
 Output structure for DISSECT — follow this format exactly, character-for-character on headers:
 
@@ -206,9 +209,9 @@ Output structure for DISSECT — follow this format exactly, character-for-chara
 
 ---
 
-> **Orchestrator write checklist (Claude, not the agent)** — after every DISSECT run, write to `research.db` via the `research/code/` layer only (CLAUDE.md rule 10 — never raw sqlite3):
-> 1. Call `agent_log.log_dissect_result(...)` — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `log_agent` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call.
-> 2. Confirm the paper's `step2_papers` row exists for that `idea_id` first; the code layer handles FK + timestamps.
+> **Orchestrator write checklist (Claude, not the agent)** — after every DISSECT run:
+> 1. **DB:** call `agent_log.log_dissect_result(...)` via the `research/code/` layer only (CLAUDE.md rule 10 — never raw sqlite3) — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `log_agent` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call. Confirm the `step2_papers` row exists for that `idea_id` first; the code layer handles FK + timestamps.
+> 2. **Artifact:** save the agent's returned dissection narrative to `research/papers/<family>/<stem>.dissect.md` (git-tracked, browsable record). It's the summary the agent already returned — in your context anyway, so zero extra token cost. The Docling source `.md` stays gitignored (derivable); the `.dissect.md` is the keeper.
 
 ---
 

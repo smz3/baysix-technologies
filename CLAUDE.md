@@ -75,6 +75,10 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **QR agent — paper specialist only**
 5. The QR agent ONLY **finds** papers (Sonnet — cheap fan-out) and **dissects** them (Opus — high-value; only reads keepers the find-phase surfaced). Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. Pass `model` explicitly on every Agent call; tell Syafiq which ran ("find on Sonnet / dissect on Opus"). (Reversed the 2026-05-28 Sonnet-only-dissect call on 2026-06-09.)
+5b. **Paper pipeline (HARD, set 2026-06-16) — FIND → ACQUIRE → EXTRACT → DISSECT, dissect on the `.md` NEVER the PDF:**
+    - **FIND** (Sonnet QR agent) → **ACQUIRE** [fetch_papers.py](research/code/fetch_papers.py) downloads PDF to `research/papers/<family>/` → **EXTRACT** [extract_pdf.py](research/code/extract_pdf.py) (Docling) converts PDF → `<stem>.md` source text → **DISSECT** (Opus QR agent) reads the **`.md`** in-subagent and returns a distilled summary.
+    - **BANNED:** native vision / Read-PDF-mode to dissect a PDF directly. It burns vision tokens AND lands the whole paper in main context. Extraction is Docling-only (chosen for table fidelity over pymupdf4llm; Nougat rejected — hallucinates numbers). Figures-as-images are a known gap → record as a limitation, never vision-read the PDF to recover them.
+    - **Artifacts:** Docling source `<stem>.md` = gitignored (derivable); orchestrator saves the returned dissection as `<stem>.dissect.md` = git-tracked. DB write still via `log_dissect_result()` (rule 10). Dep: `docling` (`pip install docling`).
 6. **Pre-brief check** — before briefing the agent, run `python research/code/idea_cli.py prebrief <idea_id>` (idea + prior agent calls + open tasks, text-heavy cols auto-truncated). Never re-surface resolved decisions or repeat logged work.
 
 **Research DB**

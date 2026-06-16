@@ -122,3 +122,10 @@ research/models/orb/_*.log
 # Research paper source PDFs — kept local only (copyright + binary bloat).
 # The dissection lives in research.db (step2_papers), not the source file.
 *.pdf
+
+# Docling-extracted paper source text (research/papers/<family>/<stem>.md) —
+# derivable from the PDF via extract_pdf.py, so gitignored. Keep the value-add
+# dissection narrative (<stem>.dissect.md) and the folder READMEs tracked.
+research/papers/**/*.md
+!research/papers/**/*.dissect.md
+!research/papers/**/README.md
