@@ -142,7 +142,7 @@ def init():
             task_id     INTEGER PRIMARY KEY AUTOINCREMENT,
             idea_id     TEXT REFERENCES step1_ideas(idea_id),
             status      TEXT NOT NULL DEFAULT 'open'
-                          CHECK(status IN ('open','in_progress','done','dropped')),
+                          CHECK(status IN ('open','in_progress','done','dropped','parked')),
             title       TEXT NOT NULL,
             detail      TEXT,
             kind        TEXT NOT NULL CHECK(kind IN

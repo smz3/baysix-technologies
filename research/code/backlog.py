@@ -12,7 +12,7 @@ MYT = timezone(timedelta(hours=8))
 
 _VALID_KIND = ("variant", "sizing", "filter", "port", "infra", "data", "cleanup")
 _VALID_PRIORITY = ("P0", "P1", "P2")
-_VALID_STATUS = ("open", "in_progress", "done", "dropped")
+_VALID_STATUS = ("open", "in_progress", "done", "dropped", "parked")
 
 
 def _conn():
