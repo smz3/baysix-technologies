@@ -156,6 +156,42 @@ def set_local_path(paper_id: int, local_path: str) -> None:
     print(f"[agent_log] local_path set: paper_id={paper_id} -> {local_path}")
 
 
+def reassign_paper(paper_id: int, new_idea_id: str, new_local_path: str | None = None) -> None:
+    """
+    Re-file a paper under a different idea. Updates step2_papers.idea_id and all
+    of that paper's log_agent rows so the lineage stays consistent. Optionally
+    updates local_path if the artifact was physically moved.
+    """
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT idea_id FROM step2_papers WHERE paper_id=?", (paper_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"paper_id={paper_id} not found in step2_papers")
+        cur.execute("SELECT idea_id FROM step1_ideas WHERE idea_id=?", (new_idea_id,))
+        if cur.fetchone() is None:
+            raise ValueError(f"idea_id={new_idea_id} not found in step1_ideas")
+        old_idea_id = row[0]
+        if new_local_path is not None:
+            cur.execute(
+                "UPDATE step2_papers SET idea_id=?, local_path=? WHERE paper_id=?",
+                (new_idea_id, new_local_path, paper_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE step2_papers SET idea_id=? WHERE paper_id=?",
+                (new_idea_id, paper_id),
+            )
+        cur.execute(
+            "UPDATE log_agent SET idea_id=? WHERE paper_id=?",
+            (new_idea_id, paper_id),
+        )
+        n_logs = cur.rowcount
+        conn.commit()
+    print(f"[agent_log] paper_id={paper_id} reassigned {old_idea_id} -> {new_idea_id} "
+          f"({n_logs} log_agent row(s) updated)")
+
+
 def log_agent_call(
     idea_id: str,
     gate_number: int,
