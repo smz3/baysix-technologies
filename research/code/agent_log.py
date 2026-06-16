@@ -138,6 +138,24 @@ def add_paper(
     return paper_id
 
 
+def set_local_path(paper_id: int, local_path: str) -> None:
+    """
+    Record where a paper's PDF was saved (the ACQUIRE stage's filesystem path).
+    Normally set by add_paper(); this backfills rows where ACQUIRE ran without it.
+    """
+    with _conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT paper_id FROM step2_papers WHERE paper_id=?", (paper_id,))
+        if cur.fetchone() is None:
+            raise ValueError(f"paper_id={paper_id} not found in step2_papers")
+        cur.execute(
+            "UPDATE step2_papers SET local_path=? WHERE paper_id=?",
+            (local_path, paper_id),
+        )
+        conn.commit()
+    print(f"[agent_log] local_path set: paper_id={paper_id} -> {local_path}")
+
+
 def log_agent_call(
     idea_id: str,
     gate_number: int,
