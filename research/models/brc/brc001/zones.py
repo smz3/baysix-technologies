@@ -72,9 +72,12 @@ class BrcZone:
     l1_price: float          # = P2 price (entry level)
     l2_price: float          # = more extreme of P1/P3 (invalidation level)
     p1_time: object          # origin swing (HIGH for SELL / LOW for BUY)
+    p1_price: float          # P1 swing price
     p2_time: object          # L1 swing
     p3_time: object          # context swing
+    p3_price: float          # P3 swing price
     p4_time: object          # breakout bar (confirmation)
+    p4_price: float          # P4 bar CLOSE (must be beyond p5_price)
     p5_time: object          # 2nd-barrier swing (older than P1)
     p5_price: float          # the level P4 must close beyond to confirm
 
@@ -132,6 +135,7 @@ def _scan_one_direction(df, swings, sell: bool) -> list[BrcZone]:
             continue
         p4_bar = start + int(idx)
         p4_time = pd.Timestamp(times[p4_bar]).to_pydatetime()
+        p4_close = float(closes[p4_bar])
 
         # Levels: L1 = P2; L2 = more extreme of (P1, P3)
         l1 = p2.price
@@ -139,8 +143,10 @@ def _scan_one_direction(df, swings, sell: bool) -> list[BrcZone]:
 
         out.append(BrcZone(
             direction=direction, l1_price=l1, l2_price=l2,
-            p1_time=p1.time, p2_time=p2.time, p3_time=p3.time,
-            p4_time=p4_time, p5_time=p5.time, p5_price=p5.price,
+            p1_time=p1.time, p1_price=p1.price, p2_time=p2.time,
+            p3_time=p3.time, p3_price=p3.price,
+            p4_time=p4_time, p4_price=p4_close,
+            p5_time=p5.time, p5_price=p5.price,
         ))
     return out
 
