@@ -164,6 +164,65 @@ def plot_breakouts(n_bars: int = 300, swing_window: int = 3, do_open: bool = Tru
     return out
 
 
+def plot_breakouts_mpl(n_bars: int = 300, swing_window: int = 3,
+                       do_open: bool = True, save_png: bool = False) -> Path:
+    """Same MT5-faithful breakout view as plot_breakouts, but rendered with matplotlib.
+    Opens a native desktop GUI window (no browser) when do_open=True. With save_png=True
+    it writes a static PNG instead of showing — used for headless / agent-eyeball checks.
+    A thin dotted connector links each broken-swing dot to its breakout-bar-close dot so
+    the pairing is verifiable at a glance (verification aid only — not part of MT5 parity)."""
+    import matplotlib
+    if save_png:
+        matplotlib.use("Agg")          # headless: no GUI, just savefig
+    import matplotlib.pyplot as plt
+
+    df, _swings, bk = rb.raw_breakouts_d1(swing_window=swing_window)
+    df = df.tail(n_bars).reset_index(drop=True)
+    tmin = df["time"].iloc[0]
+    bk = [b for b in bk if b.broken_swing_time >= tmin]
+    bull = [b for b in bk if b.direction == SignalDirection.BULLISH]
+    bear = [b for b in bk if b.direction == SignalDirection.BEARISH]
+
+    fig, ax = plt.subplots(figsize=(15, 7.6))
+    fig.patch.set_facecolor("#111111"); ax.set_facecolor("#111111")
+    ax.plot(df["time"], df["close"], color=CLR_LINE, lw=1.1, label="XAUUSD D1 close", zorder=1)
+
+    # dotted connector: broken-swing -> breakout-bar close (verification aid)
+    for b in bk:
+        ax.plot([b.broken_swing_time, b.breakout_bar_time],
+                [b.broken_swing_price, b.breakout_bar_close_price],
+                color="#555555", lw=0.6, ls=":", zorder=2)
+
+    def _scatter(items, x, y, clr, lbl, size):
+        ax.scatter([getattr(b, x) for b in items], [getattr(b, y) for b in items],
+                   s=size, c=clr, label=lbl, zorder=3, edgecolors="none")
+
+    _scatter(bull, "broken_swing_time", "broken_swing_price", CLR_BULL,
+             f"Bob broken-swing ({len(bull)})", 42)
+    _scatter(bear, "broken_swing_time", "broken_swing_price", CLR_BEAR,
+             f"Bos broken-swing ({len(bear)})", 42)
+    _scatter(bull, "breakout_bar_time", "breakout_bar_close_price", CLR_BULL_BAR,
+             f"Bob breakout-bar close ({len(bull)})", 30)
+    _scatter(bear, "breakout_bar_time", "breakout_bar_close_price", CLR_BEAR_BAR,
+             f"Bos breakout-bar close ({len(bear)})", 30)
+
+    ax.set_title(f"STRUCT-001 — XAUUSD D1 raw breakouts · MT5-faithful "
+                 f"(window={swing_window}) · last {len(df)} bars", color="#dddddd")
+    ax.tick_params(colors="#aaaaaa"); [s.set_color("#444444") for s in ax.spines.values()]
+    ax.legend(loc="upper left", facecolor="#1b1b1b", edgecolor="#444444", labelcolor="#dddddd", fontsize=8)
+    fig.tight_layout()
+
+    print(f"bars={len(df)}  window={swing_window}  breakouts_in_view={len(bk)} (bull={len(bull)} bear={len(bear)})")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / "breakouts_d1.png"
+    if save_png:
+        fig.savefig(str(out), dpi=110, facecolor=fig.get_facecolor())
+        print(f"wrote {out}")
+    elif do_open:
+        plt.show()
+    return out
+
+
 def _main(argv: list[str]) -> None:
     flags = [a for a in argv if a.startswith("--")]
     pos = [a for a in argv if not a.startswith("--")]
@@ -174,11 +233,17 @@ def _main(argv: list[str]) -> None:
     if "--window" in argv:
         window = int(argv[argv.index("--window") + 1])
     do_open = "--no-open" not in flags
+    use_mpl = "--mpl" in flags
+    save_png = "--png" in flags     # implies matplotlib, headless
 
     if kind == "swings":
         plot_swings(n_bars=n_bars, swing_window=window, do_open=do_open)
     elif kind == "breakouts":
-        plot_breakouts(n_bars=n_bars, swing_window=window, do_open=do_open)
+        if use_mpl or save_png:
+            plot_breakouts_mpl(n_bars=n_bars, swing_window=window,
+                               do_open=do_open, save_png=save_png)
+        else:
+            plot_breakouts(n_bars=n_bars, swing_window=window, do_open=do_open)
     else:
         raise SystemExit(f"unknown viz '{kind}' (have: swings, breakouts)")
 
