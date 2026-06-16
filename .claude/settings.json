@@ -14,6 +14,7 @@
       "mcp__*",
       "Bash(powershell.exe -Command:*)",
       "Bash(powershell -Command Start-Process*)",
+      "Bash(rmdir *)",
       "Bash(powershell.exe -Command Start-Process*)"
 
     ],
@@ -23,7 +24,6 @@
     ],
     "ask": [
       "Bash(rm *)",
-      "Bash(rmdir *)",
       "Bash(git reset --hard*)",
       "Bash(git merge*)"
     ]
