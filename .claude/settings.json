@@ -12,7 +12,10 @@
       "TodoWrite",
       "Bash(*)",
       "mcp__*",
-      "Bash(powershell.exe -Command:*)"
+      "Bash(powershell.exe -Command:*)",
+      "Bash(powershell -Command Start-Process*)",
+      "Bash(powershell.exe -Command Start-Process*)"
+
     ],
     "deny": [
       "Bash(curl * api.binance.com/api/v3/order*)",
