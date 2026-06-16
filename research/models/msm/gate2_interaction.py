@@ -188,6 +188,7 @@ def run():
               f"causal-expanding-z warmup={WARMUP_H4}; interaction=sign(S)*meanPairCoSign; HAC={HAC_LAGS}")
     rid = pipeline.log_result(
         idea_id="MSM-001", gate_number=2, stage="IS",
+        trial_family_id="MSM-001-gate2-interaction",
         metric_key="h4_interaction_marginal_t", metric_value=float(t_I),
         cost_adjusted=0, period="per_trade", n_obs=int(n),
         data_start=ds, data_end=de, git_sha=sha, code_path=CODE_PATH,
@@ -197,6 +198,7 @@ def run():
                f"{verdict}. Guards: sorted M5, causal-z, non-overlap H4, IS-sealed."))
     pipeline.log_result(
         idea_id="MSM-001", gate_number=2, stage="IS",
+        trial_family_id="MSM-001-gate2-interaction",
         metric_key="h4_interaction_dir_sharpe_net", metric_value=float(sh_net),
         cost_adjusted=1, period="per_trade", n_obs=int(n),
         data_start=ds, data_end=de, git_sha=sha, code_path=CODE_PATH,

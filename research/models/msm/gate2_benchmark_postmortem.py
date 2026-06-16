@@ -59,6 +59,7 @@ def main():
     sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
     pipeline.log_result(
         idea_id="MSM-001", gate_number=2, stage="IS",
+        trial_family_id="MSM-001-gate2-benchmark-postmortem",
         metric_key="h4_benchmark_own_t", metric_value=float(t_B),
         cost_adjusted=0, period="per_trade", n_obs=int(n),
         data_start=str(feat.index[0]), data_end=str(feat.index[-1]),

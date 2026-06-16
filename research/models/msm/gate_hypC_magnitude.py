@@ -119,6 +119,7 @@ def run():
               f"bands |z| {BANDS[0][1]}/{BANDS[1][1]} fixed; HAC={HAC_LAGS}; spread${SPREAD_USD}rt")
     rid = pipeline.log_result(
         idea_id="MSM-001", gate_number=2, stage="IS",
+        trial_family_id="MSM-001-gate2-hypC-magnitude",
         metric_key="hypC_magnitude_interaction_t", metric_value=float(t_inter),
         cost_adjusted=0, period="per_trade", n_obs=int(n),
         data_start=ds, data_end=de, git_sha=sha, code_path=CODE_PATH,
@@ -130,6 +131,7 @@ def run():
                f"Guards: sorted M5, causal-z, non-overlap H4, IS-sealed."))
     pipeline.log_result(
         idea_id="MSM-001", gate_number=2, stage="IS",
+        trial_family_id="MSM-001-gate2-hypC-magnitude",
         metric_key="hypC_large_band_net_mean", metric_value=float(large['mean_net']),
         cost_adjusted=1, period="per_trade", n_obs=int(large['n']),
         data_start=ds, data_end=de, git_sha=sha, code_path=CODE_PATH,

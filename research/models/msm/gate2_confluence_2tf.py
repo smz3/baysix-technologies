@@ -136,12 +136,14 @@ def run():
             f"{verdict}. Guards: sorted M5, causal-z, non-overlap H4, IS-sealed.")
     rid = pipeline.log_result(
         idea_id="MSM-001", gate_number=2, stage="IS",
+        trial_family_id="MSM-001-gate2-confluence-2tf",
         metric_key="confluence_2tf_agree_t", metric_value=float(ta),
         cost_adjusted=1, period="per_trade", n_obs=int(len(s_agree)),
         data_start=ds, data_end=de, git_sha=sha, code_path=CODE_PATH,
         n_trials=1, instrument="XAUUSD", parameters=params, notes=note)
     pipeline.log_result(
         idea_id="MSM-001", gate_number=2, stage="IS",
+        trial_family_id="MSM-001-gate2-confluence-2tf",
         metric_key="confluence_2tf_agree_net_mean", metric_value=float(sa_net.mean()),
         cost_adjusted=1, period="per_trade", n_obs=int(len(s_agree)),
         data_start=ds, data_end=de, git_sha=sha, code_path=CODE_PATH,

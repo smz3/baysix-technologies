@@ -60,6 +60,41 @@ def _protocol():
     return protocol
 
 
+def _strategy_log():
+    """Lazy handle on the strategy_log module (avoids any load-order coupling).
+    Dual path: package vs script."""
+    try:                                # package import (pytest: research.code.*)
+        from research.code import strategy_log
+    except ImportError:                 # script import (own dir on sys.path)
+        import strategy_log
+    return strategy_log
+
+
+def _is_config_frozen(idea_id: str) -> bool:
+    """IS settings are 'locked' once at least one component has a VALIDATED/ADOPTED
+    row in the strategy lineage — i.e. strategy_log.get_live_config() is non-empty.
+    CREATED/PROPOSED (born, unproven) does NOT count: you freeze a config by
+    validating it at the IS gate (Gate 5), then go out-of-sample."""
+    return bool(_strategy_log().get_live_config(idea_id))
+
+
+def _require_frozen_config(idea_id: str, what: str, allow_unfrozen: bool) -> None:
+    """Block an out-of-sample action unless the IS config is frozen. Escape hatch:
+    allow_unfrozen=True downgrades to a warning (e.g. a primitive with no strategy
+    config to validate). The freeze rule: exhaust + VALIDATE IS params before OOS."""
+    if _is_config_frozen(idea_id):
+        return
+    msg = (f"{what} blocked: IS config for {idea_id} is NOT frozen "
+           f"(no VALIDATED/ADOPTED component in strategy_log). Exhaust IS params "
+           f"and log_change(verdict='VALIDATED'/'ADOPTED') the chosen config BEFORE "
+           f"going out-of-sample. Override with allow_unfrozen=True only if there is "
+           f"genuinely no config to validate.")
+    if allow_unfrozen:
+        print(f"[pipeline] WARNING — {msg}")
+        return
+    raise ValueError(msg)
+
+
 # ── Idea functions ─────────────────────────────────────────────────────────────
 
 def add_idea(
@@ -90,13 +125,20 @@ def open_gate(
     gate_number: int,
     pass_criteria: str,
     attempt: int = 1,
+    allow_unfrozen: bool = False,
 ) -> int:
-    """Create a gate row at status=open. Returns gate_id."""
+    """Create a gate row at status=open. Returns gate_id.
+
+    Gate 6 (OOS) is the freeze chokepoint: you cannot enter the out-of-sample
+    phase until the IS config is frozen (a VALIDATED/ADOPTED component in
+    strategy_log). allow_unfrozen=True downgrades it to a warning."""
     if gate_number not in range(8):
         raise ValueError(f"gate_number must be 0–7, got {gate_number}")
 
     _check_gate_applicable(idea_id, gate_number)
     _check_previous_gate_passed(idea_id, gate_number)
+    if gate_number == 6:
+        _require_frozen_config(idea_id, "open_gate(6) [OOS phase]", allow_unfrozen)
 
     now = _now()
     with _conn() as conn:
@@ -349,8 +391,17 @@ def log_result(
     data_hash: str = None,
     seed: int = None,
     notes: str = None,
+    allow_unfrozen: bool = False,
 ) -> int:
-    """Log a metric result. Returns result_id."""
+    """Log a metric result. Returns result_id.
+
+    Two IS-discipline guards (added 2026-06-17):
+      - trial_family_id is REQUIRED on IS/OOS rows → every IS experiment carries a
+        run-number; every OOS row names the IS family it validates.
+      - stage='OOS' is BLOCKED unless the IS config is frozen (see
+        _require_frozen_config) — exhaust + VALIDATE IS params before OOS.
+        allow_unfrozen=True downgrades the freeze check to a warning.
+    """
     valid_stages  = ("IS", "walkforward", "montecarlo", "OOS")
     valid_periods = ("per_trade", "daily", "annualised")
 
@@ -364,6 +415,14 @@ def log_result(
         raise ValueError("git_sha is required — run `git rev-parse --short HEAD`")
     if not n_obs:
         raise ValueError("n_obs is required")
+    if stage in ("IS", "OOS") and not trial_family_id:
+        raise ValueError(
+            f"trial_family_id is required for stage='{stage}' results — name the "
+            f"experiment family (e.g. '{idea_id}-gate{gate_number}-edge-sweep') so the "
+            f"IS run is numbered and any OOS row names the IS family it validates.")
+    if stage == "OOS":
+        _require_frozen_config(idea_id, f"log_result(stage='OOS', {metric_key})",
+                               allow_unfrozen)
 
     now = _now()
     with _conn() as conn:
