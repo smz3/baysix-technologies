@@ -209,6 +209,8 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   g_vis.ClearAll();   // wipe chart objects on detach/recompile/chart-close (before the CSV early-return)
+
    int fh = BrcCsvOpen(_Symbol, g_runid);
    if(fh == INVALID_HANDLE)
       return;
