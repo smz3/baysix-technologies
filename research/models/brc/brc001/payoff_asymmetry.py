@@ -46,7 +46,8 @@ import continuation as cont      # noqa: E402
 
 def _baseline_realized_r(closes: np.ndarray, k: int, sell: bool, R: float) -> float:
     """let_run from a random entry bar k: entry=close[k], stop=entry +- R against the
-    trade, no cap, exit at the first close beyond the stop else the last close."""
+    trade, no cap, exit at the first close beyond the stop else the last close. PYTHON
+    ORACLE — the numba bootstrap below mirrors this arithmetic byte-for-byte."""
     entry = closes[k]
     stop = entry + R if sell else entry - R
     n = len(closes)
@@ -59,7 +60,57 @@ def _baseline_realized_r(closes: np.ndarray, k: int, sell: bool, R: float) -> fl
     return (entry - c) / R if sell else (c - entry) / R
 
 
-def run(tf: str = "D1", swing_window: int = 3, n_boot: int = 2000, seed: int = 7) -> None:
+def _boot_numba(closes, dirs, Rs, n_boot, seed, cap):
+    """JIT'd matched-baseline bootstrap (H4 has ~15k bars x 1k trades x 2k boots —
+    pure Python is minutes, this is seconds). Mirrors _baseline_realized_r exactly.
+    `cap` winsorizes each realized R at +cap (np.inf = uncapped); the uncapped let-run
+    is degenerate — tiny-R zones that never invalidate normalize a multi-year hold to
+    thousands of R, so a few trades own the mean. A real let-winners-run rule has a
+    profit ceiling; cap models that, applied IDENTICALLY to BRC and the baseline."""
+    from numba import njit
+
+    @njit(cache=True)
+    def _kernel(closes, dirs, Rs, n_boot, seed, cap):
+        np.random.seed(seed)
+        n = len(closes)
+        m = len(Rs)
+        bmean = np.empty(n_boot)
+        bwin = np.empty(n_boot)
+        for b in range(n_boot):
+            s = 0.0
+            wins = 0
+            for i in range(m):
+                k = np.random.randint(0, n - 1)
+                entry = closes[k]
+                R = Rs[i]
+                sell = dirs[i]
+                stop = entry + R if sell else entry - R
+                r = 0.0
+                done = False
+                for j in range(k, n):
+                    c = closes[j]
+                    dead = (c > stop) if sell else (c < stop)
+                    if dead:
+                        r = (entry - c) / R if sell else (c - entry) / R
+                        done = True
+                        break
+                if not done:
+                    c = closes[n - 1]
+                    r = (entry - c) / R if sell else (c - entry) / R
+                if r > cap:
+                    r = cap
+                s += r
+                if r > 0:
+                    wins += 1
+            bmean[b] = s / m
+            bwin[b] = wins / m
+        return bmean, bwin
+
+    return _kernel(closes, dirs, Rs, n_boot, seed, cap)
+
+
+def run(tf: str = "D1", swing_window: int = 3, n_boot: int = 2000, seed: int = 7,
+        cap: float = float("inf")) -> None:
     df, _, _ = rb.raw_breakouts(tf, swing_window=swing_window)
     zs = zmod.detect_zones(tf, swing_window=swing_window)
     lives = {id(L.zone): L for L in lc.label_lifecycles(df, zs)}
@@ -78,7 +129,7 @@ def run(tf: str = "D1", swing_window: int = 3, n_boot: int = 2000, seed: int = 7
         real_r.append(lr.realized_r)
         real_dir.append(z.direction == SignalDirection.BEARISH)   # True = SELL
         real_R.append(abs(z.l1_price - z.l2_price))
-    real_r = np.array(real_r)
+    real_r = np.minimum(np.array(real_r), cap)   # winsorize identically to the baseline
     real_dir = np.array(real_dir)
     real_R = np.array(real_R)
     m = len(real_r)
@@ -93,18 +144,10 @@ def run(tf: str = "D1", swing_window: int = 3, n_boot: int = 2000, seed: int = 7
     brc_buy = real_r[~sell_mask].mean() if (~sell_mask).any() else float("nan")
 
     # --- matched random same-dir baseline (paired R + direction, uniform entry) ---
-    rng = np.random.default_rng(seed)
-    boot_mean = np.empty(n_boot)
-    boot_win = np.empty(n_boot)
-    for b in range(n_boot):
-        ks = rng.integers(0, n - 1, size=m)         # random entry bar per matched trade
-        rs = np.fromiter(
-            (_baseline_realized_r(closes, int(ks[i]), bool(real_dir[i]), float(real_R[i]))
-             for i in range(m)),
-            dtype=float, count=m,
-        )
-        boot_mean[b] = rs.mean()
-        boot_win[b] = (rs > 0).mean()
+    boot_mean, boot_win = _boot_numba(
+        closes, real_dir.astype(np.bool_), real_R.astype(np.float64),
+        int(n_boot), int(seed), float(cap),
+    )
 
     bmu, bsd = boot_mean.mean(), boot_mean.std(ddof=1)
     z_mean = (brc_mean - bmu) / bsd if bsd > 0 else float("nan")
@@ -112,8 +155,9 @@ def run(tf: str = "D1", swing_window: int = 3, n_boot: int = 2000, seed: int = 7
     wmu, wsd = boot_win.mean(), boot_win.std(ddof=1)
     z_win = (brc_win - wmu) / wsd if wsd > 0 else float("nan")
 
+    capstr = "uncapped" if cap == float("inf") else f"cap=+{cap:g}R"
     print(f"=== BRC-001 payoff-asymmetry test (let-run-to-invalidation) {tf} "
-          f"window={swing_window} ===")
+          f"window={swing_window} [{capstr}] ===")
     print(f"sample: {m} zones with an L1 retest "
           f"(SELL {int(sell_mask.sum())} / BUY {int((~sell_mask).sum())})")
     print(f"  invalidated/runner split: "
@@ -138,7 +182,8 @@ def _main(argv: list[str]) -> None:
     tf = argv[argv.index("--tf") + 1].upper() if "--tf" in argv else "D1"
     window = int(argv[argv.index("--window") + 1]) if "--window" in argv else 3
     nb = int(argv[argv.index("--nboot") + 1]) if "--nboot" in argv else 2000
-    run(tf, swing_window=window, n_boot=nb)
+    cap = float(argv[argv.index("--cap") + 1]) if "--cap" in argv else float("inf")
+    run(tf, swing_window=window, n_boot=nb, cap=cap)
 
 
 if __name__ == "__main__":
