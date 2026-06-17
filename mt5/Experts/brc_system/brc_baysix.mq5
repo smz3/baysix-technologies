@@ -29,6 +29,7 @@
 #include <brc_system/brc_zones.mqh>
 #include <brc_system/brc_lifecycle.mqh>
 #include <brc_system/brc_csv.mqh>
+#include <brc_system/brc_visual.mqh>   // chart eyeball layer (InpVisualize master toggle, default off)
 
 input int InpSwingWindow = 3;      // close-based pivot window (odd, >=3; live EA = 3)
 input int InpMaxAge      = 0;      // break age filter in bars (<=0 disables)
@@ -57,9 +58,10 @@ struct TfState
    BrcZone         zones[];        // every confirmed zone (alive + dead) — written at end
   };
 
-TfState g_tf[];
-int     g_radius   = 1;
-string  g_runid    = "";
+TfState    g_tf[];
+int        g_radius = 1;
+string     g_runid  = "";
+CBrcVisual g_vis;          // chart visualizer (no-op unless InpVisualize)
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -83,8 +85,11 @@ int OnInit()
    StringReplace(ts, ":", "");
    g_runid = "v" + BRC_VERSION + "_" + ts;          // version stamped into every CSV name
 
-   PrintFormat("[BRC] brc_baysix v%s init OK — %d TFs, swing_window=%d radius=%d runid=%s",
-               BRC_VERSION, n, InpSwingWindow, g_radius, g_runid);
+   g_vis.SyncChartTF();
+   g_vis.ClearAll();                                // wipe any objects from a prior run
+
+   PrintFormat("[BRC] brc_baysix v%s init OK — %d TFs, swing_window=%d radius=%d runid=%s visualize=%s",
+               BRC_VERSION, n, InpSwingWindow, g_radius, g_runid, (InpVisualize ? "ON" : "off"));
    return INIT_SUCCEEDED;
   }
 
@@ -114,6 +119,7 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
          int si = ArraySize(s.swings);
          ArrayResize(s.swings, si + 1, 512);
          s.swings[si] = sw;
+         g_vis.OnSwing(s.name, sw);
         }
      }
 
@@ -121,6 +127,8 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
    int before = ArraySize(s.breaks);
    BrcDetectBreaksOnBar(s.swings, i, bt, cl, g_radius, InpMaxAge, s.breaks);
    int after = ArraySize(s.breaks);
+   for(int b = before; b < after; b++)
+      g_vis.OnBreak(s.name, s.breaks[b]);
 
    //--- 3. each NEW break is a candidate P4 (2nd break) -> try to confirm a zone.
    for(int k = before; k < after; k++)
@@ -131,6 +139,7 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
          int zi = ArraySize(s.zones);
          ArrayResize(s.zones, zi + 1, 256);
          s.zones[zi] = z;
+         g_vis.OnZoneConfirmed(s.name, s.zones[zi]);
         }
      }
 
@@ -139,7 +148,10 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
    int nz = ArraySize(s.zones);
    for(int z = 0; z < nz; z++)
       if(s.zones[z].alive && s.zones[z].p4_time < bt)
+        {
          BrcAdvanceZone(s.zones[z], bt, h, l, cl);
+         g_vis.OnZoneAdvanced(s.name, s.zones[z]);
+        }
   }
 
 //+------------------------------------------------------------------+
@@ -167,6 +179,29 @@ void OnTick()
          g_tf[t].last_time = r[k].time;
         }
      }
+  }
+
+//+------------------------------------------------------------------+
+//| Live TF switch: when the chart period changes, rebuild the visual |
+//| layer for the new TF from stored state (only that TF draws).      |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+  {
+   if(!InpVisualize || id != CHARTEVENT_CHART_CHANGE)
+      return;
+   g_vis.SyncChartTF();
+   string tf = "";
+   ENUM_TIMEFRAMES p = (ENUM_TIMEFRAMES)ChartPeriod();
+   for(int t = 0; t < ArraySize(g_tf); t++)
+      if(g_tf[t].period == p)
+        {
+         g_vis.RedrawCurrentTF(g_tf[t].name,
+                               g_tf[t].swings, ArraySize(g_tf[t].swings),
+                               g_tf[t].breaks, ArraySize(g_tf[t].breaks),
+                               g_tf[t].zones,  ArraySize(g_tf[t].zones));
+         return;
+        }
+   g_vis.ClearAll();   // chart on a TF the emitter doesn't track
   }
 
 //+------------------------------------------------------------------+
