@@ -1,10 +1,11 @@
 """
 visual.py — BRC-001 5-pointer zone visualizer (matplotlib).
 
-Gate-2 eyeball tool: SEE that the minimal-core detector (zones.py) places the five
-structural points on real swings and builds a sane zone box. Candlesticks (NOT a
-close-line) because swings are high/low extremes and P4 confirms on CLOSE — the
-wicks are what let you verify P1 is a true swing high and P4 closes beyond P5.
+Gate-2 eyeball tool: SEE that the Path-B detector (zones.py) places the five
+structural points on real swings and builds a sane zone box. Close-price LINE
+(not candlesticks) for an uncluttered view — detection is close-based throughout
+(struct close-pivots + P4 close-confirmation), so the close line is the faithful
+series and removes wick noise that obscured the geometry.
 
 Two modes:
   zone <i>      per-zone ZOOM (default) — one zone in its P5->P4+lookahead window.
@@ -49,19 +50,15 @@ def _setup(ax, fig):
     [s.set_color("#444444") for s in ax.spines.values()]
 
 
-def _candles(ax, dfv):
-    """Manual candlesticks on an integer x-axis (0..len-1) — no weekend gaps, clean
-    zoom. Returns nothing; caller maps times->positions via _pos()."""
-    from matplotlib.patches import Rectangle
-    o = dfv["open"].values; h = dfv["high"].values
-    l = dfv["low"].values; c = dfv["close"].values
-    for i in range(len(dfv)):
-        up = c[i] >= o[i]
-        clr = CLR_UP if up else CLR_DN
-        ax.vlines(i, l[i], h[i], color=clr, lw=0.7, zorder=2)
-        lo, hgt = (o[i], c[i] - o[i]) if up else (c[i], o[i] - c[i])
-        ax.add_patch(Rectangle((i - 0.3, lo), 0.6, max(hgt, 1e-6),
-                               facecolor=clr, edgecolor=clr, lw=0.5, zorder=2))
+def _line(ax, dfv):
+    """Close-price LINE on an integer x-axis (0..len-1) — no weekend gaps, clean
+    zoom. Detection is close-based (struct close-pivots + P4 close-confirm), so a
+    close line is the faithful, uncluttered view. Caller maps times->positions
+    via _pos(). Small dots mark each bar's close so swings are still locatable."""
+    c = dfv["close"].values
+    x = range(len(dfv))
+    ax.plot(x, c, color=CLR_LINE, lw=1.2, zorder=2)
+    ax.scatter(x, c, s=8, color=CLR_LINE, zorder=2)
 
 
 def _date_ticks(ax, dfv, n=8):
@@ -105,7 +102,7 @@ def plot_zone(i: int, lookahead: int = 14, pad_left: int = 3,
         return _pos(pos, t) - lo
 
     fig, ax = plt.subplots(figsize=(13, 7.4)); _setup(ax, fig)
-    _candles(ax, dfv)
+    _line(ax, dfv)
 
     # zone rectangle: P1 .. P4, spanning L1<->L2
     x1, x4 = X(z.p1_time), X(z.p4_time)
@@ -165,7 +162,7 @@ def plot_overview(n_bars: int = 120, do_open: bool = True, save_png: bool = Fals
     tmin = df["time"].iloc[lo]
 
     fig, ax = plt.subplots(figsize=(15, 7.6)); _setup(ax, fig)
-    _candles(ax, dfv)
+    _line(ax, dfv)
 
     in_view = [z for z in zones if Z.pd.Timestamp(z.p4_time) >= Z.pd.Timestamp(tmin)]
     for z in in_view:

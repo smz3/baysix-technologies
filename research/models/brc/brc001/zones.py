@@ -71,6 +71,8 @@ def _struct_on_path() -> None:
 
 
 _struct_on_path()
+import pandas as pd                                                  # noqa: E402,F401  (re-exported for visual.py: Z.pd)
+import swingpoints as sp                                             # noqa: E402,F401  (re-exported for visual.py: Z.sp)
 import rawbreakout as rb                                             # noqa: E402
 from structures import SignalDirection, SwingType                    # noqa: E402
 
