@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                                 BrcBreakouts.mqh  |
+//|                                                 brc_breakouts.mqh  |
 //|  Raw breakout primitive — faithful port of rawbreakout.py         |
 //|  (RawBreakoutDetector.mqh re-port), TRIMMED for Path B.           |
 //|                                                                    |
@@ -16,7 +16,7 @@
 #define BRC_BREAKOUTS_MQH
 #property strict
 
-#include "BrcTypes.mqh"
+#include "brc_types.mqh"
 
 //+------------------------------------------------------------------+
 //| Scan all swings against ONE just-closed bar; mark newly-broken    |

@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                                     BrcTypes.mqh  |
+//|                                                     brc_types.mqh  |
 //|        BRC zone-emitter — shared types (self-contained, no Sigma) |
 //|                                                                    |
 //| Port targets (owned Python spec — do NOT fork from old EA):        |

@@ -89,12 +89,12 @@ Path: `<MT5>/Common/Files/BRC/brc_zones_<symbol>_<runid>.csv`.
 ## 4. Module layout (`brc_system` namespace — decoupled from Sigma)
 
 ```
-mt5/Experts/brc_system/BRC_Emitter.mq5        ← EA shell: OnInit/OnTick new-bar gate, per-TF loop, CSV writer
-mt5/Include/brc_system/BrcSwings.mqh          ← close-based swing pivots (self-contained)
-mt5/Include/brc_system/BrcBreakouts.mqh       ← two-pass shared-L2 rawbreakout primitive
-mt5/Include/brc_system/BrcZones.mqh           ← Path-B 5-pointer pairing + accuracy gates
-mt5/Include/brc_system/BrcLifecycle.mqh       ← retest ladder + invalidation + continuation
-mt5/Include/brc_system/BrcCsv.mqh             ← UTF-8 lifecycle-row writer
+mt5/Experts/brc_system/brc_emitter.mq5        ← EA shell: OnInit/OnTick new-bar gate, per-TF loop, CSV writer
+mt5/Include/brc_system/brc_swings.mqh          ← close-based swing pivots (self-contained)
+mt5/Include/brc_system/brc_breakouts.mqh       ← two-pass shared-L2 rawbreakout primitive
+mt5/Include/brc_system/brc_zones.mqh           ← Path-B 5-pointer pairing + accuracy gates
+mt5/Include/brc_system/brc_lifecycle.mqh       ← retest ladder + invalidation + continuation
+mt5/Include/brc_system/brc_csv.mqh             ← UTF-8 lifecycle-row writer
 ```
 
 Self-contained: no `#include` into the Sigma_System tree. Compile headless via MetaEditor64 CLI (orb_ea_deployment_conventions).

@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                                    BrcSwings.mqh  |
+//|                                                    brc_swings.mqh  |
 //|  CLOSE-based swing pivots — faithful port of detectors.py         |
 //|  detect_swings (itself the SwingPointDetector.mqh re-port).       |
 //|                                                                    |
@@ -12,7 +12,7 @@
 #define BRC_SWINGS_MQH
 #property strict
 
-#include "BrcTypes.mqh"
+#include "brc_types.mqh"
 
 //+------------------------------------------------------------------+
 //| radius = window // 2, with the MQH odd/>=3 guard.                 |
