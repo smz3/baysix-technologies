@@ -57,24 +57,22 @@ Price
 ```
 Price
   ^
-  │                     ● P4 (breaks P5)
-  │                    /
-  │                   /
-  │    (first HIGH   /
-  │    above P2)    /        
-  │        ●       /         
-  │        P5     /          
-  │\        \    /           
-  │ \      / \  /            
-  │  \    /   \/      P2     
-  │   \  /     \     (HIGH)  
-  │    \/       \   ════════════ L1 (entry)
-  │    /\        \      /\
-  │   /  \        \    /  \
-  │  /    \        \  /    P3 (Higher Low) ← Required for context
-  │ /      \        \/
-  │/        \       P1 (LOW) ════════════ L2 (origin)
-  └────────────────────────────────────────────────> Time
+  │        P5          │                     ● P4 (breaks P5)
+  │   (first HIGH      │                    /
+  │    above P2)       │                   /
+  │\        ●          │                  /
+  │ \      / \         │    ════════════ L1 (entry)
+  │  \    /   \        │    (HIGH)      /
+  │   \  /     \       │      P2       /
+  │    \/       \      │      /\      /
+  │              \     │     /  \    /
+  │               \    │    /    \  /
+  │                \   │   /      \/
+  │                 \  │  /      P3 (Higher Low) ← Required for context
+  │                  \ │ /
+  │                   \│/
+  │                    P1 (LOW) ════════════ L2 (origin)
+  └────────────────────────────────────────────────────────────> Time
 ```
 
 ### Point Definitions (Mirror)
