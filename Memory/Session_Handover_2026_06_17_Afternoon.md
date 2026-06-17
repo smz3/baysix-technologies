@@ -7,6 +7,7 @@
 - **Touch model CONFIRMED with Syafiq (matches code + EA):** T1=L1=P2 (Layer1), T2=50%=mid(L1,L2) (Layer2), T3=L2=P1 (Layer3). Under restored P3<P1 gate L2 collapses to exactly P1.
 - **Key gap surfaced:** BRC has **NO post-confirmation invalidation** — [zones.py](research/models/brc/brc001/zones.py) only has the PRE-confirmation `_passes_gap`. Once a zone is born at P4, nothing kills it. Must build (task 116).
 - **Continuation anchor DECIDED = Option A** (measure forward return FROM the retest touch bar, not from P4). Thesis = Break→Retest→Continuation (price-action memory).
+- **P5-max-age rule DECIDED = NO (do not build).** Syafiq: what matters is the vicinity of P1-P2-P3-P4, which the `_passes_freshness` gate already guarantees (no swing between P3 and P4). P5 may be an old barrier — that's fine, leave it. Closed, not "optional/deferred".
 - **Architecture DECISION:** do NOT rebuild MT5's live state-event engine in Python. Batch is correct for research; "live watch" returns as a frozen per-zone lifecycle panel (task 117) after 116/108; true live-watch belongs at deployment via Gate-7 Python↔MT5 fidelity.
 
 ## Next
