@@ -55,6 +55,42 @@ class Excursion:
 
 
 @dataclass(frozen=True)
+class LetRun:
+    """Unmanaged 'let winners run to invalidation' hold from the L1 retest entry.
+    Stop = L2 (-1R, the lifecycle invalidation boundary); NO profit cap. The trade
+    exits on the first CLOSE beyond L2 (loss, ~ -1R or worse — the close overshoots)
+    or, if the zone never dies, at the last close (an alive RUNNER, possibly many R).
+    This is the only thread the symmetric 1R race left open: winners' MFE ~2R vs the
+    1R stop. realized_r = signed(entry -> exit close) / R, R = |L1 - L2|."""
+    realized_r: float
+    invalidated: bool
+    bars_held: int
+
+
+def let_run(df, zone: "BrcZone", touch: "Touch", life: "ZoneLife") -> "LetRun":
+    """Close-based unmanaged hold: stop at L2, no take-profit, exit at death or end."""
+    sell = zone.direction == SignalDirection.BEARISH
+    times = pd.DatetimeIndex(pd.to_datetime(df["time"].values))
+    closes = df["close"].values
+    n = len(closes)
+
+    entry = zone.l1_price
+    R = abs(zone.l1_price - zone.l2_price)
+    stop = zone.l2_price
+
+    start = int((times >= pd.Timestamp(touch.time)).argmax())
+    for j in range(start, n):
+        c = closes[j]
+        dead = (c > stop) if sell else (c < stop)
+        if dead:
+            r = (entry - c) / R if sell else (c - entry) / R
+            return LetRun(realized_r=float(r), invalidated=True, bars_held=j - start)
+    c = closes[n - 1]
+    r = (entry - c) / R if sell else (c - entry) / R
+    return LetRun(realized_r=float(r), invalidated=False, bars_held=n - 1 - start)
+
+
+@dataclass(frozen=True)
 class Race:
     """First-passage (Ruler B) outcome from the retest entry, both barriers
     CLOSE-based so daily bars need no intrabar order assumption:
