@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                                    brc_emitter.mq5 |
+//|                                                     brc_baysix.mq5 |
 //|         BRC zone-lifecycle EMITTER — the chronological oracle.     |
 //|                                                                    |
 //|  ONE job: emit a trustworthy, look-ahead-free zone-lifecycle       |
@@ -20,7 +20,7 @@
 //|  ⚠️ COMPILE-UNTESTED (authored without an MT5 toolchain present).   |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.00"
+#property version   "1.00"        // keep in lockstep with BRC_VERSION (brc_types.mqh)
 #property strict
 
 #include <brc_system/brc_types.mqh>
@@ -77,13 +77,14 @@ int OnInit()
       g_tf[i].last_time = 0;
      }
 
-   g_runid = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);
-   StringReplace(g_runid, ".", "");
-   StringReplace(g_runid, " ", "_");
-   StringReplace(g_runid, ":", "");
+   string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);
+   StringReplace(ts, ".", "");
+   StringReplace(ts, " ", "_");
+   StringReplace(ts, ":", "");
+   g_runid = "v" + BRC_VERSION + "_" + ts;          // version stamped into every CSV name
 
-   PrintFormat("[BRC] emitter init OK — %d TFs, swing_window=%d radius=%d runid=%s",
-               n, InpSwingWindow, g_radius, g_runid);
+   PrintFormat("[BRC] brc_baysix v%s init OK — %d TFs, swing_window=%d radius=%d runid=%s",
+               BRC_VERSION, n, InpSwingWindow, g_radius, g_runid);
    return INIT_SUCCEEDED;
   }
 
@@ -187,7 +188,7 @@ void OnDeinit(const int reason)
       total += nz;
      }
    FileClose(fh);
-   PrintFormat("[BRC] emitter done — %d zones across %d TFs -> Common/Files/BRC/brc_zones_%s_%s.csv",
-               total, ArraySize(g_tf), _Symbol, g_runid);
+   PrintFormat("[BRC] brc_baysix v%s done — %d zones across %d TFs -> Common/Files/BRC/brc_zones_%s_%s.csv",
+               BRC_VERSION, total, ArraySize(g_tf), _Symbol, g_runid);
   }
 //+------------------------------------------------------------------+
