@@ -149,12 +149,21 @@ def plot_zone(i: int, lookahead: int = 14, pad_left: int = 3,
     return out
 
 
-def plot_overview(n_bars: int = 120, do_open: bool = True, save_png: bool = False) -> Path:
+def plot_overview(n_bars: int = 500, direction: str = "both",
+                  do_open: bool = True, save_png: bool = False) -> Path:
+    """Full-history sanity render (task 115). `direction` filters the drawn zones:
+    'buy' (BULLISH only), 'sell' (BEARISH only), or 'both'. Three separate renders
+    decouple the green/red overlap so each side's placement is eyeballable on its
+    own. Default window 500 D1 bars (~2yr) for the Gate-2 sanity pass."""
     import matplotlib
     if save_png:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
+
+    direction = direction.lower()
+    if direction not in ("buy", "sell", "both"):
+        raise SystemExit(f"direction must be buy|sell|both (got '{direction}')")
 
     df, zones, pos = _load()
     lo = max(0, len(df) - n_bars)
@@ -165,8 +174,13 @@ def plot_overview(n_bars: int = 120, do_open: bool = True, save_png: bool = Fals
     _line(ax, dfv)
 
     in_view = [z for z in zones if Z.pd.Timestamp(z.p4_time) >= Z.pd.Timestamp(tmin)]
+    drawn = 0
     for z in in_view:
         sell = z.direction == SignalDirection.BEARISH
+        if direction == "buy" and sell:
+            continue
+        if direction == "sell" and not sell:
+            continue
         zclr = CLR_SELL if sell else CLR_BUY
         x1, x4 = _pos(pos, z.p1_time) - lo, _pos(pos, z.p4_time) - lo
         if x1 < 0:
@@ -174,15 +188,16 @@ def plot_overview(n_bars: int = 120, do_open: bool = True, save_png: bool = Fals
         ylo, yhi = min(z.l1_price, z.l2_price), max(z.l1_price, z.l2_price)
         ax.add_patch(Rectangle((x1, ylo), max(x4 - x1, 0.5), yhi - ylo,
                                facecolor=zclr, alpha=0.09, edgecolor=zclr, lw=0.6, zorder=1))
+        drawn += 1
 
-    ax.set_title(f"BRC-001 — D1 Path-B zones (task 113 gated) · last {len(dfv)} bars · "
-                 f"{len(in_view)} zones in view", color="#dddddd", fontsize=11)
+    ax.set_title(f"BRC-001 — D1 Path-B zones (task 113 gated) · {direction.upper()} · "
+                 f"last {len(dfv)} bars · {drawn} zones drawn", color="#dddddd", fontsize=11)
     _date_ticks(ax, dfv, n=10)
     fig.tight_layout()
-    print(f"bars={len(dfv)}  zones_in_view={len(in_view)} "
-          f"(sell={sum(1 for z in in_view if z.direction==SignalDirection.BEARISH)})")
+    print(f"bars={len(dfv)}  direction={direction}  zones_drawn={drawn} "
+          f"(of {len(in_view)} in view)")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / "overview.png"
+    out = OUT_DIR / f"overview_{direction}.png"
     if save_png:
         fig.savefig(str(out), dpi=110, facecolor=fig.get_facecolor()); print(f"wrote {out}")
     elif do_open:
@@ -193,7 +208,9 @@ def plot_overview(n_bars: int = 120, do_open: bool = True, save_png: bool = Fals
 def _main(argv: list[str]) -> None:
     flags = [a for a in argv if a.startswith("--")]
     pos = [a for a in argv if not a.startswith("--")]
-    kind = pos[0] if pos and not pos[0].isdigit() else "zone"
+    words = [a for a in pos if not a.lstrip("-").isdigit()]
+    kind = words[0] if words else "zone"
+    direction = next((w for w in words[1:] if w.lower() in ("buy", "sell", "both")), "both")
     nums = [int(a) for a in pos if a.lstrip("-").isdigit()]
     save_png = "--png" in flags
     do_open = "--no-open" not in flags
@@ -201,9 +218,15 @@ def _main(argv: list[str]) -> None:
     if kind == "zone":
         plot_zone(nums[0] if nums else 0, do_open=do_open, save_png=save_png)
     elif kind == "overview":
-        plot_overview(nums[0] if nums else 120, do_open=do_open, save_png=save_png)
+        plot_overview(nums[0] if nums else 500, direction=direction,
+                      do_open=do_open, save_png=save_png)
+    elif kind == "overview3":
+        # task 115: render all three sanity overviews in one shot (headless PNGs)
+        n = nums[0] if nums else 500
+        for d in ("buy", "sell", "both"):
+            plot_overview(n, direction=d, do_open=False, save_png=True)
     else:
-        raise SystemExit(f"unknown viz '{kind}' (have: zone, overview)")
+        raise SystemExit(f"unknown viz '{kind}' (have: zone, overview, overview3)")
 
 
 if __name__ == "__main__":
