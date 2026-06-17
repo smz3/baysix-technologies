@@ -9,9 +9,8 @@
 - Syafiq eyeballed the gated set, said "looks okay." One open observation: zone_16 had a ~2-month-old P5 barrier (faithful to EA — no P5 max-age; freshness only governs P3→P4). Deferred unless he wants a nearby-barrier rule.
 
 ## Next
-1. **Task 115 (P1)** — BRC Gate-2 sanity render: full 1–2yr D1 (~500 bars), THREE separate overviews — (1) BUY only, (2) SELL only, (3) both. Needs a direction filter added to `visual.plot_overview` (buy/sell/both) + longer bar window. Syafiq eyeballs all three → THEN `pipeline.open_gate('BRC-001',2)` + `pass_gate(2)`. **Gate 2 pass is BLOCKED on this.**
-2. **Task 108 (P2)** — BRC retest (L1 re-touch) + continuation label.
-3. **Task 110 (P2)** — BRC Gate 3 edge test: H_base continuation-retest vs H_alt-1 fade vs H_alt-2 single-vs-two-break (uses the `break_kind` label).
+1. **Task 108 (P2)** — BRC retest (L1 re-touch) + continuation label.
+2. **Task 110 (P2)** — BRC Gate 3 edge test: H_base continuation-retest vs H_alt-1 fade vs H_alt-2 single-vs-two-break (uses the `break_kind` label).
 
 ## Blockers
 None. Gate 2 deferred by Syafiq's choice (wants the 3-way sanity render first = task 115). Handover triggered by HARD context threshold (~151k). Zone counts above are detector-output (run zones.py to reproduce), not step4_results metrics — no result_id applies yet (no edge measured until Gate 3 / task 110).
