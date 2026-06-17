@@ -40,6 +40,88 @@ class Continuation:
     cont_inval: float        # signed break-dir points to zone death / data end
 
 
+@dataclass(frozen=True)
+class Excursion:
+    """Path-aware continuation, measured ONLY while the zone is alive (task 108b —
+    fixed-H is deprecated: ~48% of retests die before +10 bars, so a calendar window
+    measures price after the zone is dead). Entry = the L1 retest fill; risk unit
+    R = |L1 - L2| (the zone height = distance to invalidation). Excursions use the
+    bar extremes (intrabar high/low), normalized to R."""
+    R: float                 # |L1 - L2| zone height (price points)
+    mfe_r: float             # max FAVOURABLE excursion (break dir) / R, from entry
+    mae_r: float             # max ADVERSE excursion / R, from entry
+    bars_to_mfe: int         # bars from the retest entry to the favourable extreme
+    n_bars: int              # bars in the alive window (entry -> death/data-end)
+
+
+@dataclass(frozen=True)
+class Race:
+    """First-passage (Ruler B) outcome from the retest entry, both barriers
+    CLOSE-based so daily bars need no intrabar order assumption:
+        WIN  = a bar CLOSES >= target_R*R in the break direction first
+        LOSS = a bar CLOSES beyond L2 first (= invalidation, lifecycle.py)
+        OPEN = neither before data end (still alive)
+    R = |L1 - L2| (the zone's own height = the stop distance). Entry = L1."""
+    outcome: str             # 'win' | 'loss' | 'open'
+    bars_to_resolve: int     # bars from entry to the deciding close (data-end if open)
+    target_R: float
+
+
+def barrier_race(df, zone: "BrcZone", touch: "Touch", life: "ZoneLife",
+                 target_R: float = 1.0) -> "Race":
+    """Close-based race between a +target_R profit barrier and the L2 stop."""
+    sell = zone.direction == SignalDirection.BEARISH
+    times = pd.DatetimeIndex(pd.to_datetime(df["time"].values))
+    closes = df["close"].values
+    n = len(closes)
+
+    entry = zone.l1_price
+    R = abs(zone.l1_price - zone.l2_price)
+    stop = zone.l2_price
+    target = (entry - target_R * R) if sell else (entry + target_R * R)
+
+    start = int((times >= pd.Timestamp(touch.time)).argmax())
+    for j in range(start, n):
+        c = closes[j]
+        win = (c <= target) if sell else (c >= target)
+        loss = (c > stop) if sell else (c < stop)
+        if win:
+            return Race("win", j - start, target_R)
+        if loss:
+            return Race("loss", j - start, target_R)
+    return Race("open", n - 1 - start, target_R)
+
+
+def excursion(df, zone: "BrcZone", touch: "Touch", life: "ZoneLife") -> "Excursion":
+    """MFE/MAE in R units over the alive window [retest touch -> invalidation bar
+    inclusive] (or -> data end if the zone never dies). Favourable = the break
+    direction; R = the L1->L2 distance the stop sits at."""
+    sell = zone.direction == SignalDirection.BEARISH
+    times = pd.DatetimeIndex(pd.to_datetime(df["time"].values))
+    highs = df["high"].values
+    lows = df["low"].values
+
+    entry = zone.l1_price
+    R = abs(zone.l1_price - zone.l2_price)
+
+    win = times >= pd.Timestamp(touch.time)
+    if life.invalidated:                       # include the death bar (the stop hit)
+        win = win & (times <= pd.Timestamp(life.invalidation_time))
+    idx = win.nonzero()[0]
+
+    # favourable extreme = lowest low (SELL) / highest high (BUY); adverse = mirror
+    fav = lows[idx].min() if sell else highs[idx].max()
+    adv = highs[idx].max() if sell else lows[idx].min()
+    mfe = (entry - fav) if sell else (fav - entry)
+    mae = (adv - entry) if sell else (entry - adv)
+
+    fav_pos = lows[idx].argmin() if sell else highs[idx].argmax()
+    return Excursion(
+        R=float(R), mfe_r=float(mfe / R), mae_r=float(mae / R),
+        bars_to_mfe=int(fav_pos), n_bars=int(len(idx)),
+    )
+
+
 def _signed(closes, frm: int, to: int, sell: bool) -> float:
     """Break-direction price move (points) between two absolute df positions."""
     return float(closes[frm] - closes[to]) if sell else float(closes[to] - closes[frm])
