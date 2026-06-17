@@ -175,8 +175,8 @@ def plot_overview(n_bars: int = 120, do_open: bool = True, save_png: bool = Fals
         ax.add_patch(Rectangle((x1, ylo), max(x4 - x1, 0.5), yhi - ylo,
                                facecolor=zclr, alpha=0.09, edgecolor=zclr, lw=0.6, zorder=1))
 
-    ax.set_title(f"BRC-001 — D1 minimal-core zones · last {len(dfv)} bars · "
-                 f"{len(in_view)} zones in view (raw, no dedup)", color="#dddddd", fontsize=11)
+    ax.set_title(f"BRC-001 — D1 Path-B zones (task 113 gated) · last {len(dfv)} bars · "
+                 f"{len(in_view)} zones in view", color="#dddddd", fontsize=11)
     _date_ticks(ax, dfv, n=10)
     fig.tight_layout()
     print(f"bars={len(dfv)}  zones_in_view={len(in_view)} "

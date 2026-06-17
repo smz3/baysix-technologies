@@ -39,13 +39,13 @@ context swing must stay inside the structure. This is a deliberate DEPARTURE: th
 EA is no longer a zone-for-zone oracle (it does a swing-scan + plain close<P5 P4
 and never consumes rawbreakouts). Validation = eyeball Gate 2 + the edge test.
 
-SCOPE for Gate 2 (locked 2026-06-16, task 106): MINIMAL CORE only —
-P1-P5 + two-break confirmation + L2-extreme selection. DEFERRED to task 113:
-  - V5.1.1 one-zone-per-P5 / freshest-wins dedup
-  - V5.1.2 "No-Interruption" (reject if any swing exists between P3 and P4)
-  - gap-validation (L2 closed-through before P4)
+SCOPE: P1-P5 + two-break confirmation + L2-extreme selection (task 112) PLUS the
+EA accuracy gates (task 113): no-interruption between P3 and P4, gap-validation
+(L2 not closed-through pre-P4), and one-zone-per-P5 dedup (freshest P1).
+STILL DEFERRED:
+  - full swing-reuse exclusivity (P1/P2/P3 marked used across zones, EA PASS 3)
   - retest/entry touch rule (task 108)
-D1 only, all zones, no multi-TF russian-doll.
+D1 only, no multi-TF russian-doll.
 
 Reference implementations (ground truth, do NOT fork):
   - mt5/Include/Sigma_System/.../B2BDetector.mqh (live MQL5 EA — level mapping only)
@@ -101,13 +101,34 @@ class BrcZone:
         return 0.5 * (self.l1_price + self.l2_price)
 
 
-def _scan_one_direction(swings, breakouts, sell: bool) -> list[BrcZone]:
+def _passes_freshness(swings, p3_time, p4_time) -> bool:
+    """No-Interruption gate (EA V5.1.2, B2BDetector.mqh:635-645): reject the
+    pattern if ANY swing forms strictly between P3 and P4 — forces the 5-pointer
+    to be the IMMEDIATE predecessor of the breakout (kills stale cross-structure
+    zones like the spurious zone #26 that bridged Dec skeleton -> Jan break)."""
+    return not any(p3_time < s.time < p4_time for s in swings)
+
+
+def _passes_gap(times, closes, p3_time, p4_time, l2: float, sell: bool) -> bool:
+    """Gap-validation (EA, B2BDetector.mqh:647-659): reject if L2 was closed
+    through before P4 confirmed. Any bar in (P3, P4] closing beyond L2 means the
+    zone was invalidated before its 2nd break ever landed."""
+    mask = (times > pd.Timestamp(p3_time)) & (times <= pd.Timestamp(p4_time))
+    if not mask.any():
+        return True
+    seg = closes[mask]
+    breached = (seg > l2).any() if sell else (seg < l2).any()
+    return not breached
+
+
+def _scan_one_direction(df, swings, breakouts, sell: bool) -> list[BrcZone]:
     """One pass of the Path-B 5-pointer scan. SELL: P1=HIGH, P2=LOW, P3=HIGH
     (<P1), P5=older LOW < P2. Confirmation = the two same-direction breaks from
     the struct.rawbreakout stream (P2 break = entry, P5 break = P4). BUY = mirror.
 
     Swings seed P1/P2/P3/P5; the break primitive supplies P4 + the same_bar /
-    sequential label. A zone is emitted only once P5 has actually been broken."""
+    sequential label. A zone is emitted only once P5 has been broken, the freshness
+    + gap gates pass (task 113), and it wins the one-zone-per-P5 dedup."""
     p1_type = SwingType.HIGH if sell else SwingType.LOW    # P1 / P3 type
     p2_type = SwingType.LOW if sell else SwingType.HIGH    # P2 / P5 type
     direction = SignalDirection.BEARISH if sell else SignalDirection.BULLISH
@@ -117,8 +138,12 @@ def _scan_one_direction(swings, breakouts, sell: bool) -> list[BrcZone]:
     brk_by_swing_time = {
         b.broken_swing_time: b for b in breakouts if b.direction == direction
     }
+    times = pd.DatetimeIndex(pd.to_datetime(df["time"].values))
+    closes = df["close"].values
 
-    out: list[BrcZone] = []
+    # one-zone-per-P5 dedup (EA V5.1.1 PASS 2): keep the FRESHEST P1 (highest swing
+    # index) per P5 barrier. i ascends, so a later overwrite always wins.
+    by_p5: dict = {}
 
     for i in range(len(swings) - 2):
         p1 = swings[i]
@@ -160,6 +185,17 @@ def _scan_one_direction(swings, breakouts, sell: bool) -> list[BrcZone]:
         p4_time = b_p5.breakout_bar_time
         p4_close = b_p5.breakout_bar_close_price
 
+        # Levels (traced vs EA CreateZoneFrom5Pointer): L1 = P2; L2 = extreme(P1,P3)
+        # — which, under the restored P3<P1 gate, is always P1.
+        l1 = p2.price
+        l2 = max(p1.price, p3.price) if sell else min(p1.price, p3.price)
+
+        # ── task 113 accuracy gates ─────────────────────────────────────────
+        if not _passes_freshness(swings, p3.time, p4_time):
+            continue
+        if not _passes_gap(times, closes, p3.time, p4_time, l2, sell):
+            continue
+
         # 1st break = the bar that broke P2 (L1 entry). Because P5 is more extreme
         # than P2, breaking P5 implies P2 broke at-or-before. If P2 has its own
         # break event we compare bars; if not (P2 absorbed on the same impulse
@@ -173,20 +209,16 @@ def _scan_one_direction(swings, breakouts, sell: bool) -> list[BrcZone]:
             p2_break_time = p4_time
         break_kind = "same_bar" if same else "sequential"
 
-        # Levels (traced vs EA CreateZoneFrom5Pointer): L1 = P2; L2 = extreme(P1,P3)
-        # — which, under the restored P3<P1 gate, is always P1.
-        l1 = p2.price
-        l2 = max(p1.price, p3.price) if sell else min(p1.price, p3.price)
-
-        out.append(BrcZone(
+        # one-zone-per-P5 dedup: i ascends, so this overwrite keeps the freshest P1.
+        by_p5[p5.time] = BrcZone(
             direction=direction, l1_price=l1, l2_price=l2,
             p1_time=p1.time, p1_price=p1.price, p2_time=p2.time,
             p3_time=p3.time, p3_price=p3.price,
             p4_time=p4_time, p4_price=p4_close,
             p5_time=p5.time, p5_price=p5.price,
             break_kind=break_kind, p2_break_time=p2_break_time,
-        ))
-    return out
+        )
+    return list(by_p5.values())
 
 
 def detect_zones(tf: str = "D1", swing_window: int = 3) -> list[BrcZone]:
@@ -194,16 +226,16 @@ def detect_zones(tf: str = "D1", swing_window: int = 3) -> list[BrcZone]:
 
     PATH B (task 112, locked 2026-06-17): swing-seeded skeleton (P1/P2/P3/P5) +
     two-break confirmation sourced from struct.rawbreakout + L1=P2 / L2=extreme(P1,P3)
-    with the P3<P1 gate restored. Both directions, every valid pattern (no dedup).
-    DEFERRED to task 113 — see module docstring:
-      - V5.1.1 freshest-pattern-per-P5 / swing-reuse dedup
-      - V5.1.2 no-interruption (reject new swing between P3 and P4)
-      - gap-validation (L2 broken before P4)
-      - retest / entry touch rule (task 108)
+    with the P3<P1 gate restored. ACCURACY GATES added task 113 (ported from EA):
+      - no-interruption (reject if any swing exists between P3 and P4)
+      - gap-validation (reject if L2 closed-through before P4)
+      - one-zone-per-P5 dedup (keep the freshest P1 per barrier)
+    STILL DEFERRED: full swing-reuse exclusivity (P1/P2/P3 marked used across
+    zones, EA PASS 3), retest / entry touch rule (task 108).
     """
-    _df, swings, breakouts = rb.raw_breakouts(tf, swing_window=swing_window)
-    zones = _scan_one_direction(swings, breakouts, sell=True)
-    zones += _scan_one_direction(swings, breakouts, sell=False)
+    df, swings, breakouts = rb.raw_breakouts(tf, swing_window=swing_window)
+    zones = _scan_one_direction(df, swings, breakouts, sell=True)
+    zones += _scan_one_direction(df, swings, breakouts, sell=False)
     zones.sort(key=lambda z: z.p4_time)
     return zones
 
