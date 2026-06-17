@@ -203,7 +203,9 @@ void CBrcVisual::OnBreak(const string tf, const BrcBreak &br)
    bool   bull = (br.dir == BRC_BULL);
    color  clr  = bull ? InpBrcClrBreakBull : InpBrcClrBreakBear;
    string tag  = bull ? "Bob" : "Bos";       // Break-of-bull / Break-of-bear (Sigma naming)
-   string stem = BRC_VIS_PREFIX + "BO_" + tf + "_" + (string)br.bar_time;
+   //--- key on the BROKEN SWING (unique — a swing breaks once); bar_time alone
+   //    collides when one bar's close breaks several swings, dropping all but one.
+   string stem = BRC_VIS_PREFIX + "BO_" + tf + "_" + (string)br.swing_time + "_" + (string)br.bar_time;
    Bullet(stem + "_b", br.swing_time, br.swing_price, clr, InpBrcBulletSize);
    Label (stem + "_t", br.swing_time, br.swing_price,
           StringFormat("  %s %s (%s)", tag, DoubleToString(br.swing_price, _Digits),
