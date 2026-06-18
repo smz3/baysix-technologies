@@ -1,24 +1,16 @@
 # Handover — June 18, 2026 Afternoon
 
-## State (task 122 — BRC↔B2B zone parity)
-- **Levels now MATCH B2B on the live chart (Syafiq confirmed "working").** Rewrote BRC detection to a 1:1 port of Sigma's `CB2BDetector::DetectB2B_5Pointer` (forward scan). Commit **a1ccce0**.
-  - FORWARD selection: P2 = first opposite-swing AFTER P1, P3 = first same-type AFTER P2 (was backward "last-before").
-  - **Dropped the `P3<P1` gate** → `L2 = extreme(P1,P3)` (may now resolve to P3, not always P1) — matches [CreateZoneFrom5Pointer](mt5/Include/Sigma_System/V5.0/Detection/B2BDetector.mqh#L395).
-  - Newest-P1 winner per P5; B2B freshness gate (no swing strictly in P3..P4) now a real reject; `IsSwingUsedInZones` (alive same-dir only) + duplicate `(dir,L1,L2)` dedup.
-  - Why safe (Syafiq's call): event-driven tester swing buffer only holds swings confirmed up to the current bar → forward scan carries NO look-ahead (the Python vectorized scan was the only leak). This is why we went straight to MT5, not Python.
-  - Files: [brc_zones.mqh](mt5/Include/brc_system/brc_zones.mqh) (rewritten), [brc_types.mqh](mt5/Include/brc_system/brc_types.mqh) (comments), [brc_baysix.mq5](mt5/Experts/brc_system/brc_baysix.mq5) (call passes `s.zones`). Compiles 0/0.
-- **Death-bar touch fix** (commit **9638ed2**): retest ladder was gated `if(!dead)`, so a zone wicking L1 on the same bar it closed beyond L2 logged T0. B2B stamps touches BEFORE invalidation. Removed the guard in [brc_lifecycle.mqh](mt5/Include/brc_system/brc_lifecycle.mqh) (kept it on `continued`). **This was NOT the symptom Syafiq meant** (see Open Bug) but is a correct parity fix.
+## State (BRC-001 emitter — IS pipeline emit→ingest GREEN)
+- **Tester perf fixed.** Root cause: runs were on "Every tick based on real ticks". Switched to **Open prices only** (data-identical for the close-only ledger — touches read off closed-bar high/low, time stored = bar time). 1yr smoke = **23s**. Added `if(MQLInfoInteger(MQL_TESTER)) return;` guard on the live-touch pass ([brc_baysix.mq5](mt5/Experts/brc_system/brc_baysix.mq5#L191)). Compiled clean. See [[brc_emitter_open_prices_model]].
+- **Task 119 ingest BUILT** — `tester_zones` schema + `ingest_brc_zones()` in [tester.py](research/code/tester.py); CLI [ingest_brc_zones.py](research/code/ingest_brc_zones.py); migration 030. Each emit = a tester_runs header (provenance) + one tester_zones row/zone/TF. Parses brc_csv.mqh UTF-8/header/comma, time-normalised, 0-sentinel→NULL, re-ingest guard.
+- **Task 124 smoke DONE** — run #2, 12,489 zones, 2024 IS year. Per-TF byte-matches CSV; all 8 TFs carry zones + T1/T2/T3 (cascade T1≥T2≥T3); all zones resolved (610 alive + 11,879 invalidated).
+- **Task 125 full IS DONE** — run #3, **100,034 zones**, M5 confirm **2016-06-13 → 2024-06-28** (stops before OOS ✓). All resolved (1,392 alive + 98,642 invalidated), continued ~51%, L1-touched ~99.5%. ⚠️ data starts 2016-06 not 2016-01 (Dukascopy M5 depth) — ~5mo short of locked IS window.
+- **Broken/slow:** the full 8.5yr run took ~hours w/ climbing ETA — O(n²) close-bar pipeline (unbounded swing/zone/break arrays, `InpMaxAge=0`). Logged **task 128** (P2) with full diagnosis + parity-safe fix plan. Numbers above are row-count verifications from `tester_zones` run #2/#3 (no result_id — pre-Gate-3 observational ledger, not step4_results).
 
-## Open Bug (P1) — T-touches don't update on live ticks
-- **Symptom:** on the live chart, price visibly touches a BRC zone level but the `[Tn]` label does NOT update instantly — only when the bar closes.
-- **Root cause:** the emitter is **close-only by design** — [OnTick](mt5/Experts/brc_system/brc_baysix.mq5#L163) does `CopyRates(..., 1, 64, r)` (index 1 = last CLOSED bar) and `BrcAdvanceZone` runs per closed bar using that bar's high/low. The forming bar (index 0) is never evaluated, so a wick touch on the current bar isn't seen until it closes.
-- **B2B does it per-tick:** [UpdateZoneStatusInBuffer](mt5/Include/Sigma_System/V5.0/Detection/B2BZoneStatus.mqh#L211) detects touches every tick off `current_high/current_low`; only INVALIDATION is bar-close-gated.
-- **Fix direction for next agent:** add an intrabar/live touch pass — on each tick, evaluate the FORMING bar's running high/low (or the tick bid) against alive zones' L1/mid/L2 and update `t1/t2/t3_time` + the visual, WHILE keeping detection + invalidation close-only (don't let a forming-bar wick invalidate). Essentially mirror B2B: touches=tick, invalidation=bar-close. Keep it visual/lifecycle only; the CSV emit semantics for the 10yr run stay close-only (tester is "Open prices only" anyway, so this is a LIVE-chart eyeball nicety — confirm whether Syafiq wants it in the emitted ledger too).
+## Next
+1. **Task 128 (DISCUSS first):** BRC emitter O(n²) fix — alive-zone-only iteration + bounded swing-lookback prune + bounded dedup. CHECK live Sigma B2B EA's lookback cap and mirror it 1:1. Re-verify vs 1yr smoke (must reproduce run #2 = 12,489 zones, per-TF M5=7791..MN1=1).
+2. **Task 127:** ConsolidateOverlappingZones decision (dedup vs keep-all) before parity fully closed.
+3. **Task 110:** single-TF atom edge test (E[$/trade] net of cost, H_base vs fade vs single-break) — the first real research, BEFORE russian-doll (task 120). ⚠️ MSM-001 `confluence_2tf_agree_t = -2.1951` (cross-TF agreement already tested negative).
 
-## Deferred (decide before "done")
-- **`ConsolidateOverlappingZones`** (50%-overlap → keep biggest, [B2BZoneManager.mqh:230](mt5/Include/Sigma_System/V5.0/Detection/B2BZoneManager.mqh#L230)) — the last B2B dedup BRC lacks. NOT added because it DELETES zones, thinning the task-120 funnel dataset. Decision: add for strict 1:1, or treat as a downstream Python filter and keep all zones.
-
-## Notes
-- [brc_visual.mqh](mt5/Include/brc_system/brc_visual.mqh) has **uncommitted local test toggles** (`InpVisualize=true`, label size 8) — left deliberately so the chart draws; do not commit.
-- Compile workflow unchanged — see [[brc_compile_workflow]] (MetaEditor64 CLI, `/inc`=`mt5/`, log UTF-16, delete after).
-- Context hit 168k (hard threshold) → handover written directly, not via /handover skill.
+## Blockers
+None. Task 126 (OOS emit) intentionally BLOCKED until IS config frozen ([[is_discipline_guards]]). Decide whether to backfill 2016-01→06 IS history (optional).
