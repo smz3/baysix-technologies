@@ -99,4 +99,39 @@ void BrcAdvanceZone(BrcZone &z, const datetime bt,
       z.bars_alive++;
   }
 
+//+------------------------------------------------------------------+
+//| Live INTRABAR touch pass — mirror of B2B's per-tick touch detect  |
+//| (B2BZoneStatus.UpdateZoneStatusInBuffer). Stamps t1/t2/t3 off the |
+//| FORMING bar's running high/low (h,l) so the [Tn] label flips the  |
+//| instant price wicks a level, instead of waiting for the bar close.|
+//|                                                                    |
+//| Touch-ONLY: invalidation, bars_alive and `continued` stay         |
+//| CLOSE-only (BrcAdvanceZone owns them) — a forming-bar wick must    |
+//| never kill a zone. Data-neutral for the CSV ledger: the forming   |
+//| bar's high/low only grow, so a level a wick crosses is also        |
+//| crossed by that same bar's CLOSED extremes — the touch lands on    |
+//| the SAME bar (same `bt`) either way; we just stamp it earlier.     |
+//| A T1 touch arms the entry (z.entered) exactly as BrcAdvanceZone    |
+//| does, so the close-only excursion stays consistent. Returns true   |
+//| if any touch time was newly stamped (caller redraws the visual).   |
+//+------------------------------------------------------------------+
+bool BrcLiveTouch(BrcZone &z, const datetime bt, const double h, const double l)
+  {
+   if(!z.alive)
+      return false;
+
+   bool   sell  = (z.direction == BRC_BEAR);
+   double probe = sell ? h : l;
+   bool   hit   = false;
+
+   if(z.t1_time == 0 && (sell ? (probe >= z.l1)  : (probe <= z.l1)))
+     { z.t1_time = bt; z.entered = true; hit = true; }   // L1 retest = the entry
+   if(z.t2_time == 0 && (sell ? (probe >= z.mid) : (probe <= z.mid)))
+     { z.t2_time = bt; hit = true; }
+   if(z.t3_time == 0 && (sell ? (probe >= z.l2)  : (probe <= z.l2)))
+     { z.t3_time = bt; hit = true; }
+
+   return hit;
+  }
+
 #endif // BRC_LIFECYCLE_MQH

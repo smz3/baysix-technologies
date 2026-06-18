@@ -180,6 +180,25 @@ void OnTick()
          g_tf[t].last_time = r[k].time;
         }
      }
+
+   //--- live INTRABAR touch pass: stamp t1/t2/t3 off each TF's FORMING bar
+   //    (index 0) so the [Tn] label flips the instant price wicks a level,
+   //    instead of only at bar close. Touch-only — invalidation/continuation
+   //    stay close-only (BrcAdvanceZone). Data-neutral for the CSV (the touch
+   //    lands on the same bar either way; see BrcLiveTouch). Open-prices tester
+   //    fires OnTick once per bar with the forming bar = its open, so this adds
+   //    no spurious touches there; it is a live-chart instant-update nicety.
+   MqlRates f[];
+   for(int t = 0; t < ArraySize(g_tf); t++)
+     {
+      if(CopyRates(_Symbol, g_tf[t].period, 0, 1, f) != 1)   // index 0 = forming bar
+         continue;
+      int nz = ArraySize(g_tf[t].zones);
+      for(int z = 0; z < nz; z++)
+         if(g_tf[t].zones[z].alive && g_tf[t].zones[z].p4_time < f[0].time)
+            if(BrcLiveTouch(g_tf[t].zones[z], f[0].time, f[0].high, f[0].low))
+               g_vis.OnZoneAdvanced(g_tf[t].name, g_tf[t].zones[z]);
+     }
   }
 
 //+------------------------------------------------------------------+

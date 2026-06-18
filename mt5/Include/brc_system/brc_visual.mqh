@@ -32,28 +32,29 @@
 #include "brc_types.mqh"
 
 //--- master + per-layer toggles -------------------------------------
-input bool  InpVisualize      = false;       // MASTER: draw chart objects (off for the 10yr emit run)
-input bool  InpBrcShowSwings  = true;        // LAYER 1: swing pivots (validate this first)
-input bool  InpBrcShowBreaks  = true;        // LAYER 2: raw breakouts
+input bool  InpVisualize      = true;        // MASTER: draw chart objects (off for the 10yr emit run)
+input bool  InpBrcShowSwings  = false;       // LAYER 1: swing pivots (validate this first)
+input bool  InpBrcShowBreaks  = false;       // LAYER 2: raw breakouts
 input bool  InpBrcShowZones   = true;        // LAYER 3: 5-pointer zone (L1/L2/50 lines + labels)
 input bool  InpBrcShowMid     = true;        // zone 50% line
-input bool  InpBrcShowPoints  = true;        // P1..P5 skeleton bullets
+input bool  InpBrcShowPoints  = false;       // P1..P5 skeleton bullets
 input bool  InpBrcShowRetests = true;        // T1/T2/T3 retest touch dots (status is always in the label)
-input bool  InpBrcShowInvalid = true;        // keep invalidated (dead) zones on chart (dimmed)
+input bool  InpBrcShowInvalid = false;       // keep invalidated (dead) zones on chart (dimmed)
 input int   InpBrcMaxZones    = 50;          // rolling cap: zones kept on chart per TF
-input int   InpBrcBulletSize  = 12;          // "•" bullet font size
-input int   InpBrcLabelSize   = 7;           // label font size
-//--- colours (Sigma-style) ------------------------------------------
-input color InpBrcClrSwingHigh = clrTomato;
-input color InpBrcClrSwingLow  = clrDodgerBlue;
-input color InpBrcClrBreakBull = clrLimeGreen;
-input color InpBrcClrBreakBear = clrOrangeRed;
-input color InpBrcClrZoneBull  = clrMediumSeaGreen;
-input color InpBrcClrZoneBear  = clrIndianRed;
-input color InpBrcClrZoneDead  = clrDimGray;
-input color InpBrcClrMid       = clrGoldenrod;
-input color InpBrcClrRetest    = clrWhite;
-input color InpBrcClrPoint     = clrSilver;
+//--- font sizes (hidden from inputs — tweak in source) --------------
+const int   InpBrcBulletSize  = 12;          // "•" bullet font size
+const int   InpBrcLabelSize   = 8;           // label font size
+//--- colours (Sigma-style; hidden from inputs — tweak in source) ----
+const color InpBrcClrSwingHigh = clrTomato;
+const color InpBrcClrSwingLow  = clrDodgerBlue;
+const color InpBrcClrBreakBull = clrLimeGreen;
+const color InpBrcClrBreakBear = clrOrangeRed;
+const color InpBrcClrZoneBull  = clrMediumSeaGreen;
+const color InpBrcClrZoneBear  = clrIndianRed;
+const color InpBrcClrZoneDead  = clrDimGray;
+const color InpBrcClrMid       = clrGoldenrod;
+const color InpBrcClrRetest    = clrWhite;
+const color InpBrcClrPoint     = clrSilver;
 
 #define BRC_VIS_PREFIX "BRC_"          // every object name starts here -> one-shot ClearAll
 #define BRC_VIS_FONT   "Calibri Light"
