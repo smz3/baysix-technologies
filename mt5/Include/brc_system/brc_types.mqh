@@ -64,11 +64,11 @@ struct BrcZone
    //--- geometry (zones.py) -----------------------------------------
    int              direction;    // BRC_BULL | BRC_BEAR
    double            l1;           // = P2.price  (entry)
-   double            l2;           // = extreme(P1,P3) (invalidation) == P1 under P3<P1 gate
+   double            l2;           // = extreme(P1,P3) (invalidation) — may resolve to P3 (no P3<P1 gate)
    double            mid;          // 0.5*(l1+l2)
-   datetime          p1_time;   double p1_price;   // L2 origin swing
-   datetime          p2_time;   double p2_price;   // L1 entry swing (1st-break target)
-   datetime          p3_time;   double p3_price;   // context-gate swing (P3<P1)
+   datetime          p1_time;   double p1_price;   // L2 origin swing (anchor; newest-P1 wins)
+   datetime          p2_time;   double p2_price;   // L1 entry swing (first low/high AFTER P1)
+   datetime          p3_time;   double p3_price;   // context swing (first high/low AFTER P2)
    datetime          p4_time;   double p4_price;   // confirmation bar (broke P5) close
    datetime          p5_time;   double p5_price;   // 2nd barrier swing
    int              break_kind;   // 0=same_bar, 1=sequential   (H_alt-2 input)

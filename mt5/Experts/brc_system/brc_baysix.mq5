@@ -131,10 +131,11 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
       g_vis.OnBreak(s.name, s.breaks[b]);
 
    //--- 3. each NEW break is a candidate P4 (2nd break) -> try to confirm a zone.
+   //    existing zones (s.zones) feed B2B's swing-usage + duplicate dedup.
    for(int k = before; k < after; k++)
      {
       BrcZone z;
-      if(BrcTryConfirmZone(s.breaks[k], s.swings, s.breaks, s.bc, n, z))
+      if(BrcTryConfirmZone(s.breaks[k], s.swings, s.breaks, s.bc, n, s.zones, z))
         {
          int zi = ArraySize(s.zones);
          ArrayResize(s.zones, zi + 1, 256);
