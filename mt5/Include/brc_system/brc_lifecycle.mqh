@@ -15,9 +15,9 @@
 //|                                                                    |
 //|   2. RETEST LADDER (wick, retest.py): T1=L1, T2=mid, T3=L2; first  |
 //|      intrabar touch of each. SELL touched when high>=level, BUY    |
-//|      when low<=level. The DEATH BAR IS EXCLUDED from retest (its   |
-//|      close-through of L2 would mechanically fake a T3 wick touch)  |
-//|      — so touches are only recorded on bars that stay alive.       |
+//|      when low<=level. Recorded on EVERY post-P4 bar INCLUDING the  |
+//|      death bar (B2B parity: B2BZoneStatus stamps touches BEFORE    |
+//|      invalidation — a close-through of L2 legitimately sets T3).   |
 //|                                                                    |
 //|   3. CONTINUATION (continuation.py), anchored on the L1 retest     |
 //|      ENTRY (T1 touch). entry = L1, R = |L1-L2|.  MFE/MAE use bar   |
@@ -27,8 +27,8 @@
 //|      TP) signed entry->exit close, exit on death or at data-end    |
 //|      (a still-alive entered zone keeps tracking the latest close). |
 //|                                                                    |
-//|  ⚠️ The death bar differs across the three: EXCLUDED from retest,  |
-//|  INCLUDED in excursion/realized — handled by ordering below.       |
+//|  ⚠️ Death bar is INCLUDED in retest + excursion/realized; only     |
+//|  `continued` excludes it (closed +1R must precede invalidation).   |
 //+------------------------------------------------------------------+
 #ifndef BRC_LIFECYCLE_MQH
 #define BRC_LIFECYCLE_MQH
@@ -52,19 +52,18 @@ void BrcAdvanceZone(BrcZone &z, const datetime bt,
    double level = BrcExtreme(z.l1, z.l2, sell);          // invalidation level (== L2)
    bool   dead  = sell ? (cl > level) : (cl < level);    // close-only
 
-   //--- 2. retest ladder (wick) — recorded ONLY on bars that stay alive, so the
-   //    death bar's close-through can never fake a T3 touch. A T1 touch arms the
+   //--- 2. retest ladder (wick) — recorded on EVERY post-P4 bar INCLUDING the
+   //    death bar (B2B parity: B2BZoneStatus records touches FIRST, then checks
+   //    invalidation, so a close-through of L2 legitimately stamps T3 — the wick
+   //    did cross it — exactly as the live Sigma EA does). A T1 touch arms the
    //    entry on THIS bar, so the excursion below already counts it.
-   if(!dead)
-     {
-      double probe = sell ? h : l;
-      if(z.t1_time == 0 && (sell ? (probe >= z.l1)  : (probe <= z.l1)))
-        { z.t1_time = bt; z.entered = true; }            // L1 retest = the entry
-      if(z.t2_time == 0 && (sell ? (probe >= z.mid) : (probe <= z.mid)))
-         z.t2_time = bt;
-      if(z.t3_time == 0 && (sell ? (probe >= z.l2)  : (probe <= z.l2)))
-         z.t3_time = bt;
-     }
+   double probe = sell ? h : l;
+   if(z.t1_time == 0 && (sell ? (probe >= z.l1)  : (probe <= z.l1)))
+     { z.t1_time = bt; z.entered = true; }            // L1 retest = the entry
+   if(z.t2_time == 0 && (sell ? (probe >= z.mid) : (probe <= z.mid)))
+      z.t2_time = bt;
+   if(z.t3_time == 0 && (sell ? (probe >= z.l2)  : (probe <= z.l2)))
+      z.t3_time = bt;
 
    //--- 3. continuation (only after the L1 entry has fired). MFE/MAE include the
    //    death bar; realized_r tracks the latest close (frozen at the death close
