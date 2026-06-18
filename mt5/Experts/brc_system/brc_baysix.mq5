@@ -185,9 +185,13 @@ void OnTick()
    //    (index 0) so the [Tn] label flips the instant price wicks a level,
    //    instead of only at bar close. Touch-only — invalidation/continuation
    //    stay close-only (BrcAdvanceZone). Data-neutral for the CSV (the touch
-   //    lands on the same bar either way; see BrcLiveTouch). Open-prices tester
-   //    fires OnTick once per bar with the forming bar = its open, so this adds
-   //    no spurious touches there; it is a live-chart instant-update nicety.
+   //    lands on the same bar either way; see BrcLiveTouch). It is a purely
+   //    live-chart instant-update nicety, so SKIP IT IN THE TESTER: under a
+   //    real-ticks model it fires per-tick and loops every accumulated zone
+   //    (quadratic, the >24h/8yr blow-up), while adding nothing to the ledger.
+   if(MQLInfoInteger(MQL_TESTER))
+      return;
+
    MqlRates f[];
    for(int t = 0; t < ArraySize(g_tf); t++)
      {
