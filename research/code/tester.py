@@ -100,6 +100,38 @@ CREATE TABLE IF NOT EXISTS tester_trades (
 );
 CREATE INDEX IF NOT EXISTS ix_tester_trades_run    ON tester_trades(run_id);
 CREATE INDEX IF NOT EXISTS ix_tester_trades_run_ts ON tester_trades(run_id, entry_ts);
+
+-- BRC zone-lifecycle ledger (task 119). The BRC emitter is an observational
+-- oracle, not a trade strategy, so each emit is a tester_runs header (same
+-- provenance: symbol/data_source/tester_model/period) and one tester_zones row
+-- per confirmed zone per TF. Source CSV = brc_csv.mqh (UTF-8, header, comma).
+-- Times are normalised "YYYY-MM-DD HH:MM:SS"; the 0-sentinel blank -> NULL
+-- (level never touched / zone still alive at data-end).
+CREATE TABLE IF NOT EXISTS tester_zones (
+    tz_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
+    csv_zone_id       INTEGER,                       -- zone_id within the source CSV (resets per file)
+    tf                TEXT NOT NULL,                 -- M5 .. MN1
+    direction         TEXT CHECK(direction IN ('BUY','SELL')),
+    p1_time DATETIME, p1_price REAL,
+    p2_time DATETIME, p2_price REAL,
+    p3_time DATETIME, p3_price REAL,
+    p4_time DATETIME, p4_price REAL,                 -- P4 = 2nd break = confirm bar
+    p5_time DATETIME, p5_price REAL,
+    l1 REAL, l2 REAL, mid REAL,                      -- zone levels (l1=retest/entry, l2=invalidation, mid)
+    break_kind        TEXT CHECK(break_kind IS NULL OR break_kind IN ('sequential','same_bar')),
+    t1_time DATETIME, t2_time DATETIME, t3_time DATETIME,   -- L1/mid/L2 touch times (NULL = untouched)
+    confirm_time      DATETIME,                      -- == p4_time
+    invalidation_time DATETIME,                      -- close beyond L2 (NULL = never invalidated)
+    alive_at_end      INTEGER,                       -- 1 = still alive at data-end
+    continued         INTEGER,                       -- 1 = continuation past L1 in break direction
+    mfe_r REAL, mae_r REAL, realized_r REAL,         -- excursion / realized, in R (1R = entry->stop)
+    bars_alive        INTEGER,
+    created_at        DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_tester_zones_run     ON tester_zones(run_id);
+CREATE INDEX IF NOT EXISTS ix_tester_zones_run_tf  ON tester_zones(run_id, tf);
+CREATE INDEX IF NOT EXISTS ix_tester_zones_confirm ON tester_zones(run_id, confirm_time);
 """
 
 
@@ -115,11 +147,11 @@ def _now() -> str:
 
 
 def init_db() -> Path:
-    """Create the two Gate-7 tables in research.db. Idempotent (IF NOT EXISTS)."""
+    """Create the Gate-7 + BRC tables in research.db. Idempotent (IF NOT EXISTS)."""
     with _conn() as conn:
         conn.executescript(_SCHEMA)
         conn.commit()
-    print(f"[tester] Gate-7 schema ready in {DB_PATH.name}")
+    print(f"[tester] tester schema ready in {DB_PATH.name} (tester_runs/trades/zones)")
     return DB_PATH
 
 
@@ -218,6 +250,78 @@ def ingest_tester_trade(
         conn.commit()
         tt_id = cur.lastrowid
     return tt_id
+
+
+# ── BRC zone-lifecycle ingest (task 119) ───────────────────────────────────────
+_ZONE_COLS = [
+    "csv_zone_id", "tf", "direction",
+    "p1_time", "p1_price", "p2_time", "p2_price", "p3_time", "p3_price",
+    "p4_time", "p4_price", "p5_time", "p5_price",
+    "l1", "l2", "mid", "break_kind",
+    "t1_time", "t2_time", "t3_time", "confirm_time", "invalidation_time",
+    "alive_at_end", "continued", "mfe_r", "mae_r", "realized_r", "bars_alive",
+]
+_ZONE_TIME_COLS  = {"p1_time", "p2_time", "p3_time", "p4_time", "p5_time",
+                    "t1_time", "t2_time", "t3_time", "confirm_time", "invalidation_time"}
+_ZONE_INT_COLS   = {"csv_zone_id", "alive_at_end", "continued", "bars_alive"}
+_ZONE_FLOAT_COLS = {"p1_price", "p2_price", "p3_price", "p4_price", "p5_price",
+                    "l1", "l2", "mid", "mfe_r", "mae_r", "realized_r"}
+
+
+def _norm_ts(s: str):
+    """'YYYY.MM.DD HH:MM:SS' -> 'YYYY-MM-DD HH:MM:SS'; '' (0-sentinel) -> None.
+    Only the date part carries dots (time uses ':'), so a blanket '.'→'-' is safe."""
+    s = (s or "").strip()
+    return s.replace(".", "-") if s else None
+
+
+def ingest_brc_zones(run_id: int, csv_path) -> int:
+    """Bulk-load a brc_csv.mqh lifecycle CSV (UTF-8, header, comma) into tester_zones
+    under an existing tester_runs header. Returns the number of zone rows inserted.
+    Re-ingesting the same run_id is blocked (delete the run's rows first to redo)."""
+    import csv as _csv
+    csv_path = Path(csv_path)
+    if not get_tester_run(run_id):
+        raise ValueError(f"tester run not found: {run_id} — create the run header first")
+    with _conn() as conn:
+        existing = conn.execute("SELECT COUNT(*) FROM tester_zones WHERE run_id=?",
+                                (run_id,)).fetchone()[0]
+        if existing:
+            raise ValueError(f"run #{run_id} already has {existing} zones — "
+                             f"delete them before re-ingesting")
+
+    now = _now()
+    rows = []
+    with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+        reader = _csv.DictReader(fh)
+        header = set(reader.fieldnames or [])
+        # source header uses 'zone_id'; map it to csv_zone_id
+        if "zone_id" not in header:
+            raise ValueError(f"unexpected CSV header (no zone_id): {reader.fieldnames}")
+        for r in reader:
+            rec = {"csv_zone_id": r["zone_id"], "run_id": run_id, "created_at": now}
+            for col in _ZONE_COLS:
+                if col == "csv_zone_id":
+                    continue
+                v = r.get(col, "")
+                if col in _ZONE_TIME_COLS:
+                    rec[col] = _norm_ts(v)
+                elif col in _ZONE_INT_COLS:
+                    rec[col] = int(v) if str(v).strip() != "" else None
+                elif col in _ZONE_FLOAT_COLS:
+                    rec[col] = float(v) if str(v).strip() != "" else None
+                else:
+                    rec[col] = (v.strip() or None)
+            rows.append(rec)
+
+    cols = ["run_id"] + _ZONE_COLS + ["created_at"]
+    placeholders = ", ".join("?" for _ in cols)
+    sql = f"INSERT INTO tester_zones ({', '.join(cols)}) VALUES ({placeholders})"
+    with _conn() as conn:
+        conn.executemany(sql, [tuple(rec[c] for c in cols) for rec in rows])
+        conn.commit()
+    print(f"[tester] run #{run_id} ingested {len(rows)} BRC zones from {csv_path.name}")
+    return len(rows)
 
 
 def log_fidelity_diff(
