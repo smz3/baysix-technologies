@@ -88,6 +88,11 @@ struct BrcZone
    double            entry;        // = l1 (the L1 retest fill)
    double            r_unit;       // = |l1 - l2|
    bool              entered;      // has the L1 retest touch fired? (entry armed)
+   //--- identity + consolidation (task 127) -------------------------
+   int              seq;          // per-TF, 1-based, p4_time order — chart/CSV human id
+   string            zone_key;     // {tf}|{dir}|{p4_epoch} (+|{l2} on same-bar collision) — machine join key
+   bool              is_primary;   // 1 unless consolidated away by a bigger overlapping same-dir zone
+   string            consolidated_into; // survivor's zone_key when is_primary=0 (else "")
   };
 
 #define BRC_SAME_BAR   0

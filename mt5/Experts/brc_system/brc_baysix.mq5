@@ -61,6 +61,7 @@ struct TfState
    //    chronological (append + order-preserving compaction) -> byte-identical.
    int             live_sw[];      // indices into swings[] of UNBROKEN swings
    int             alive_idx[];    // indices into zones[]  of ALIVE  zones
+   int             zone_seq;       // running per-TF zone counter (task 127 seq)
   };
 
 TfState    g_tf[];
@@ -96,6 +97,81 @@ int OnInit()
    PrintFormat("[BRC] brc_baysix v%s init OK — %d TFs, swing_window=%d radius=%d runid=%s visualize=%s",
                BRC_VERSION, n, InpSwingWindow, g_radius, g_runid, (InpVisualize ? "ON" : "off"));
    return INIT_SUCCEEDED;
+  }
+
+//+------------------------------------------------------------------+
+//| Task 127 — stable zone identity. zone_key = {tf}|{dir}|{p4_epoch}; |
+//| append |{l2} only when an earlier zone in THIS TF already took the |
+//| base key (same-bar same-dir collision). Epoch (not formatted time) |
+//| keeps the key comma/space-free for the CSV.                       |
+//+------------------------------------------------------------------+
+string BrcMakeZoneKey(const string tf, const BrcZone &zones[], const int zi)
+  {
+   string dir  = (zones[zi].direction == BRC_BEAR) ? "SELL" : "BUY";
+   string base = tf + "|" + dir + "|" + IntegerToString((long)zones[zi].p4_time);
+   for(int e = 0; e < zi; e++)
+      if(zones[e].zone_key == base)                       // collision -> disambiguate by l2
+         return base + "|" + DoubleToString(zones[zi].l2, 3);
+   return base;
+  }
+
+//+------------------------------------------------------------------+
+//| Task 127 — Option-A overlap consolidation (live-EA fidelity).     |
+//| The just-confirmed zone `zones[zi]` is compared ONLY against the   |
+//| currently-ALIVE, same-direction, still-primary zones (s.alive_idx) |
+//| — i.e. zones that temporally coexist with it, mirroring the live   |
+//| EA's CCircularBuffer::ConsolidateOverlappingZones (B2BZoneManager).|
+//| overlap% = intersection / smaller_range * 100; >= 50% -> keep the  |
+//| BIGGER zone (by L1..L2 range), flag the smaller (never delete).    |
+//+------------------------------------------------------------------+
+void BrcConsolidateNewZone(TfState &s, const int zi)
+  {
+   double top_n = MathMax(s.zones[zi].l1, s.zones[zi].l2);
+   double bot_n = MathMin(s.zones[zi].l1, s.zones[zi].l2);
+   double range_n = top_n - bot_n;
+   if(range_n <= 0)
+      return;
+
+   int na = ArraySize(s.alive_idx);
+   for(int j = 0; j < na; j++)
+     {
+      int ez = s.alive_idx[j];
+      if(ez == zi)                                        // skip self
+         continue;
+      if(!s.zones[ez].is_primary)                         // already consolidated away -> inert
+         continue;
+      if(s.zones[ez].direction != s.zones[zi].direction)  // same-dir only (per-TF state = same TF)
+         continue;
+
+      double top_e = MathMax(s.zones[ez].l1, s.zones[ez].l2);
+      double bot_e = MathMin(s.zones[ez].l1, s.zones[ez].l2);
+      double range_e = top_e - bot_e;
+      if(range_e <= 0)
+         continue;
+
+      double itop = MathMin(top_n, top_e);
+      double ibot = MathMax(bot_n, bot_e);
+      double inter = (itop > ibot) ? (itop - ibot) : 0;
+      if(inter <= 0)
+         continue;
+
+      double smaller = MathMin(range_n, range_e);
+      double pct     = (inter / smaller) * 100.0;
+      if(pct < 50.0)
+         continue;
+
+      if(range_n >= range_e)                              // new is bigger -> existing loses
+        {
+         s.zones[ez].is_primary        = false;
+         s.zones[ez].consolidated_into = s.zones[zi].zone_key;
+        }
+      else                                                // new is smaller -> it loses, stop
+        {
+         s.zones[zi].is_primary        = false;
+         s.zones[zi].consolidated_into = s.zones[ez].zone_key;
+         return;
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -152,6 +228,12 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
          int ai = ArraySize(s.alive_idx);                // register as alive
          ArrayResize(s.alive_idx, ai + 1, 256);
          s.alive_idx[ai] = zi;
+         //--- task 127: stamp identity, then Option-A consolidation vs alive set
+         s.zones[zi].seq               = ++s.zone_seq;
+         s.zones[zi].zone_key          = BrcMakeZoneKey(s.name, s.zones, zi);
+         s.zones[zi].is_primary        = true;
+         s.zones[zi].consolidated_into = "";
+         BrcConsolidateNewZone(s, zi);
          g_vis.OnZoneConfirmed(s.name, s.zones[zi]);
         }
      }

@@ -127,6 +127,10 @@ CREATE TABLE IF NOT EXISTS tester_zones (
     continued         INTEGER,                       -- 1 = continuation past L1 in break direction
     mfe_r REAL, mae_r REAL, realized_r REAL,         -- excursion / realized, in R (1R = entry->stop)
     bars_alive        INTEGER,
+    seq               INTEGER,                       -- per-TF, 1-based, p4_time order (task 127 human id)
+    zone_key          TEXT,                          -- {tf}|{dir}|{p4_epoch}(+|{l2}) machine join key
+    is_primary        INTEGER,                       -- 1 unless consolidated away by a bigger overlapping same-dir zone
+    consolidated_into TEXT,                          -- survivor zone_key when is_primary=0 (else NULL)
     created_at        DATETIME NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_tester_zones_run     ON tester_zones(run_id);
@@ -260,10 +264,12 @@ _ZONE_COLS = [
     "l1", "l2", "mid", "break_kind",
     "t1_time", "t2_time", "t3_time", "confirm_time", "invalidation_time",
     "alive_at_end", "continued", "mfe_r", "mae_r", "realized_r", "bars_alive",
+    "seq", "zone_key", "is_primary", "consolidated_into",
 ]
 _ZONE_TIME_COLS  = {"p1_time", "p2_time", "p3_time", "p4_time", "p5_time",
                     "t1_time", "t2_time", "t3_time", "confirm_time", "invalidation_time"}
-_ZONE_INT_COLS   = {"csv_zone_id", "alive_at_end", "continued", "bars_alive"}
+_ZONE_INT_COLS   = {"csv_zone_id", "alive_at_end", "continued", "bars_alive",
+                    "seq", "is_primary"}
 _ZONE_FLOAT_COLS = {"p1_price", "p2_price", "p3_price", "p4_price", "p5_price",
                     "l1", "l2", "mid", "mfe_r", "mae_r", "realized_r"}
 

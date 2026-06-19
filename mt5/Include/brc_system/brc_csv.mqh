@@ -50,7 +50,7 @@ int BrcCsvOpen(const string symbol, const string runid)
       return INVALID_HANDLE;
      }
    FileWriteString(fh,
-      "zone_id,tf,direction,"
+      "zone_id,seq,zone_key,is_primary,consolidated_into,tf,direction,"
       "p1_time,p1_price,p2_time,p2_price,p3_time,p3_price,"
       "p4_time,p4_price,p5_time,p5_price,"
       "l1,l2,mid,break_kind,"
@@ -71,7 +71,10 @@ void BrcCsvWriteZone(const int fh, const int zone_id, const string tf, const Brc
    string kind = (z.break_kind == BRC_SEQUENTIAL) ? "sequential" : "same_bar";
 
    string row =
-      IntegerToString(zone_id) + "," + tf + "," + dir + "," +
+      IntegerToString(zone_id) + "," +
+      IntegerToString(z.seq) + "," + z.zone_key + "," +
+      IntegerToString(z.is_primary ? 1 : 0) + "," + z.consolidated_into + "," +
+      tf + "," + dir + "," +
       BrcFmtTime(z.p1_time) + "," + BrcFmtPrice(z.p1_price) + "," +
       BrcFmtTime(z.p2_time) + "," + BrcFmtPrice(z.p2_price) + "," +
       BrcFmtTime(z.p3_time) + "," + BrcFmtPrice(z.p3_price) + "," +
