@@ -54,13 +54,20 @@ int BrcFirstSwingAfter(const BrcSwing &swings[], const datetime after_time,
                        const int type_filter)
   {
    int cnt = ArraySize(swings);
-   for(int k = 0; k < cnt; k++)
+   //--- swings[] is strictly chronological (append order) -> binary-search the
+   //    first index with time > after_time (upper_bound), then forward-scan that
+   //    short tail for the type. Byte-identical to the old 0..cnt linear scan,
+   //    but O(log n + k) not O(n) — this is the per-break hot path.
+   int lo = 0, hi = cnt;
+   while(lo < hi)
      {
-      if(swings[k].time <= after_time)
-         continue;
+      int mid = (lo + hi) >> 1;
+      if(swings[mid].time <= after_time) lo = mid + 1;
+      else                               hi = mid;
+     }
+   for(int k = lo; k < cnt; k++)
       if(swings[k].type == type_filter)
          return k;
-     }
    return -1;
   }
 
@@ -73,10 +80,19 @@ int BrcFirstSwingAfter(const BrcSwing &swings[], const datetime after_time,
 int BrcFindP5ForP1(const BrcSwing &swings[], const datetime p1_time,
                    const double p2_price, const int p2_type, const bool sell)
   {
-   for(int k = ArraySize(swings) - 1; k >= 0; k--)
+   int cnt = ArraySize(swings);
+   //--- binary-search the first index with time >= p1_time, then walk strictly
+   //    BEFORE it newest->oldest. Identical set+order to the old full backward
+   //    scan that `continue`d every time >= p1_time, but skips that dead prefix.
+   int lo = 0, hi = cnt;
+   while(lo < hi)
      {
-      if(swings[k].time >= p1_time)
-         continue;
+      int mid = (lo + hi) >> 1;
+      if(swings[mid].time < p1_time) lo = mid + 1;
+      else                           hi = mid;
+     }
+   for(int k = lo - 1; k >= 0; k--)
+     {
       if(swings[k].type != p2_type)
          continue;
       if(sell ? (swings[k].price < p2_price) : (swings[k].price > p2_price))
@@ -214,6 +230,17 @@ bool BrcTryConfirmZone(const BrcBreak &b,
    double   w_l1 = 0, w_l2 = 0;
 
    int swing_count = ArraySize(swings);
+
+   //--- freshness pre-bound (O(1) per P1 candidate instead of an inner O(n) scan):
+   //    the LATEST swing strictly before P4. Swings are chronological, so a swing
+   //    lies strictly in (P3,P4) for a given candidate IFF this latest-before-P4
+   //    swing's time > p3_time (it dominates the open interval's upper end).
+   //    Equivalent to the old "any swing with p3_time < t < p4_time" scan.
+   int last_before_p4 = -1;
+   for(int q = swing_count - 1; q >= 0; q--)
+      if(swings[q].time < p4_time)
+        { last_before_p4 = q; break; }
+
    for(int i = swing_count - 1; i >= 0; i--)
      {
       if(swings[i].type != p1_type)
@@ -246,14 +273,8 @@ bool BrcTryConfirmZone(const BrcBreak &b,
       double   p3_price = swings[ip3].price;
       int      p3_index = swings[ip3].bar_index;
 
-      //--- FRESHNESS (B2B): no swing strictly between P3 and P4.
-      bool interrupted = false;
-      for(int k = 0; k < swing_count; k++)
-        {
-         if(swings[k].time > p3_time && swings[k].time < p4_time)
-           { interrupted = true; break; }
-        }
-      if(interrupted)
+      //--- FRESHNESS (B2B): no swing strictly between P3 and P4 (pre-bounded above).
+      if(last_before_p4 >= 0 && swings[last_before_p4].time > p3_time)
          continue;
 
       //--- Levels (NO P3<P1 gate — B2B parity; L2 may be P3).

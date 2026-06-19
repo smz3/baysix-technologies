@@ -19,32 +19,41 @@
 #include "brc_types.mqh"
 
 //+------------------------------------------------------------------+
-//| Scan all swings against ONE just-closed bar; mark newly-broken    |
+//| Scan UNBROKEN swings against ONE just-closed bar; mark newly-broken|
 //| swings and append their break events to `breaks[]`.               |
 //|   swings[]   : chronological, mutated (broken flag set).          |
+//|   live[]     : indices into swings[] of still-unbroken swings,     |
+//|                kept chronological; broken swings are compacted out |
+//|                in place (order-preserving — NOT swap-remove, so    |
+//|                the break-append order is byte-identical to the old |
+//|                full 0..n scan). O(live) not O(all-ever).          |
 //|   breaks[]   : persistent event log, appended in-place.           |
 //| Returns the number of breaks appended on this bar.                |
 //+------------------------------------------------------------------+
-int BrcDetectBreaksOnBar(BrcSwing &swings[],
+int BrcDetectBreaksOnBar(BrcSwing &swings[], int &live[],
                          const int bar_index, const datetime bar_time, const double bar_close,
                          const int radius, const int max_age,
                          BrcBreak &breaks[])
   {
-   int n_sw   = ArraySize(swings);
+   int n_live = ArraySize(live);
    int added  = 0;
+   int w      = 0;                                       // survivor write cursor (compaction)
 
-   for(int s = 0; s < n_sw; s++)
+   for(int j = 0; j < n_live; j++)
      {
-      if(swings[s].broken)                              continue;
-      if(swings[s].time >= bar_time)                    continue;   // swing must precede bar
-      if(bar_index < swings[s].bar_index + radius)      continue;   // confirmation gate
-      if(max_age > 0 && (bar_index - swings[s].bar_index) > max_age) continue;
+      int s = live[j];
+      //--- temporal / eligibility guards: NOT yet (or never) eligible to break
+      //    this bar, but still unbroken -> keep live, re-check on a later bar.
+      if(swings[s].time >= bar_time)                       { live[w++] = live[j]; continue; }  // swing must precede bar
+      if(bar_index < swings[s].bar_index + radius)         { live[w++] = live[j]; continue; }  // confirmation gate
+      if(max_age > 0 && (bar_index - swings[s].bar_index) > max_age) { live[w++] = live[j]; continue; }
 
       bool is_bull = (swings[s].type == BRC_SWING_HIGH && bar_close > swings[s].price);
       bool is_bear = (swings[s].type == BRC_SWING_LOW  && bar_close < swings[s].price);
       if(!is_bull && !is_bear)
-         continue;
+        { live[w++] = live[j]; continue; }                // price didn't cross -> stays live
 
+      //--- swing breaks (permanent) -> emit event, drop it from the live list.
       swings[s].broken = true;
 
       int k = ArraySize(breaks);
@@ -58,6 +67,8 @@ int BrcDetectBreaksOnBar(BrcSwing &swings[],
       breaks[k].bar_index   = bar_index;
       added++;
      }
+
+   ArrayResize(live, w);                                  // survivors only, original order preserved
    return added;
   }
 

@@ -56,6 +56,11 @@ struct TfState
    BrcSwing        swings[];
    BrcBreak        breaks[];
    BrcZone         zones[];        // every confirmed zone (alive + dead) — written at end
+   //--- live-index free-lists (task 128 prune): hold only still-relevant entries
+   //    so the per-bar scans are O(live)/O(alive), not O(all-ever). Both stay
+   //    chronological (append + order-preserving compaction) -> byte-identical.
+   int             live_sw[];      // indices into swings[] of UNBROKEN swings
+   int             alive_idx[];    // indices into zones[]  of ALIVE  zones
   };
 
 TfState    g_tf[];
@@ -119,13 +124,17 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
          int si = ArraySize(s.swings);
          ArrayResize(s.swings, si + 1, 512);
          s.swings[si] = sw;
+         int li = ArraySize(s.live_sw);                  // register as live (unbroken)
+         ArrayResize(s.live_sw, li + 1, 512);
+         s.live_sw[li] = si;
          g_vis.OnSwing(s.name, sw);
         }
      }
 
-   //--- 2. raw breaks on this bar (mutates swing.broken, appends events).
+   //--- 2. raw breaks on this bar (mutates swing.broken, appends events,
+   //    compacts s.live_sw down to survivors).
    int before = ArraySize(s.breaks);
-   BrcDetectBreaksOnBar(s.swings, i, bt, cl, g_radius, InpMaxAge, s.breaks);
+   BrcDetectBreaksOnBar(s.swings, s.live_sw, i, bt, cl, g_radius, InpMaxAge, s.breaks);
    int after = ArraySize(s.breaks);
    for(int b = before; b < after; b++)
       g_vis.OnBreak(s.name, s.breaks[b]);
@@ -140,19 +149,32 @@ void BrcIngestBar(TfState &s, const datetime bt, const double h, const double l,
          int zi = ArraySize(s.zones);
          ArrayResize(s.zones, zi + 1, 256);
          s.zones[zi] = z;
+         int ai = ArraySize(s.alive_idx);                // register as alive
+         ArrayResize(s.alive_idx, ai + 1, 256);
+         s.alive_idx[ai] = zi;
          g_vis.OnZoneConfirmed(s.name, s.zones[zi]);
         }
      }
 
    //--- 4. advance every alive zone by this bar, but only STRICTLY AFTER its P4
    //    (a zone confirmed on bar i has p4_time == bt and must not self-advance).
-   int nz = ArraySize(s.zones);
-   for(int z = 0; z < nz; z++)
-      if(s.zones[z].alive && s.zones[z].p4_time < bt)
+   //    Iterate only s.alive_idx (O(alive)); compact out zones that just died,
+   //    order-preserving so the set + per-zone math are byte-identical to the
+   //    old 0..nz scan (BrcAdvanceZone touches only its own zone -> order-free).
+   int na = ArraySize(s.alive_idx);
+   int w  = 0;
+   for(int j = 0; j < na; j++)
+     {
+      int z = s.alive_idx[j];
+      if(s.zones[z].p4_time < bt)
         {
          BrcAdvanceZone(s.zones[z], bt, h, l, cl);
          g_vis.OnZoneAdvanced(s.name, s.zones[z]);
         }
+      if(s.zones[z].alive)
+         s.alive_idx[w++] = s.alive_idx[j];
+     }
+   ArrayResize(s.alive_idx, w);
   }
 
 //+------------------------------------------------------------------+
