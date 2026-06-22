@@ -20,7 +20,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).parents[1] / "db" / "research.db"
+DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 MYT     = timezone(timedelta(hours=8))
 
 VALID_VERDICT   = ("CREATED", "VALIDATED", "PROPOSED", "ADOPTED",

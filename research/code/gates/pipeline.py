@@ -24,7 +24,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).parents[1] / "db" / "research.db"
+DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 MYT     = timezone(timedelta(hours=8))
 
 GATE_QUESTIONS = {
@@ -52,21 +52,14 @@ def _now() -> str:
 
 def _protocol():
     """Lazy handle on the protocol module (it imports pipeline at load, so a
-    top-level import here would be circular). Dual path: package vs script."""
-    try:                                # package import (pytest: research.code.*)
-        from research.code import protocol
-    except ImportError:                 # script import (own dir on sys.path)
-        import protocol
+    top-level import here would be circular)."""
+    from research.code.gates import protocol
     return protocol
 
 
 def _strategy_log():
-    """Lazy handle on the strategy_log module (avoids any load-order coupling).
-    Dual path: package vs script."""
-    try:                                # package import (pytest: research.code.*)
-        from research.code import strategy_log
-    except ImportError:                 # script import (own dir on sys.path)
-        import strategy_log
+    """Lazy handle on the strategy_log module (avoids any load-order coupling)."""
+    from research.code.lineage import strategy_log
     return strategy_log
 
 

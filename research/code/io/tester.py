@@ -22,15 +22,14 @@ docs/reference/research_protocol.md (Gate 7 — Fidelity).
 
 import json
 import sqlite3
+import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-try:
-    from research.code import pipeline
-except ImportError:  # running as a loose script with research/code on sys.path
-    import pipeline
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root for run-as-script
+from research.code.gates import pipeline
 
-DB_PATH = Path(__file__).parents[1] / "db" / "research.db"
+DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 MYT     = timezone(timedelta(hours=8))
 
 # Provenance enums — where the ticks came from + how MT5 modelled them.

@@ -42,7 +42,7 @@ You dissect a paper by reading its **Docling-extracted `.md`** — never the raw
 
 ```bash
 # idempotent — produces research/papers/<family>/<stem>.md (skips if present)
-python research/code/extract_pdf.py <pdf_path>
+python research/code/io/extract_pdf.py <pdf_path>
 ```
 
 Then `Read` the resulting `.md`.

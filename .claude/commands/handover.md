@@ -60,7 +60,7 @@ or an on-disk artifact path (`ReportTester-*.xlsx`, `outputs/**/*.json|csv`) —
 the SAME `##` section. This kills the hand-typed-number bug (task 50).
 
 ```bash
-python research/code/handover_lint.py <the-handover-path-you-just-wrote>
+python research/code/infra/handover_lint.py <the-handover-path-you-just-wrote>
 ```
 
 If it prints **BLOCKED**, the handover is NOT done: add the missing citation

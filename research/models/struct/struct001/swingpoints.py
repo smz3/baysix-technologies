@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(REPO / "research" / "code"))
+sys.path.insert(0, str(REPO / "research" / "code" / "io"))
 
 import pandas as pd                                                  # noqa: E402
 import arctic_io as aio                                             # noqa: E402

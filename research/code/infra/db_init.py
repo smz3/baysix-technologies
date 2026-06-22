@@ -9,7 +9,7 @@ Run: python research/code/db_init.py
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parents[1] / "db" / "research.db"
+DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 
 
 def init():

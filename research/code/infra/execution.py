@@ -36,14 +36,15 @@ research.db regardless.
 import os
 import json
 import sqlite3
+import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root for run-as-script
 # research.db code layer — soft-key validation, Gate-7 check, frozen-config snapshot
-try:
-    from research.code import pipeline, strategy_log, tester
-except ImportError:  # running as a loose script with research/code on sys.path
-    import pipeline, strategy_log, tester
+from research.code.gates import pipeline
+from research.code.lineage import strategy_log
+from research.code.io import tester
 
 MYT = timezone(timedelta(hours=8))
 
@@ -53,7 +54,7 @@ def _db_path() -> Path:
     env = os.environ.get("EXECUTION_DB_PATH")
     if env:
         return Path(env)
-    return Path(__file__).parents[1] / "db" / "execution.db"
+    return Path(__file__).parents[2] / "db" / "execution.db"
 
 
 # ── Enum vocabularies (belt + suspenders: also CHECK-constrained in the DDL) ────

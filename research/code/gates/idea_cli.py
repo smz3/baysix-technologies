@@ -15,20 +15,21 @@ here is display formatting. Text-heavy columns (rule 9) are auto-truncated by
 key name, so adding a new long column never risks dumping it into context.
 
 USAGE:
-    python research/code/idea_cli.py prebrief ORB-001
-    python research/code/idea_cli.py gatecheck HMM-001
-    python research/code/idea_cli.py status ORB-002
+    python research/code/gates/idea_cli.py prebrief ORB-001
+    python research/code/gates/idea_cli.py gatecheck HMM-001
+    python research/code/gates/idea_cli.py status ORB-002
 """
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-import agent_log
-import backlog
-import pipeline
-import protocol
-import strategy_log
+# run-as-script bootstrap: put repo root on sys.path so the package import below
+# resolves when invoked as `python research/code/gates/idea_cli.py ...`
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from research.code.gates import pipeline, protocol
+from research.code.lineage import agent_log, backlog, strategy_log
 
 # rule 9 — never render these in full; truncate hard.
 _TEXT_HEAVY = {

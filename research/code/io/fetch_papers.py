@@ -24,7 +24,7 @@ from pathlib import Path
 
 import requests
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 PAPERS_DIR = REPO / "research" / "papers"
 
 # Browser-ish headers — SSRN/journals 403 a bare python-requests UA.

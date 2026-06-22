@@ -20,8 +20,8 @@ import re
 from pathlib import Path
 
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from research.code import tester
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from research.code.io import tester
 
 
 def _parse_filename(name: str):

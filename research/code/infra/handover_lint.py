@@ -43,8 +43,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).parents[2]
-DB_PATH = Path(__file__).parents[1] / "db" / "research.db"
+REPO = Path(__file__).parents[3]
+DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 
 # --- result-shaped number patterns -------------------------------------------
 # Each entry: (label, compiled regex). Kept deliberately specific to avoid

@@ -66,13 +66,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-try:                                    # package import (pytest: research.code.*)
-    from research.code import pipeline, strategy_log
-except ImportError:                     # script import (own dir on sys.path)
-    import pipeline
-    import strategy_log
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root for run-as-script
+from research.code.gates import pipeline
+from research.code.lineage import strategy_log
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 
 
 # ── per-idea contracts ──────────────────────────────────────────────────────────

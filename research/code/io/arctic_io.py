@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 STORE = REPO / "data" / "arctic"
 URI = f"lmdb://{STORE.as_posix()}?map_size=16GB"
 LIB = "ticks"

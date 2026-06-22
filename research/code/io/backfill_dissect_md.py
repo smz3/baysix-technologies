@@ -22,7 +22,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-DB_PATH = Path(__file__).parents[1] / "db" / "research.db"
+DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 
 
 def _conn() -> sqlite3.Connection:

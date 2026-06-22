@@ -26,7 +26,7 @@ _Last updated: 2026-06-22 · Protocol 3.3_
 |------|------|
 | [../../research/code/pipeline.py](../../research/code/pipeline.py) | `open_gate` / `pass_gate` / `block_gate` / `kill_idea` / `log_result` |
 | [../../research/code/protocol.py](../../research/code/protocol.py) | gate-sequencing rules (which gate is legal next) |
-| [../../research/code/idea_cli.py](../../research/code/idea_cli.py) | `next` / `gatecheck` / `status` / `prebrief` driver (CLI) |
+| [../../research/code/gates/idea_cli.py](../../research/code/gates/idea_cli.py) | `next` / `gatecheck` / `status` / `prebrief` driver (CLI) |
 | [../../research/code/gate2_sanity.py](../../research/code/gate2_sanity.py) | shared Gate 2 (sanity) |
 | [../../research/code/gate5_report.py](../../research/code/gate5_report.py) | shared Gate 5 (significance report) |
 | [../../research/code/trial_family.py](../../research/code/trial_family.py) | N_trials / DSR ledger |
@@ -66,7 +66,7 @@ _Model-specific — **not** the protocol. These run a model's data through the g
 When in doubt about *what gate to run next*, don't recall the ladder — ask the DB:
 
 ```
-python research/code/idea_cli.py next <idea_id>     # the ONE next legal action
-python research/code/idea_cli.py status             # snapshot of all ideas
-python research/code/idea_cli.py gatecheck <idea_id># hard PASS/BLOCK on Gates 0/1
+python research/code/gates/idea_cli.py next <idea_id>     # the ONE next legal action
+python research/code/gates/idea_cli.py status             # snapshot of all ideas
+python research/code/gates/idea_cli.py gatecheck <idea_id># hard PASS/BLOCK on Gates 0/1
 ```

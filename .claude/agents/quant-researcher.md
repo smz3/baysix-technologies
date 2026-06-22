@@ -142,7 +142,7 @@ Used to deep-read a specific paper. Your job is to **extract and translate** —
 
 ```bash
 # idempotent — produces research/papers/<family>/<stem>.md (skips if present)
-python research/code/extract_pdf.py <pdf_path>
+python research/code/io/extract_pdf.py <pdf_path>
 ```
 
 Then `Read` the resulting `.md`. The whole-paper read happens here, inside your (subagent) context, on cheap extracted text — this is the firewall that keeps heavy paper text out of the orchestrator's main context.

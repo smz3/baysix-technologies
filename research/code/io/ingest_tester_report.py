@@ -29,10 +29,10 @@ from pathlib import Path
 warnings.filterwarnings("ignore")  # openpyxl default-style noise
 import openpyxl
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from research.code import tester
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from research.code.io import tester
 
-REPORT_DIR = Path(__file__).resolve().parents[1].parent / "mt5" / "strategy_tester_xlsx"
+REPORT_DIR = Path(__file__).resolve().parents[2].parent / "mt5" / "strategy_tester_xlsx"
 RAW_GLOB = "ReportTester-*.xlsx"
 
 

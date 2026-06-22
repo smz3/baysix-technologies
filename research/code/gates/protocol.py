@@ -23,10 +23,7 @@ This module holds workflow logic ONLY; all DB access is via pipeline getters.
 """
 from __future__ import annotations
 
-try:                                    # package import (pytest: research.code.*)
-    from research.code import pipeline
-except ImportError:                     # script import (own dir on sys.path)
-    import pipeline
+from research.code.gates import pipeline
 
 # Gates whose pass requires a LOGGED metric result, not a free assertion.
 EVIDENCE_GATES = {3: "t>1.0 raw+net", 5: "t>2.0 net", 6: "OOS / walk-forward retention"}
@@ -148,10 +145,7 @@ def _compute(idea_id: str, states: dict[int, str], falsified: int,
 def _has_conditioning(idea_id: str) -> bool:
     """True if a conditioning component has been declared in log_strategy. 3.2 wants
     a `strategy`'s conditional edge declared (mechanism-born) before Gate 3 tests it."""
-    try:                                # package vs script import (mirror pipeline)
-        from research.code import strategy_log
-    except ImportError:
-        import strategy_log
+    from research.code.lineage import strategy_log
     return any(r.get("component") == "conditioning" for r in strategy_log.get_lineage(idea_id))
 
 
