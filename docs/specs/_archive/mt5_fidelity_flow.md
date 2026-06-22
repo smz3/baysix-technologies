@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED / ARCHIVED 2026-06-22.** Describes the old Gate-7 MT5⇄Python fidelity flow, which Protocol 4.0 dissolved (7-gate ladder → 4 gates G1–G4; the Python fill-sim + tester-vs-Python fidelity diff are gone). Historical context only — not a current design of record.
+
 # MT5 ⇄ research.db Fidelity Flow — Design of Record
 
 **Locked:** 2026-06-12 · **Owner:** Claude + Syafiq · **Status:** building (tasks 55 → 54 → 46/43)

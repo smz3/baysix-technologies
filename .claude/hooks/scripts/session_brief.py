@@ -59,10 +59,10 @@ def main():
     print("  QR find / dissect         -> agent_log.log_agent_call / log_dissect_result")
     print("  human arch/method call    -> agent_log.log_human_decision")
     print("  backlog task              -> backlog.add_task / resolve_task")
-    print("  GATING: t-stat is a Gate 3 (>1.0) / Gate 5 (>2.0) CONFIRMATION bar — never")
-    print("          bake a significance cutoff into an anchor/hypothesis (front gate = sense + structure).")
+    print("  GATING: Protocol 4.0 = 4 gates (G1 Premise / G2 Edge+Survival / G3 Robustness / G4 Live).")
+    print("          t-stat is REPORTED, never an auto-kill; OOS/WF persistence is the luck-test.")
     print("  KILL:   needs >=2 FALSIFIED hypotheses (rule 8b) — kill_idea blocks otherwise.")
-    print("  DRIVER: python research/code/idea_cli.py next <idea_id> -> the ONE next legal")
+    print("  DRIVER: python research/code/gates/idea_cli.py next <idea_id> -> the ONE next legal")
     print("          protocol action, computed from DB. Use it instead of recalling gates.")
 
     print("\nBefore proposing work: check open_backlog (P1 first) + log_agent "
