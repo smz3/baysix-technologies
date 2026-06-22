@@ -7,8 +7,9 @@ Safe to re-run — CREATE TABLE/VIEW IF NOT EXISTS throughout.
     CHECK(gate_number BETWEEN 1 AND 4).
   - DROPPED: trial_family table + the 3.3 result columns (n_trials, trial_family_id,
     config_hash, cost_bps, cost_basis) — DSR/PSR/N_trials machinery removed.
-  - ADDED: is_runs table + step4_results.is_run — per-idea IS run numbering (the only
-    deflator kept: counts shots taken before G3).
+  - ADDED: step4_results.is_run (+ .what_changed) — per-idea IS run numbering (the only
+    deflator kept: counts shots taken before G3). Collapsed into step4_results in
+    migration 029 — the separate is_runs registry was dropped (count via DISTINCT is_run).
   - tester tables (tester_runs / tester_trades / tester_zones) folded in here (were
     migrations 021/022/030/031) — the MT5 emit ledger is load-bearing in 4.0.
 
@@ -97,7 +98,8 @@ def init():
                             CHECK(cost_adjusted IN (0,1)),
             period          TEXT CHECK(period IN ('per_trade','daily','annualised')),
             n_obs           INTEGER,
-            is_run          TEXT,                   -- 4.0 IS run label (soft ref -> is_runs.label)
+            is_run          TEXT,                   -- 4.0 IS run label (IS-01, IS-02…); count shots via DISTINCT is_run
+            what_changed    TEXT,                   -- what was swept on this IS run (was is_runs.what_changed)
             instrument      TEXT NOT NULL DEFAULT 'XAUUSD',
             data_start      DATE,
             data_end        DATE,
@@ -109,18 +111,6 @@ def init():
             notes           TEXT,
             logged_at       DATETIME NOT NULL
         );
-
-        -- 4.0 IS run numbering (replaces DSR / N_trials). One row per tuning shot;
-        -- its job is COUNTING degrees of freedom before G3, per-idea, never pooled.
-        CREATE TABLE IF NOT EXISTS is_runs (
-            is_run_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-            idea_id      TEXT NOT NULL REFERENCES step1_ideas(idea_id),
-            label        TEXT NOT NULL,             -- 'IS-01', 'IS-02', ...
-            what_changed TEXT,
-            created_at   DATETIME NOT NULL,
-            UNIQUE(idea_id, label)
-        );
-        CREATE INDEX IF NOT EXISTS idx_is_runs_idea ON is_runs(idea_id, created_at);
 
         CREATE TABLE IF NOT EXISTS log_agent (
             call_id        INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -150,6 +150,7 @@ def run_and_log(
     from_value: str | None = None,
     to_value: str | None = None,
     is_run: str | None = None,
+    what_changed: str | None = None,
     instrument: str = "XAUUSD",
     seed: int | None = None,
     decided_by: str = "human",
@@ -185,7 +186,7 @@ def run_and_log(
                 cost_adjusted=rr["cost_adjusted"], period=rr["period"],
                 n_obs=rr["n_obs"], data_start=rr["data_start"], data_end=rr["data_end"],
                 git_sha=sha, code_path=code_path,
-                is_run=is_run,
+                is_run=is_run, what_changed=what_changed,
                 instrument=instrument, parameters=rr.get("parameters"),
                 seed=seed, notes=rr.get("notes"),
             )

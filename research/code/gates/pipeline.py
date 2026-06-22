@@ -317,6 +317,7 @@ def log_result(
     git_sha: str,
     code_path: str,
     is_run: str = None,
+    what_changed: str = None,
     instrument: str = "XAUUSD",
     parameters: str = None,
     data_hash: str = None,
@@ -329,7 +330,8 @@ def log_result(
     4.0 IS-discipline guards:
       - is_run is REQUIRED on IS/OOS rows → every IS experiment carries a run label
         (IS-01, IS-02…) so the degrees of freedom (shots taken before G3) stay
-        visible. Register the label first via log_is_run().
+        visible. Just pass is_run='IS-01' (+ optional what_changed); the shot count
+        is DISTINCT is_run over step4_results — no separate registry to pre-fill.
       - stage='OOS' is BLOCKED unless the IS config is frozen (see
         _require_frozen_config). allow_unfrozen=True downgrades it to a warning.
     """
@@ -348,9 +350,9 @@ def log_result(
         raise ValueError("n_obs is required")
     if stage in ("IS", "OOS") and not is_run:
         raise ValueError(
-            f"is_run is required for stage='{stage}' results — label the IS run "
-            f"(IS-01, IS-02…) via log_is_run() so the shots taken before G3 are "
-            f"counted; an OOS row names the IS run it validates.")
+            f"is_run is required for stage='{stage}' results — pass is_run='IS-01' "
+            f"(IS-02…) so the shots taken before G3 are counted; an OOS row names the "
+            f"IS run it validates.")
     if stage == "OOS":
         _require_frozen_config(idea_id, f"log_result(stage='OOS', {metric_key})",
                                allow_unfrozen)
@@ -361,13 +363,13 @@ def log_result(
         cur.execute("""
             INSERT INTO step4_results
                 (idea_id, gate_number, stage, metric_key, metric_value,
-                 cost_adjusted, period, n_obs, is_run,
+                 cost_adjusted, period, n_obs, is_run, what_changed,
                  instrument, data_start, data_end, parameters,
                  git_sha, data_hash, seed, code_path, notes, logged_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             idea_id, gate_number, stage, metric_key, metric_value,
-            cost_adjusted, period, n_obs, is_run,
+            cost_adjusted, period, n_obs, is_run, what_changed,
             instrument, data_start, data_end, parameters,
             git_sha, data_hash, seed, code_path, notes, now,
         ))
@@ -379,27 +381,23 @@ def log_result(
     return result_id
 
 
-def log_is_run(idea_id: str, label: str, what_changed: str = None) -> None:
-    """Register a 4.0 IS run (the deflator that replaced DSR/N_trials). One row per
-    tuning shot: `label` is IS-01, IS-02…; `what_changed` says what was swept. Its
-    job is COUNTING degrees of freedom before G3 — per-idea, never pooled. Idempotent
-    on (idea_id, label)."""
-    now = _now()
-    with _conn() as conn:
-        conn.execute("""
-            INSERT OR IGNORE INTO is_runs (idea_id, label, what_changed, created_at)
-            VALUES (?, ?, ?, ?)
-        """, (idea_id, label, what_changed, now))
-        conn.commit()
-    print(f"[pipeline] {idea_id} IS run registered: {label}")
-
-
 def get_is_runs(idea_id: str) -> list[dict]:
-    """All IS runs for an idea, oldest first — answers 'how many shots before G3?'."""
+    """The distinct IS runs for an idea, oldest first — answers 'how many shots before
+    G3?'. The deflator that replaced DSR/N_trials: one entry per is_run label seen on
+    step4_results (no separate registry since migration 029 — the label lives on the
+    result row, count = len of this list). `what_changed` is the first non-null seen
+    for that label."""
     with _conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM is_runs WHERE idea_id=? ORDER BY created_at ASC", (idea_id,)
-        ).fetchall()
+        rows = conn.execute("""
+            SELECT is_run AS label,
+                   MIN(logged_at)                       AS first_logged_at,
+                   MAX(what_changed)                    AS what_changed,
+                   COUNT(*)                             AS n_results
+            FROM step4_results
+            WHERE idea_id=? AND is_run IS NOT NULL
+            GROUP BY is_run
+            ORDER BY first_logged_at ASC
+        """, (idea_id,)).fetchall()
     return [dict(r) for r in rows]
 
 
