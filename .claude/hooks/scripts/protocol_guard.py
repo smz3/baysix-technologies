@@ -12,7 +12,7 @@ HARD BLOCKS (exit 2):
 
 Anything else passes. Gate-state checks for model code are intentionally NOT
 here (can't be inferred cheaply without false positives) — that path is covered
-by `idea_cli.py gatecheck` + `idea_cli.py next`.
+by `research/code/gates/idea_cli.py gatecheck` + `... next`.
 
 Convention matches playwright_guard.py: print {"decision":"block","reason":...}
 then exit 2 to deny; exit 0 to allow.

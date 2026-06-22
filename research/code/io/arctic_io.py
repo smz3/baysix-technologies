@@ -157,7 +157,7 @@ def build_m1_symbol() -> int:
         XAUUSD_DAILY); MT5 chart bars are bid → a consistent half-spread offset.
 
     Run explicitly (rule 12, new window):
-        python research/code/arctic_io.py build-m1
+        python research/code/io/arctic_io.py build-m1
     Returns the number of M1 rows written."""
     from tqdm import tqdm
     frames = []
@@ -189,7 +189,7 @@ def m1_bars(start=None, end=None, columns=None) -> pd.DataFrame:
     if M1_SYMBOL not in lib.list_symbols():
         raise FileNotFoundError(
             f"Arctic symbol {M1_SYMBOL} not built. Run (new window): "
-            f"python research/code/arctic_io.py build-m1")
+            f"python research/code/io/arctic_io.py build-m1")
     date_range = (_norm(start), _norm(end)) if (start is not None or end is not None) else None
     df = lib.read(M1_SYMBOL, date_range=date_range,
                   columns=list(columns) if columns else None).data
@@ -272,7 +272,7 @@ def build_daily_symbol() -> int:
     written as a second Arctic symbol (XAUUSD_DAILY) — replaces the old, suspect
     data/parquet/daily/xauusd_daily.parquet whose close was a last-by-POSITION tick
     on unsorted data. Run explicitly (rule 12, new window):
-        python research/code/arctic_io.py build-daily
+        python research/code/io/arctic_io.py build-daily
     Returns the number of daily rows written."""
     from tqdm import tqdm
     frames = []
@@ -299,7 +299,7 @@ def daily_bars(columns=None) -> pd.DataFrame:
     if DAILY_SYMBOL not in lib.list_symbols():
         raise FileNotFoundError(
             f"Arctic symbol {DAILY_SYMBOL} not built. Run (new window): "
-            f"python research/code/arctic_io.py build-daily")
+            f"python research/code/io/arctic_io.py build-daily")
     df = lib.read(DAILY_SYMBOL, columns=list(columns) if columns else None).data
     if not df.index.is_monotonic_increasing:
         raise AssertionError("XAUUSD_DAILY index non-monotonic — rebuild.")

@@ -15,9 +15,9 @@ section has price/time/PnL but NOT range_w (the 1R unit), so realized_R needs th
 to export a per-trade CSV (or_high/or_low/range_w). That hook is left as ingest_trades().
 
 Usage:
-    python research/code/ingest_tester_report.py --dry-run         # parse + show, no write
-    python research/code/ingest_tester_report.py                   # ingest newest + rename
-    python research/code/ingest_tester_report.py --src <file.xlsx> # explicit file
+    python research/code/io/ingest_tester_report.py --dry-run         # parse + show, no write
+    python research/code/io/ingest_tester_report.py                   # ingest newest + rename
+    python research/code/io/ingest_tester_report.py --src <file.xlsx> # explicit file
 """
 import re
 import sys

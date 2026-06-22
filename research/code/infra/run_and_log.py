@@ -56,7 +56,7 @@ USAGE (library — the main path; model scripts wrap their own run)
     # out -> {"result_ids":[...], "primary_result_id":N, "log_id":M|None}
 
 USAGE (CLI — introspection only; writing happens through the library)
-    python research/code/run_and_log.py contracts     # list registered contracts
+    python research/code/infra/run_and_log.py contracts     # list registered contracts
 """
 from __future__ import annotations
 

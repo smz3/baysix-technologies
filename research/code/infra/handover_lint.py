@@ -33,7 +33,7 @@ uncited result-number blocks (exit 1).
 
 Usage
 -----
-  python research/code/handover_lint.py <handover.md> [<handover2.md> ...]
+  python research/code/infra/handover_lint.py <handover.md> [<handover2.md> ...]
   exit 0 = clean (or failed-open);  exit 1 = blocked (uncited numbers found)
 """
 from __future__ import annotations

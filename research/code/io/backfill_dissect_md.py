@@ -12,8 +12,8 @@ Path is derived from step2_papers.local_path (.pdf -> .dissect.md). Idempotent:
 overwrites the .dissect.md (the DB is the source of truth).
 
 Usage:
-    python research/code/backfill_dissect_md.py 28 29 30      # specific paper_ids
-    python research/code/backfill_dissect_md.py --idea B2B-001 # all dissected papers for an idea
+    python research/code/io/backfill_dissect_md.py 28 29 30      # specific paper_ids
+    python research/code/io/backfill_dissect_md.py --idea B2B-001 # all dissected papers for an idea
 """
 from __future__ import annotations
 

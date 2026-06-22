@@ -15,7 +15,7 @@ Idempotent: a paper whose target file already exists is skipped.
 PDFs are gitignored — this only ever writes local files. No DB writes.
 
 Usage:
-    python research/code/fetch_papers.py            # fetch the default manifest
+    python research/code/io/fetch_papers.py            # fetch the default manifest
 """
 from __future__ import annotations
 

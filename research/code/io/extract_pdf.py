@@ -17,9 +17,9 @@ Output: writes <pdf_stem>.md next to the PDF (gitignored — derivable from the 
 Idempotent: skips if the .md already exists unless --force.
 
 Usage:
-    python research/code/extract_pdf.py research/papers/b2b/osler_2003_...pdf
-    python research/code/extract_pdf.py <pdf> --force      # re-extract
-    python research/code/extract_pdf.py research/papers/b2b/   # whole folder
+    python research/code/io/extract_pdf.py research/papers/b2b/osler_2003_...pdf
+    python research/code/io/extract_pdf.py <pdf> --force      # re-extract
+    python research/code/io/extract_pdf.py research/papers/b2b/   # whole folder
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def main(argv: list[str]) -> None:
     args = [a for a in argv if a != "--force"]
     force = "--force" in argv
     if not args:
-        sys.exit("usage: python research/code/extract_pdf.py <pdf-or-folder> [--force]")
+        sys.exit("usage: python research/code/io/extract_pdf.py <pdf-or-folder> [--force]")
     target = Path(args[0])
     if target.is_dir():
         pdfs = sorted(target.glob("*.pdf"))

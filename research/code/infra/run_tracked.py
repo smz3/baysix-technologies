@@ -8,9 +8,9 @@ its timeout and never notified. Never gate completion on a freshness window. Gat
 a sentinel's EXISTENCE, created fresh per run.
 
 USAGE (agent):
-    python research/code/run_tracked.py <name> -- <command...>
+    python research/code/infra/run_tracked.py <name> -- <command...>
 e.g.
-    python research/code/run_tracked.py reentry -- python -X utf8 research/models/orb/reentry.py
+    python research/code/infra/run_tracked.py brc_lifecycle -- python -X utf8 research/models/brc/brc001/lifecycle.py
 
 Then wait on the sentinel (existence only):
     until [ -f research/outputs/_runs/<name>.done ]; do sleep 10; done

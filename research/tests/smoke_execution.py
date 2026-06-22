@@ -11,7 +11,7 @@ Asserts the headline guardrails of the re-locked 12-table schema:
   - pass FORWARD REFUSES until d5_recon_results exist
   - FORWARD/live REFUSES until FORWARD/demo passed
 
-Run: python research/code/smoke_execution.py    (exit 0 = all assertions passed)
+Run: python research/tests/smoke_execution.py    (exit 0 = all assertions passed)
 """
 import os
 import sys

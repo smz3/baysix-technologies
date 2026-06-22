@@ -8,7 +8,7 @@ zone into tester_zones under that run_id. All writes go through research.code.te
 (CLAUDE.md rule 10 — never raw sqlite3).
 
 Usage:
-    python research/code/ingest_brc_zones.py \
+    python research/code/io/ingest_brc_zones.py \
         --csv "<...>/brc_zones_XAUUSD_dukas_v1.0.0_20240101_0000.csv" \
         --period-start 2024-01-01 --period-end 2024-12-31
 
