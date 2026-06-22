@@ -48,6 +48,10 @@ research/db/agent_log.db
 # `python research/migrations/020_create_execution_db.py`. (research.db stays tracked — shareable research state.)
 research/db/execution.db
 
+# Pre-rebuild full-DB backups (Protocol 4.0 capture-before-nuke, ~100MB each) — local restore points only.
+# The small human-readable BRC seed in research/db/_seed/ IS tracked.
+research/db/_backup/
+
 # Stack runtime
 .gstack/
 
