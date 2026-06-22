@@ -149,8 +149,7 @@ def run_and_log(
     component: str | None = None,
     from_value: str | None = None,
     to_value: str | None = None,
-    n_trials: int | None = None,
-    trial_family_id: str | None = None,
+    is_run: str | None = None,
     instrument: str = "XAUUSD",
     seed: int | None = None,
     decided_by: str = "human",
@@ -186,7 +185,7 @@ def run_and_log(
                 cost_adjusted=rr["cost_adjusted"], period=rr["period"],
                 n_obs=rr["n_obs"], data_start=rr["data_start"], data_end=rr["data_end"],
                 git_sha=sha, code_path=code_path,
-                n_trials=n_trials, trial_family_id=trial_family_id,
+                is_run=is_run,
                 instrument=instrument, parameters=rr.get("parameters"),
                 seed=seed, notes=rr.get("notes"),
             )

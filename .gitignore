@@ -133,3 +133,6 @@ research/models/orb/_*.log
 research/papers/**/*.md
 !research/papers/**/*.dissect.md
 !research/papers/**/README.md
+
+# Session-temp safety copy from the 4.0 rebuild (migration 032); canonical backup lives in _backup/.
+research/db/*.pre40_rebuild

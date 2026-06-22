@@ -33,8 +33,10 @@ def tmp_db(tmp_path, monkeypatch):
 
 
 def _rr(metrics):
+    # stage='montecarlo' keeps these harness-mechanics tests decoupled from the
+    # IS/OOS discipline (is_run label + frozen-config), which has its own coverage.
     return {
-        "stage": "OOS", "period": "per_trade", "cost_adjusted": 1,
+        "stage": "montecarlo", "period": "per_trade", "cost_adjusted": 1,
         "n_obs": 526, "data_start": "2024-05-02", "data_end": "2026-06-01",
         "metrics": metrics, "notes": "unit test",
     }

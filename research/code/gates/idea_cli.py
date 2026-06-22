@@ -3,7 +3,7 @@ queries Claude used to type by hand before briefing the QR agent / coding a mode
 
 Three subcommands, each maps to a CLAUDE.md rule:
     prebrief  <idea_id>   rule 6  — idea + prior agent calls + open tasks (pre-brief check)
-    gatecheck <idea_id>   rule 8  — gate table + hard PASS/BLOCK on Gates 0 & 1
+    gatecheck <idea_id>   rule 8  — gate table + hard PASS/BLOCK on G1 Premise
     next      <idea_id>            — the ONE next legal protocol action, computed from DB state
     status    <idea_id>            — one snapshot: status + live config + spec + latest results + tasks
 
@@ -89,9 +89,9 @@ def cmd_gatecheck(idea_id: str) -> int:
         n = g.get("gate_number")
         by_num[n] = g.get("status")
         print("  " + _row(g, ["gate_number", "gate_name", "status", "updated_at"]))
-    ok = by_num.get(0) == "passed" and by_num.get(1) == "passed"
-    verdict = "PASS — clear to write model code" if ok else \
-        "BLOCK — Gates 0 & 1 must be 'passed' before any model code (rule 8)"
+    ok = by_num.get(1) == "passed"
+    verdict = "PASS — G1 Premise cleared (rule + thesis + linked paper)" if ok else \
+        "BLOCK — G1 Premise must be 'passed' before building the rule (rule 8)"
     print(f"\n{verdict}")
     return 0 if ok else 2
 
@@ -106,7 +106,6 @@ def cmd_next(idea_id: str) -> int:
     print(f"  idea_kind : {d['idea_kind']}")
     print(f"  gates     : {d['gates']}   (P=passed o=open X=blocked K=killed -=none)")
     print(f"  applies   : {d['applies']}   (gates this idea_kind must clear)")
-    print(f"  sig_test  : {d['sig_test']}   (Gate-5 test, resolved from output_type)")
     print(f"  falsified : {d['falsified']}")
     print(f"\n  NEXT  -> {d['next']}")
     print(f"  WHY   -> {d['why']}")

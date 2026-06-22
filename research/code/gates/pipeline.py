@@ -28,14 +28,10 @@ DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 MYT     = timezone(timedelta(hours=8))
 
 GATE_QUESTIONS = {
-    0: "Do we know the model's mathematical truth from the literature?",
-    1: "What is the simple human-readable rule and null hypothesis?",
-    2: "Does the simplest possible implementation produce sane output?",
-    3: "Does the dumb rule from Gate 1 have any edge, raw and after costs?",
-    4: "Does the sophisticated model confirm or challenge the baseline?",
-    5: "Is there a tradeable signal with positive net edge?",
-    6: "Does the edge survive walk-forward and out-of-sample?",
-    7: "Does the deployed artifact reproduce the validated backtest on the same data?",
+    1: "Premise: idea + one simple rule + thesis + a linked paper. Why should this edge exist?",
+    2: "Edge & Survival: does the IS net-of-cost ledger show a smooth curve and acceptable drawdown?",
+    3: "Robustness: does the IS edge survive walk-forward + Monte Carlo?",
+    4: "Live: does the MT5 tester / demo / live ledger match within tolerance?",
 }
 
 
@@ -122,16 +118,17 @@ def open_gate(
 ) -> int:
     """Create a gate row at status=open. Returns gate_id.
 
-    Gate 6 (OOS) is the freeze chokepoint: you cannot enter the out-of-sample
-    phase until the IS config is frozen (a VALIDATED/ADOPTED component in
-    strategy_log). allow_unfrozen=True downgrades it to a warning."""
-    if gate_number not in range(8):
-        raise ValueError(f"gate_number must be 0–7, got {gate_number}")
+    G3 (Robustness = walk-forward + OOS + Monte Carlo) is the freeze chokepoint:
+    you cannot enter the out-of-sample phase until the IS config is frozen (a
+    VALIDATED/ADOPTED component in strategy_log). allow_unfrozen=True downgrades
+    it to a warning."""
+    if gate_number not in range(1, 5):
+        raise ValueError(f"gate_number must be 1–4, got {gate_number}")
 
     _check_gate_applicable(idea_id, gate_number)
     _check_previous_gate_passed(idea_id, gate_number)
-    if gate_number == 6:
-        _require_frozen_config(idea_id, "open_gate(6) [OOS phase]", allow_unfrozen)
+    if gate_number == 3:
+        _require_frozen_config(idea_id, "open_gate(3) [Robustness / OOS phase]", allow_unfrozen)
 
     now = _now()
     with _conn() as conn:
@@ -151,56 +148,42 @@ def open_gate(
     return gate_id
 
 
-# Gate 6 (per docs/reference/research_protocol.md L204-226) is THREE legs, not one:
-# walk-forward + Monte Carlo + OOS. ORB-002/003 were marked passed on OOS alone
-# (task 29 process failure). This guard refuses pass_gate(6) until all three
-# stages have at least one step4_results row for the idea — or an explicit waiver.
-_GATE6_REQUIRED_STAGES = ("walkforward", "montecarlo", "OOS")
-
-
-def _gate6_missing_stages(idea_id: str) -> list[str]:
-    """Return the Gate-6 stages that have NO step4_results row for this idea."""
-    with _conn() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT DISTINCT stage FROM step4_results WHERE idea_id=? AND gate_number=6",
-            (idea_id,),
-        )
-        present = {r["stage"] for r in cur.fetchall()}
-    return [s for s in _GATE6_REQUIRED_STAGES if s not in present]
-
-
-def _gate7_has_pass_evidence(idea_id: str) -> bool:
-    """True if a tester_runs row for this idea has fidelity_verdict='pass'. Gate 7
-    (FIDELITY) passes on a tester-vs-research diff, not free assertion (the normal
-    path is tester.log_fidelity_diff, which sets the verdict then calls pass_gate)."""
-    with _conn() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM tester_runs WHERE idea_id=? AND fidelity_verdict='pass' LIMIT 1",
-            (idea_id,),
-        ).fetchone()
-    return row is not None
-
-
-def _gate5_has_matching_sigtest(idea_id: str) -> tuple[bool, str]:
-    """Protocol 3.2: a Gate-5 pass needs a step4_results row at gate 5 whose
-    metric_key matches the significance test mandated by the idea's output_type
-    (pnl_stream->PSR/DSR, classifier_score->IC-t/AUC). The test is resolved in
-    `protocol`, never chosen here. Returns (ok, required_label). An UNTAGGED idea
-    (output_type NULL) is not enforced -> (True, ...) for 3.1 back-compat."""
-    protocol = _protocol()  # lazy: avoid the protocol<->pipeline import cycle at load
-    idea = get_idea(idea_id)
-    output_type = idea.get("output_type")
-    required = protocol.significance_test_for(idea.get("idea_kind"), output_type)
-    if not output_type:
-        return True, required  # untagged -> no enforcement (back-compat)
-    with _conn() as conn:
-        rows = conn.execute(
-            "SELECT metric_key FROM step4_results WHERE idea_id=? AND gate_number=5",
-            (idea_id,),
-        ).fetchall()
-    ok = any(protocol.metric_key_matches_sigtest(output_type, r["metric_key"]) for r in rows)
-    return ok, required
+# ── 4.0 gate walls ───────────────────────────────────────────────────────────
+# Only two gates carry a code-enforced wall (the rest are human reads, per the
+# simplicity-first protocol):
+#   G1 Premise        → idea tagged (idea_kind + output_type) AND ≥1 linked paper.
+#   G2 Edge+Survival  → ≥1 logged NET-of-cost result (step4_results cost_adjusted=1).
+# G3 (robustness) and G4 (live) pass on human judgement of the WF/MC + parity reads.
+def _enforce_gate_walls(idea_id: str, gate_number: int, gate_answer: str,
+                        allow_incomplete: bool) -> None:
+    if allow_incomplete:
+        return
+    if gate_number == 1:
+        idea = get_idea(idea_id)
+        if not idea.get("idea_kind") or not idea.get("output_type"):
+            raise ValueError(
+                f"Cannot pass G1 (Premise) for {idea_id}: idea_kind / output_type must "
+                f"be tagged at G1 (pipeline.update_idea). 4.0 declares them here.")
+        with _conn() as conn:
+            n_papers = conn.execute(
+                "SELECT COUNT(*) AS n FROM step2_papers WHERE idea_id=?", (idea_id,)
+            ).fetchone()["n"]
+        if not n_papers:
+            raise ValueError(
+                f"Cannot pass G1 (Premise) for {idea_id}: every idea must link ≥1 research "
+                f"paper before leaving G1 (step2_papers is mandatory in 4.0). Run the paper "
+                f"pipeline (FIND→ACQUIRE→EXTRACT→DISSECT) and agent_log.log_dissect_result().")
+    if gate_number == 2:
+        with _conn() as conn:
+            n_net = conn.execute(
+                "SELECT COUNT(*) AS n FROM step4_results "
+                "WHERE idea_id=? AND cost_adjusted=1", (idea_id,)
+            ).fetchone()["n"]
+        if not n_net:
+            raise ValueError(
+                f"Cannot pass G2 (Edge & Survival) for {idea_id}: no NET-of-cost result "
+                f"logged. Emit the IS ledger and log_result(cost_adjusted=1) first, or pass "
+                f"allow_incomplete=True with a waiver reason in gate_answer.")
 
 
 def pass_gate(
@@ -213,54 +196,13 @@ def pass_gate(
 ) -> None:
     """Mark a gate as passed.
 
-    Gate 5 guardrail (Protocol 3.2): refuses unless a step4_results row at gate 5
-    has a metric_key matching the significance test resolved from the idea's
-    output_type (pnl_stream->psr/dsr, classifier_score->ic_t/auc). Untagged ideas
-    are exempt (back-compat). allow_incomplete=True needs a waiver in gate_answer.
-
-    Gate 6 guardrail: refuses unless walk-forward + Monte Carlo + OOS results are
-    all logged for the idea (protocol L204-226). Pass allow_incomplete=True ONLY
-    with a logged waiver in gate_answer.
-
-    Gate 7 (FIDELITY) guardrail: refuses unless a tester_runs row for the idea has
-    fidelity_verdict='pass' — the port must be diffed against the research backtest
-    (tester.log_fidelity_diff), not asserted. allow_incomplete=True needs a waiver.
+    4.0 gate walls (see _enforce_gate_walls):
+      G1 Premise       — idea tagged (idea_kind + output_type) AND ≥1 linked paper.
+      G2 Edge+Survival — ≥1 logged NET-of-cost result (cost_adjusted=1).
+      G3 / G4          — human reads (WF/MC robustness, live parity), no code wall.
+    allow_incomplete=True bypasses the wall (log a waiver reason in gate_answer).
     """
-    if gate_number == 1:
-        idea = get_idea(idea_id)
-        if idea.get("idea_kind") and not idea.get("output_type"):
-            print(
-                f"[pipeline] ⚠️  {idea_id} passing Gate 1 with output_type UNDECLARED — "
-                f"3.2 spec-birth declares output_type here; the Gate-5 significance-test "
-                f"wall stays OFF until it is set (pipeline.update_idea)."
-            )
-    if gate_number == 5 and not allow_incomplete:
-        ok, required = _gate5_has_matching_sigtest(idea_id)
-        if not ok:
-            raise ValueError(
-                f"Cannot pass Gate 5 for {idea_id}: no step4_results row at gate 5 whose "
-                f"metric_key matches the mandated significance test ({required}). "
-                f"Protocol 3.2 resolves the test from output_type — log the matching metric "
-                f"(pnl_stream->psr/dsr, classifier_score->ic_t/auc) first, or pass "
-                f"allow_incomplete=True with a waiver reason in gate_answer."
-            )
-    if gate_number == 6 and not allow_incomplete:
-        missing = _gate6_missing_stages(idea_id)
-        if missing:
-            raise ValueError(
-                f"Cannot pass Gate 6 for {idea_id}: missing step4_results stages "
-                f"{missing}. Gate 6 = walk-forward + Monte Carlo + OOS (protocol "
-                f"L204-226). Log the missing legs first, or pass allow_incomplete=True "
-                f"with a waiver reason in gate_answer."
-            )
-    if gate_number == 7 and not allow_incomplete:
-        if not _gate7_has_pass_evidence(idea_id):
-            raise ValueError(
-                f"Cannot pass Gate 7 (FIDELITY) for {idea_id}: no tester_runs row with "
-                f"fidelity_verdict='pass'. Run the MT5 tester on Dukascopy and diff vs the "
-                f"research backtest via tester.log_fidelity_diff() first, or pass "
-                f"allow_incomplete=True with a waiver reason in gate_answer."
-            )
+    _enforce_gate_walls(idea_id, gate_number, gate_answer, allow_incomplete)
     now = _now()
     with _conn() as conn:
         cur = conn.cursor()
@@ -374,11 +316,7 @@ def log_result(
     data_end: str,
     git_sha: str,
     code_path: str,
-    n_trials: int = None,
-    trial_family_id: str = None,
-    config_hash: str = None,
-    cost_bps: float = None,
-    cost_basis: str = None,
+    is_run: str = None,
     instrument: str = "XAUUSD",
     parameters: str = None,
     data_hash: str = None,
@@ -388,12 +326,12 @@ def log_result(
 ) -> int:
     """Log a metric result. Returns result_id.
 
-    Two IS-discipline guards (added 2026-06-17):
-      - trial_family_id is REQUIRED on IS/OOS rows → every IS experiment carries a
-        run-number; every OOS row names the IS family it validates.
+    4.0 IS-discipline guards:
+      - is_run is REQUIRED on IS/OOS rows → every IS experiment carries a run label
+        (IS-01, IS-02…) so the degrees of freedom (shots taken before G3) stay
+        visible. Register the label first via log_is_run().
       - stage='OOS' is BLOCKED unless the IS config is frozen (see
-        _require_frozen_config) — exhaust + VALIDATE IS params before OOS.
-        allow_unfrozen=True downgrades the freeze check to a warning.
+        _require_frozen_config). allow_unfrozen=True downgrades it to a warning.
     """
     valid_stages  = ("IS", "walkforward", "montecarlo", "OOS")
     valid_periods = ("per_trade", "daily", "annualised")
@@ -408,11 +346,11 @@ def log_result(
         raise ValueError("git_sha is required — run `git rev-parse --short HEAD`")
     if not n_obs:
         raise ValueError("n_obs is required")
-    if stage in ("IS", "OOS") and not trial_family_id:
+    if stage in ("IS", "OOS") and not is_run:
         raise ValueError(
-            f"trial_family_id is required for stage='{stage}' results — name the "
-            f"experiment family (e.g. '{idea_id}-gate{gate_number}-edge-sweep') so the "
-            f"IS run is numbered and any OOS row names the IS family it validates.")
+            f"is_run is required for stage='{stage}' results — label the IS run "
+            f"(IS-01, IS-02…) via log_is_run() so the shots taken before G3 are "
+            f"counted; an OOS row names the IS run it validates.")
     if stage == "OOS":
         _require_frozen_config(idea_id, f"log_result(stage='OOS', {metric_key})",
                                allow_unfrozen)
@@ -423,15 +361,13 @@ def log_result(
         cur.execute("""
             INSERT INTO step4_results
                 (idea_id, gate_number, stage, metric_key, metric_value,
-                 cost_adjusted, period, n_obs, n_trials, trial_family_id,
-                 config_hash, cost_bps, cost_basis,
+                 cost_adjusted, period, n_obs, is_run,
                  instrument, data_start, data_end, parameters,
                  git_sha, data_hash, seed, code_path, notes, logged_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             idea_id, gate_number, stage, metric_key, metric_value,
-            cost_adjusted, period, n_obs, n_trials, trial_family_id,
-            config_hash, cost_bps, cost_basis,
+            cost_adjusted, period, n_obs, is_run,
             instrument, data_start, data_end, parameters,
             git_sha, data_hash, seed, code_path, notes, now,
         ))
@@ -441,6 +377,30 @@ def log_result(
     label = "net" if cost_adjusted else "raw"
     print(f"[pipeline] {idea_id} gate={gate_number} {stage} {metric_key}={metric_value} [{label}|{period}]")
     return result_id
+
+
+def log_is_run(idea_id: str, label: str, what_changed: str = None) -> None:
+    """Register a 4.0 IS run (the deflator that replaced DSR/N_trials). One row per
+    tuning shot: `label` is IS-01, IS-02…; `what_changed` says what was swept. Its
+    job is COUNTING degrees of freedom before G3 — per-idea, never pooled. Idempotent
+    on (idea_id, label)."""
+    now = _now()
+    with _conn() as conn:
+        conn.execute("""
+            INSERT OR IGNORE INTO is_runs (idea_id, label, what_changed, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (idea_id, label, what_changed, now))
+        conn.commit()
+    print(f"[pipeline] {idea_id} IS run registered: {label}")
+
+
+def get_is_runs(idea_id: str) -> list[dict]:
+    """All IS runs for an idea, oldest first — answers 'how many shots before G3?'."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM is_runs WHERE idea_id=? ORDER BY created_at ASC", (idea_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def delete_result(result_id: int) -> None:
@@ -548,7 +508,7 @@ def _check_previous_gate_passed(idea_id: str, gate_number: int) -> None:
     gates = protocol.applicable_gates(get_idea(idea_id).get("idea_kind"))
     prev = max((g for g in gates if g < gate_number), default=None)
     if prev is None:
-        return  # this is the first applicable gate (normally gate 0)
+        return  # this is the first applicable gate (G1)
     with _conn() as conn:
         cur = conn.cursor()
         cur.execute("""
