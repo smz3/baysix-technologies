@@ -1,8 +1,8 @@
 # research.db — Schema (mirror of live DB)
 
-_Last updated: 2026-06-15 — regenerated from live `PRAGMA` to match the database exactly. Faithful mirror; **Protocol 3.2 fully landed** (migration 026: `step1_ideas.idea_kind` + `output_type`; migration 027: `log_strategy.component` += `conditioning`/`management`). Gate semantics rewritten in [research_protocol.md](research_protocol.md) (task 84)._
+_Last updated: 2026-06-22 — **Protocol 4.0 lean rebuild** (migration 032): 4 gates (G1–G4), `trial_family` + the 3.3 result columns dropped, `is_runs` added, tester tables folded into `db_init`. Gate semantics in [research_protocol.md](research_protocol.md)._
 
-The DB has **9 tables** + **4 views**. All writes go through [research/code/](../../research/code/) (`pipeline.py`, `agent_log.py`, `strategy_log.py`, `backlog.py`, `tester.py`) — never raw `sqlite3` (CLAUDE.md rule 10, hook-enforced).
+The DB has **11 tables** + **4 views**. All writes go through the 4 subpackages of [research/code/](../../research/code/) — `gates/` (`pipeline`, `protocol`), `lineage/` (`strategy_log`, `agent_log`, `backlog`), `io/` (`tester`, …), `infra/` (`db_init`, …) — never raw `sqlite3` (CLAUDE.md rule 10, hook-enforced). The flat `from research.code import X` contract is preserved via `__init__` re-exports.
 
 CHECK / UNIQUE / FK constraints below are the **real DB-level constraints** read from the table SQL. "observed:" lists the values actually present today (not a constraint unless a CHECK is noted).
 
@@ -11,9 +11,9 @@ CHECK / UNIQUE / FK constraints below are the **real DB-level constraints** read
 ## Table groups
 
 ```
-PIPELINE CORE      step1_ideas · step2_papers · step3_gates · step4_results · trial_family
+PIPELINE CORE      step1_ideas · step2_papers · step3_gates · step4_results · is_runs
 LOGS               log_agent · log_strategy · log_tasks
-GATE-7 FIDELITY    tester_runs · tester_trades
+MT5 TESTER LEDGER  tester_runs · tester_trades · tester_zones   (the EA-emitted ledger; G2 edge read + G4 parity)
 ```
 
 ---
@@ -37,12 +37,12 @@ The spine. One row per idea. Everything FKs back to `idea_id`.
 | created_at | DATETIME | NOT NULL |
 | updated_at | DATETIME | NOT NULL |
 | idea_kind | TEXT | **CHECK(idea_kind IS NULL OR idea_kind IN ('strategy','primitive','overlay','classifier'))**. Protocol 3.2 — picks the gate variant (`protocol.GATE_APPLICABILITY`). Migration 026. NULL until declared (untagged → full ladder). |
-| output_type | TEXT | **CHECK(output_type IS NULL OR output_type IN ('pnl_stream','classifier_score','primitive_output'))**. Protocol 3.2 — resolves the Gate-5 significance test (`protocol.significance_test_for`). Migration 026. |
+| output_type | TEXT | **CHECK(output_type IS NULL OR output_type IN ('pnl_stream','classifier_score','primitive_output'))**. Names what the idea emits; tagged at G1 (4.0 wall: G1 needs idea_kind + output_type set). |
 
 ---
 
 ### step2_papers
-Papers read per idea. Drives Gate 0.
+Papers read per idea. MANDATORY at G1 (every idea links ≥1 paper).
 
 | Column | Type | Constraints / Note |
 |--------|------|--------------------|
@@ -72,7 +72,7 @@ Protocol gates per idea. One row per (idea, gate, attempt).
 |--------|------|--------------------|
 | gate_id | INTEGER | **PK** AUTOINCREMENT |
 | idea_id | TEXT | NOT NULL, FK → step1_ideas |
-| gate_number | INTEGER | NOT NULL, **CHECK(gate_number BETWEEN 0 AND 7)** |
+| gate_number | INTEGER | NOT NULL, **CHECK(gate_number BETWEEN 1 AND 4)** — 4.0 gates G1..G4 |
 | attempt | INTEGER | NOT NULL DEFAULT 1, **UNIQUE(idea_id, gate_number, attempt)** |
 | gate_question | TEXT | what must be answered (sourced from `pipeline.GATE_QUESTIONS`) |
 | gate_answer | TEXT | the actual answer ⚠️ text-heavy (rule 9) |
@@ -99,11 +99,7 @@ All quantitative output. Required-field guard in `pipeline.log_result` (git_sha,
 | cost_adjusted | INTEGER | NOT NULL DEFAULT 0, **CHECK(cost_adjusted IN (0,1))** (0=raw, 1=net) |
 | period | TEXT | **CHECK(period IN ('per_trade','daily','annualised'))**. observed: per_trade, daily |
 | n_obs | INTEGER | observation count (required by code layer) |
-| n_trials | INTEGER | for PSR / deflated Sharpe (= `trial_family.n_configs`) |
-| trial_family_id | TEXT | FK-ish → `trial_family.family_id`; the sweep this config belongs to |
-| config_hash | TEXT | identifies this swept config (migration 028) — links row to its family / names the winner |
-| cost_bps | REAL | measured cost in bps — AQR measure-don't-model (migration 028) |
-| cost_basis | TEXT | 'measured' / 'modeled' — discipline flag (migration 028; enforced in code layer) |
+| is_run | TEXT | 4.0 IS run label (IS-01, IS-02…) — soft ref → `is_runs.label`; REQUIRED on stage IN ('IS','OOS') |
 | instrument | TEXT | NOT NULL DEFAULT 'XAUUSD' |
 | data_start | DATE | |
 | data_end | DATE | |
@@ -117,21 +113,16 @@ All quantitative output. Required-field guard in `pipeline.log_result` (git_sha,
 
 ---
 
-### trial_family
-The **N_trials ledger** (migration 028, task 96 / Protocol 3.3). One row per *selection decision*: when a sweep compares N configs to pick a winner, this records N and the dispersion of their Sharpes so Gate 5 can compute a **true** Deflated Sharpe (without it, DSR silently degrades to PSR-vs-0). **Scope is PER-IDEA** — one family per sweep, never pooled across strategies. The per-config Sharpes live as `step4_results` rows sharing the `trial_family_id`; `var_sr` caches their variance.
+### is_runs
+The **4.0 IS run numbering** (replaced the 3.3 `trial_family` / N_trials ledger — that table was dropped in the Protocol 4.0 rebuild). One row per tuning shot; its job is **counting degrees of freedom** taken before G3 — per-idea, never pooled. The only deflator 4.0 keeps. Written by `pipeline.log_is_run()`; `step4_results.is_run` carries the label.
 
 | Column | Type | Constraints / Note |
 |--------|------|--------------------|
-| family_id | TEXT | **PK** (e.g. 'orb001_stop_grid_2026-06-15') |
+| is_run_id | INTEGER | **PK** AUTOINCREMENT |
 | idea_id | TEXT | NOT NULL, FK → step1_ideas |
-| description | TEXT | what was swept |
-| n_configs | INTEGER | NOT NULL DEFAULT 0 — **N** (configs compared) |
-| var_sr | REAL | **V[SR_n]** — variance of per-period Sharpe across the N configs |
-| selected_config_hash | TEXT | the winner fed forward (joins `step4_results.config_hash`) |
-| data_start | DATE | |
-| data_end | DATE | |
+| label | TEXT | NOT NULL — 'IS-01', 'IS-02', … ; **UNIQUE(idea_id, label)** |
+| what_changed | TEXT | what this run swept/changed |
 | created_at | DATETIME | NOT NULL |
-| updated_at | DATETIME | NOT NULL |
 
 ---
 
@@ -274,7 +265,7 @@ One row per idea: status, paper counts, highest gate passed, kill info.
 Ideas at open/blocked gates (latest attempt only), ordered by days since last activity. Excludes killed/graduated.
 
 ### papers_queue
-Undissected papers blocking Gate 0, oldest first. Excludes killed/graduated.
+Undissected papers blocking G1, oldest first. Excludes killed/graduated.
 
 ### open_backlog
 Open/in_progress `log_tasks`, ordered by priority then age. Powers the SessionStart brief.
@@ -327,6 +318,6 @@ Gate semantics (from `protocol.py`): **evidence gates** = 3 (t>1.0), 5 (t>2.0), 
 2. Gate N cannot pass unless Gate N-1 is passed — enforced in `pipeline._check_previous_gate_passed`.
 3. Results without `git_sha`, `n_obs` are rejected by `pipeline.log_result`; `data_hash` mandatory on OOS.
 4. Kill reason mandatory when `status=killed`. Kill needs ≥2 FALSIFIED hypotheses in `log_strategy` (rule 8b) unless `force=True`.
-5. `cost_adjusted=0` (raw) and `cost_adjusted=1` (net) both logged for Gate 3 and Gate 5.
+5. `cost_adjusted=0` (raw) and `cost_adjusted=1` (net); G2 needs a net (cost_adjusted=1) result to pass.
 6. `period` explicit on every metric — never ambiguous between per_trade / daily / annualised.
 7. All writes via the `research/code/` layer — raw `sqlite3` writes are hook-blocked.

@@ -29,12 +29,10 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 ├── brokers/                  ← venue specs: justmarkets.yaml (TCM-001 cost model) + .md per broker
 ├── research/
 │   ├── db/                   ← all SQLite databases (2-DB design: workstation + VPS)
-│   │   ├── research.db       ← pipeline: step1_ideas · step2_papers · step3_gates (Gates 0-7) · step4_results · tester_runs/tester_trades (Gate 7 FIDELITY) · logs: log_agent · log_tasks · log_strategy
+│   │   ├── research.db       ← Protocol 4.0 lean: step1_ideas · step2_papers · step3_gates (G1-G4) · step4_results (+is_run) · is_runs · tester_runs/tester_trades/tester_zones · logs: log_agent · log_tasks · log_strategy
 │   │   └── execution.db      ← live deployment ledger (downstream twin · 12 tables · spec: docs/reference/execution_schema.md · rebuild in progress)
-│   ├── code/                 ← shared DB layer (db_init · pipeline · agent_log)
-│   ├── models/               ← one folder per idea/model
-│   │   ├── orb/              ← ORB-001/002 (opening-range breakout · Gate-7 fidelity work)
-│   │   └── hmm/              ← HMM-001 (regime detection · Gates 0–4 passed · gateN_*.py)
+│   ├── code/                 ← shared DB layer, 4 subpackages (flat `from research.code import X` preserved via __init__ re-exports): gates/ (pipeline·protocol·idea_cli) · lineage/ (strategy_log·agent_log·backlog) · io/ (arctic_io·tester·ingest_*·fetch/extract/backfill) · infra/ (db_init·run_and_log·run_tracked·handover_lint·execution)
+│   ├── models/               ← one folder per idea/model (brc/ = active BRC-001 · struct/ = STRUCT-001 primitive · cusum/ · _archive/ = orb/hmm/msm, superseded)
 │   ├── migrations/           ← DB migration scripts (010 create_research_db · 011 migrate_data)
 │   ├── dashboard/            ← Streamlit research dashboard (app.py · localhost:8501)
 │   ├── outputs/              ← model plot outputs (Plotly HTML + Seaborn PNG · gitignored)
@@ -83,8 +81,8 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **Research DB**
 7. Before touching anything in `research/models/` or `research/code/`, read [research/RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) first.
-8. Gates 0 and 1 must be `passed` in `step3_gates` before writing any model code — check via `idea_cli.py gatecheck <idea_id>` (hard PASS/BLOCK; sequencing also code-enforced by `pipeline.open_gate`). **Driver: `idea_cli.py next <idea_id>`** computes the ONE next legal protocol action from DB state — use it instead of recalling the gate sequence. Snapshot: `idea_cli.py status`. Gate defs: [docs/reference/research_protocol.md](docs/reference/research_protocol.md).
-8b. **Multi-hypothesis kill rule (HARD)** — `kill_idea` needs **≥2 FALSIFIED hypotheses** (base/symmetric framing + ≥1 directional/conditional variant); a single FALSIFIED is a reframe trigger, not a kill. Code-enforced: `pipeline.kill_idea` blocks under 2 (`force=True` only for Gate 0/1 non-novelty/no-spec, with reason).
+8. **Protocol 4.0 — 4 gates (G1 Premise / G2 Edge+Survival / G3 Robustness / G4 Live).** G1 must be `passed` in `step3_gates` before building the rule — check via `python research/code/gates/idea_cli.py gatecheck <idea_id>` (hard PASS/BLOCK; sequencing code-enforced by `pipeline.open_gate`). Code walls (`pipeline._enforce_gate_walls`): **G1** needs `idea_kind`+`output_type` tagged AND ≥1 `step2_papers` row; **G2** needs ≥1 logged NET result (`cost_adjusted=1`). **Driver: `idea_cli.py next <idea_id>`** computes the ONE next legal action from DB state — use it instead of recalling the gate sequence. Snapshot: `idea_cli.py status`. Gate defs: [docs/reference/research_protocol.md](docs/reference/research_protocol.md). _t-stat is reported, NEVER an auto-kill (4.0); OOS/WF persistence is the luck-test._
+8b. **Multi-hypothesis kill rule (HARD)** — `kill_idea` needs **≥2 FALSIFIED hypotheses** (base/symmetric framing + ≥1 directional/conditional variant); a single FALSIFIED is a reframe trigger, not a kill. Code-enforced: `pipeline.kill_idea` blocks under 2 (`force=True` only for G1 non-novelty/no-spec, with reason).
 9. **Query discipline** — never `SELECT` text-heavy columns (`key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`) into main context; use targeted column queries. QR agents query `research.db` inside the subagent, never through main context.
 10. **Writes via code layer only** — all `research.db` writes use `research/code/` functions (`open_gate`, `pass_gate`, `kill_idea`, `log_result`, `log_agent_call`, `log_dissect_result`, `log_human_decision`, `log_change`). Never raw `sqlite3` (timestamps/validation/constraints break). Hook-enforced: [.claude/hooks/scripts/protocol_guard.py](.claude/hooks/scripts/protocol_guard.py) blocks raw sqlite3 writes + `.db` hand-edits at PreToolUse.
 11. **Log immediately, before replying to Syafiq** — after every agent call or decision:
