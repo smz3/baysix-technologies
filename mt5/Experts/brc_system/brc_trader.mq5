@@ -677,12 +677,11 @@ void WriteTradeLedger()
      }
 
    //--- open the CSV (Common\Files\BRC, named like the zone files)
-   string fname = StringFormat("BRC\\brc_trades_%s_v%s_%s.csv",
-                               _Symbol, BRC_VERSION,
-                               TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES));
-   StringReplace(fname, ".", "");   // strip dots from version/symbol for a clean name
-   StringReplace(fname, ":", "");
-   StringReplace(fname, " ", "_");
+   //--- sanitize the stamp/version SEPARATELY so we don't eat the ".csv" dot
+   string stamp = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);  // "2024.06.28 23:59"
+   StringReplace(stamp, ".", "");  StringReplace(stamp, ":", "");  StringReplace(stamp, " ", "_");
+   string ver = BRC_VERSION;       StringReplace(ver, ".", "");
+   string fname = StringFormat("BRC\\brc_trades_%s_v%s_%s.csv", _Symbol, ver, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      {

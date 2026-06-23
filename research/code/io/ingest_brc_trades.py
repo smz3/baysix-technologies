@@ -92,7 +92,8 @@ def main():
     for r in rows:
         ttx_min = (_ts_dt(r["exit_ts"]) - _ts_dt(r["entry_ts"])).total_seconds() / 60.0
         tester.ingest_tester_trade(
-            run_id=run_id, ticket=r["position_id"], direction=r["direction"],
+            run_id=run_id, ticket=r["position_id"],
+            direction=("long" if r["direction"] == "BUY" else "short"),
             entry_ts=_ts_dt(r["entry_ts"]).strftime("%Y-%m-%d %H:%M:%S"), entry_px=r["entry_px"],
             exit_ts=_ts_dt(r["exit_ts"]).strftime("%Y-%m-%d %H:%M:%S"), exit_px=r["exit_px"],
             exit_reason=r["exit_reason"], lots=r["lots"], risk_unit=r["range_w"],
