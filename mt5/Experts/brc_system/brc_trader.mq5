@@ -40,6 +40,9 @@ input int              InpMaxAge      = 0;
 //--- entry module
 input BRC_ENTRY_TOUCH  InpEntryTouch  = BRC_ENTRY_L1;          // IS-01
 input BRC_ENTRY_SIDE   InpEntrySide   = BRC_CONTINUATION;      // IS-01
+//--- stop buffer BEYOND L2 as a fraction of zone width: sl = L2 +/- k*|L1-L2|.
+//    0.0 = legacy stop-on-L2 (IS-01/IS-02 baseline); 0.20 = adopted buffered stop.
+input double           InpSlBufferK   = 0.20;                  // SL = L2 + k*zone_width
 //--- T1-limit expiry: cancel the resting limit this many HOURS after the break
 //    (P4). 72h chosen from the emitted P4->T1 retest-lag distribution (8.5yr H1
 //    primary zones, 2026-06-23): keeps ~86% of retests, drops the stale tail,
@@ -213,8 +216,8 @@ int OnInit()
                BRC_VERSION, BRC_GIT_SHA,
                (BRC_GIT_DIRTY ? "-DIRTY(exploratory)" : ""),
                BRC_BUILD_TIME, EnumToString((ENUM_TIMEFRAMES)_Period));
-   PrintFormat("[BRC TRADER] atom: touch=%s side=%s exit=%s maxhold=%d tp=%.2f expiry=%dh size=%s lot=%.2f magic=%I64u",
-               EnumToString(InpEntryTouch), EnumToString(InpEntrySide),
+   PrintFormat("[BRC TRADER] atom: touch=%s side=%s slbuf_k=%.2f exit=%s maxhold=%d tp=%.2f expiry=%dh size=%s lot=%.2f magic=%I64u",
+               EnumToString(InpEntryTouch), EnumToString(InpEntrySide), InpSlBufferK,
                EnumToString(InpExitMode), InpMaxHoldBars, InpTpMult, InpRetestExpiryHrs,
                EnumToString(InpSizeMode), InpFixedLot, InpMagic);
    return INIT_SUCCEEDED;
@@ -489,7 +492,7 @@ void TryArm()
       if(win_s > 0 && (long)(now - z.p4_time) >= win_s)
          continue;
 
-      BrcEntryPlan plan = BrcBuildEntryPlan(z, InpEntryTouch, InpEntrySide);
+      BrcEntryPlan plan = BrcBuildEntryPlan(z, InpEntryTouch, InpEntrySide, InpSlBufferK);
       if(!plan.valid)
          continue;
 

@@ -72,7 +72,8 @@ double BrcEntryLevelFor(const BrcZone &z, const BRC_ENTRY_TOUCH touch)
 //+------------------------------------------------------------------+
 BrcEntryPlan BrcBuildEntryPlan(const BrcZone &z,
                                const BRC_ENTRY_TOUCH touch,
-                               const BRC_ENTRY_SIDE  side)
+                               const BRC_ENTRY_SIDE  side,
+                               const double          sl_buffer_k)
   {
    BrcEntryPlan p;
    p.valid  = false;
@@ -90,12 +91,18 @@ BrcEntryPlan BrcBuildEntryPlan(const BrcZone &z,
 
    bool   bull  = (z.direction == BRC_BULL);   // broke UP -> buy the pullback
    double entry = BrcEntryLevelFor(z, touch);
-   double sl    = z.l2;                          // invalidation edge = the stop
+   //--- stop = invalidation edge (L2) pushed a buffer BEYOND it, away from entry,
+   //    scaled by zone width. k=0 reproduces the legacy stop-on-L2. The buffer
+   //    (a) gives noise/spread room before genuine invalidation and (b) makes the
+   //    deep L2 entry (T3) non-degenerate (r_unit = k*width instead of 0).
+   double w     = MathAbs(z.l1 - z.l2);
+   double sl    = bull ? (z.l2 - sl_buffer_k * w)    // bull: L2 is the low edge -> stop below
+                       : (z.l2 + sl_buffer_k * w);   // bear: L2 is the high edge -> stop above
    double r     = MathAbs(entry - sl);
 
    if(r <= 0.0)
      {
-      p.reason = "degenerate R (entry == invalidation level)";
+      p.reason = "degenerate R (entry == stop; need sl_buffer_k>0 for L2 entry)";
       return p;
      }
 
