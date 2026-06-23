@@ -68,6 +68,33 @@ If it prints **BLOCKED**, the handover is NOT done: add the missing citation
 cite it), re-write, re-lint until it prints **OK**. Do not hand-wave past this —
 the same gate runs again at `git commit` (`.git/hooks/pre-commit`).
 
+## Step 2.6 — Sync log_tasks (BLOCKING)
+
+Every handover MUST leave `log_tasks` reflecting reality before the file is written.
+The SessionStart brief reads `log_tasks`, NOT this prose — an un-synced task rots
+silently (the seam that cost 4 sessions: [[handover_nextsteps_must_be_tasks]]).
+
+Do this via the code layer ONLY (`research/code/lineage/backlog.py` — never raw sqlite3):
+
+1. **Resolve what you finished this session.** For each task you completed/dropped:
+   ```bash
+   python -c "from research.code.lineage.backlog import resolve_task; resolve_task(<task_id>, '<one-line resolution>', status='done')"   # or status='dropped'
+   ```
+2. **Open a task for every `## Next` line.** Each numbered action in your `## Next`
+   block must map to an `open` task. If it doesn't exist yet, add it:
+   ```bash
+   python -c "from research.code.lineage.backlog import add_task; add_task('<title>', '<kind>', detail='<detail>', idea_id='<id>', priority='P1')"
+   ```
+3. **Re-prioritise anything stale** (`update_task(<task_id>, priority='P1')`).
+4. **Verify the open backlog now matches your `## Next`:**
+   ```bash
+   python research/code/gates/idea_cli.py status
+   ```
+   If an open task has no home in `## Next` (or vice-versa), reconcile before continuing.
+
+Do NOT write the handover until open `log_tasks` == your `## Next` / `## Blockers`.
+This rule is mandatory for EVERY handover — new tasks and old.
+
 ## Step 3 — Confirm
 
 ```

@@ -32,6 +32,7 @@
 #include <brc_system/brc_entry.mqh>
 #include <brc_system/brc_exit.mqh>
 #include <brc_system/brc_sizing.mqh>
+#include <brc_system/brc_visual.mqh>    // chart eyeball layer (shared with the emitter; InpVisualize master toggle)
 
 //--- detection (match emitter run-5: window 3, no age filter)
 input int              InpSwingWindow = 3;
@@ -55,6 +56,9 @@ input double           InpFixedLot    = 0.01;                  // $50 min-lot fl
 input double           InpRiskPct     = 1.0;                   // FIXED_FRAC only
 //--- execution
 input ulong            InpMagic       = 2001;                  // BRC trader magic
+//--- trade visuals (eyeball: do entries land on the zone level?). Needs tester
+//    Visual Mode; gated under InpVisualize (the emitter's master toggle).
+input bool             InpBrcShowTrades = true;                // draw entry/SL/TP/exit markers
 
 //+------------------------------------------------------------------+
 //| Single-TF detection state (mirror of the emitter's TfState).     |
@@ -81,12 +85,119 @@ string      g_armed_key = "";       // zone_key we placed the pending order for
 ulong       g_pending_ticket = 0;
 datetime    g_entry_time = 0;       // position open time (for bar counting)
 
+//--- visuals
+CBrcVisual  g_vis;                  // shared zone visualizer (no-op unless InpVisualize)
+string      g_vistf  = "";          // chart TF short name ("H1"); "" if unmapped
+bool        g_trade_drawn = false;  // entry/level markers drawn for the current position
+
+//--- trade-marker object stems (own prefix so brc_visual's ClearAll never wipes them)
+#define BRC_TR_PREFIX "BRC_TR_"
+
+//--- short TF name matching CBrcVisual::PeriodName (visualizer is chart-TF gated).
+string TraderTfName()
+  {
+   switch((ENUM_TIMEFRAMES)_Period)
+     {
+      case PERIOD_M5:  return "M5";
+      case PERIOD_M15: return "M15";
+      case PERIOD_M30: return "M30";
+      case PERIOD_H1:  return "H1";
+      case PERIOD_H4:  return "H4";
+      case PERIOD_D1:  return "D1";
+      case PERIOD_W1:  return "W1";
+      case PERIOD_MN1: return "MN1";
+     }
+   return "";
+  }
+
+//+------------------------------------------------------------------+
+//| Trade-marker drawing (eyeball the fill against the zone level).   |
+//| Own object prefix BRC_TR_ so CBrcVisual::ClearAll never wipes it. |
+//| Markers persist per trade (keyed on entry time) so a whole replay |
+//| can be scrolled back and audited zone-by-zone.                   |
+//+------------------------------------------------------------------+
+void TrLine(const string name, const datetime t0, const double p0,
+            const datetime t1, const double p1, const color clr, const ENUM_LINE_STYLE st)
+  {
+   if(ObjectFind(0, name) < 0)
+      ObjectCreate(0, name, OBJ_TREND, 0, t0, p0, t1, p1);
+   ObjectMove(0, name, 0, t0, p0);
+   ObjectMove(0, name, 1, t1, p1);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, st);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, name, OBJPROP_BACK, false);
+  }
+
+void DrawTradeEntry(const datetime t_entry, const double entry, const double sl,
+                    const double tp, const bool is_long)
+  {
+   if(!InpVisualize || !InpBrcShowTrades)
+      return;
+   string   stem = BRC_TR_PREFIX + (string)t_entry;
+   datetime t1   = t_entry + (datetime)(PeriodSeconds((ENUM_TIMEFRAMES)_Period) * (InpMaxHoldBars + 2));
+
+   //--- entry arrow at the fill
+   string an = stem + "_e";
+   if(ObjectFind(0, an) < 0)
+      ObjectCreate(0, an, OBJ_ARROW, 0, t_entry, entry);
+   ObjectMove   (0, an, 0, t_entry, entry);
+   ObjectSetInteger(0, an, OBJPROP_ARROWCODE, is_long ? 233 : 234);   // up / down arrow
+   ObjectSetInteger(0, an, OBJPROP_COLOR, is_long ? clrAqua : clrMagenta);
+   ObjectSetInteger(0, an, OBJPROP_ANCHOR, is_long ? ANCHOR_TOP : ANCHOR_BOTTOM);
+   ObjectSetInteger(0, an, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, an, OBJPROP_HIDDEN, true);
+
+   //--- entry / SL / TP level segments spanning the holding window
+   TrLine(stem + "_eL", t_entry, entry, t1, entry, clrGold, STYLE_SOLID);
+   TrLine(stem + "_sL", t_entry, sl,    t1, sl,    clrRed,  STYLE_DASH);
+   if(tp > 0.0)
+      TrLine(stem + "_tL", t_entry, tp, t1, tp, clrLimeGreen, STYLE_DASH);
+
+   //--- fill label (price the EA actually got, to compare against the L1 line)
+   string ln = stem + "_lbl";
+   if(ObjectFind(0, ln) < 0)
+      ObjectCreate(0, ln, OBJ_TEXT, 0, t_entry, entry);
+   ObjectMove   (0, ln, 0, t_entry, entry);
+   ObjectSetString (0, ln, OBJPROP_TEXT, StringFormat("  %s fill %s",
+                    (is_long ? "BUY" : "SELL"), DoubleToString(entry, _Digits)));
+   ObjectSetString (0, ln, OBJPROP_FONT, "Calibri Light");
+   ObjectSetInteger(0, ln, OBJPROP_FONTSIZE, 8);
+   ObjectSetInteger(0, ln, OBJPROP_ANCHOR, is_long ? ANCHOR_LEFT_LOWER : ANCHOR_LEFT_UPPER);
+   ObjectSetInteger(0, ln, OBJPROP_COLOR, clrGold);
+   ObjectSetInteger(0, ln, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, ln, OBJPROP_HIDDEN, true);
+  }
+
+void DrawTradeExit(const datetime t_entry, const datetime t_exit, const double price)
+  {
+   if(!InpVisualize || !InpBrcShowTrades)
+      return;
+   string xn = BRC_TR_PREFIX + (string)t_entry + "_x";
+   if(ObjectFind(0, xn) < 0)
+      ObjectCreate(0, xn, OBJ_ARROW, 0, t_exit, price);
+   ObjectMove   (0, xn, 0, t_exit, price);
+   ObjectSetInteger(0, xn, OBJPROP_ARROWCODE, 251);   // small "x"
+   ObjectSetInteger(0, xn, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, xn, OBJPROP_ANCHOR, ANCHOR_CENTER);
+   ObjectSetInteger(0, xn, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, xn, OBJPROP_HIDDEN, true);
+  }
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
    g_radius = BrcSwingRadius(InpSwingWindow);
    if(g_radius < 0)
       return INIT_PARAMETERS_INCORRECT;
+
+   g_vistf = TraderTfName();
+   g_vis.SyncChartTF();
+   g_vis.ClearAll();
+   ObjectsDeleteAll(0, BRC_TR_PREFIX);   // wipe trade markers from any prior run
 
    PrintFormat("[BRC TRADER] v%s | git %s%s | built %s | %s",
                BRC_VERSION, BRC_GIT_SHA,
@@ -186,12 +297,15 @@ void IngestBar(const datetime bt, const double h, const double l, const double c
          int li = ArraySize(g_s.live_sw);
          ArrayResize(g_s.live_sw, li + 1, 512);
          g_s.live_sw[li] = si;
+         g_vis.OnSwing(g_vistf, sw);
         }
      }
 
    int before = ArraySize(g_s.breaks);
    BrcDetectBreaksOnBar(g_s.swings, g_s.live_sw, i, bt, cl, g_radius, InpMaxAge, g_s.breaks);
    int after = ArraySize(g_s.breaks);
+   for(int b = before; b < after; b++)
+      g_vis.OnBreak(g_vistf, g_s.breaks[b]);
 
    for(int k = before; k < after; k++)
      {
@@ -209,6 +323,7 @@ void IngestBar(const datetime bt, const double h, const double l, const double c
          g_s.zones[zi].is_primary        = true;
          g_s.zones[zi].consolidated_into = "";
          BrcConsolidateNewZone(g_s, zi);
+         g_vis.OnZoneConfirmed(g_vistf, g_s.zones[zi]);
         }
      }
 
@@ -218,7 +333,10 @@ void IngestBar(const datetime bt, const double h, const double l, const double c
      {
       int z = g_s.alive_idx[j];
       if(g_s.zones[z].p4_time < bt)
+        {
          BrcAdvanceZone(g_s.zones[z], bt, h, l, cl);
+         g_vis.OnZoneAdvanced(g_vistf, g_s.zones[z]);
+        }
       if(g_s.zones[z].alive)
          g_s.alive_idx[w++] = g_s.alive_idx[j];
      }
@@ -395,6 +513,15 @@ void ManageTrades()
         {
          g_state      = TS_INPOS;
          g_entry_time = ptime;
+         if(PositionSelect(_Symbol))            // draw the fill against the zone level
+           {
+            bool is_long = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+            DrawTradeEntry(ptime,
+                           PositionGetDouble(POSITION_PRICE_OPEN),
+                           PositionGetDouble(POSITION_SL),
+                           PositionGetDouble(POSITION_TP), is_long);
+            g_trade_drawn = true;
+           }
         }
       else if(!OrderSelect(g_pending_ticket))   // pending gone (expired/removed)
         {
@@ -409,13 +536,19 @@ void ManageTrades()
 
    if(g_state == TS_INPOS)
      {
+      int last = ArraySize(g_s.bc) - 1;
+      double px = (last >= 0) ? g_s.bc[last] : 0.0;   // bar close = exit ref under open-prices model
       if(!has)                                   // closed by native SL (or TP)
         {
+         if(g_trade_drawn) DrawTradeExit(g_entry_time, g_s.last_time, px);
+         g_trade_drawn = false;
          g_state = TS_FLAT; g_armed_key = ""; g_pending_ticket = 0;
         }
       else if(BrcTimeExitDue(BarsSince(g_entry_time), InpMaxHoldBars))
         {
          BrcClosePosition();                     // clock exit -> market close
+         if(g_trade_drawn) DrawTradeExit(g_entry_time, g_s.last_time, px);
+         g_trade_drawn = false;
          g_state = TS_FLAT; g_armed_key = ""; g_pending_ticket = 0;
         }
      }
@@ -448,5 +581,30 @@ void OnTick()
 
    if(new_bar)
       ManageTrades();
+  }
+
+//+------------------------------------------------------------------+
+//| Chart period switched -> rebuild the zone layer for the new TF.  |
+//| Trade markers (BRC_TR_) are absolute price/time and survive.     |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+  {
+   if(id != CHARTEVENT_CHART_CHANGE)
+      return;
+   g_vistf = TraderTfName();
+   g_vis.SyncChartTF();
+   g_vis.RedrawCurrentTF(g_vistf,
+                         g_s.swings, ArraySize(g_s.swings),
+                         g_s.breaks, ArraySize(g_s.breaks),
+                         g_s.zones,  ArraySize(g_s.zones));
+  }
+
+//+------------------------------------------------------------------+
+//| Detach / recompile / chart-close -> wipe every drawn object.     |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   g_vis.ClearAll();
+   ObjectsDeleteAll(0, BRC_TR_PREFIX);
   }
 //+------------------------------------------------------------------+
