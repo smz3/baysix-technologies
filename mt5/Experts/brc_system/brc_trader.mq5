@@ -20,7 +20,7 @@
 //|  ⚠️ COMPILE-UNTESTED until headless compile passes.                |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.00"        // keep in lockstep with BRC_VERSION (brc_types.mqh)
+#property version   "1.10"        // keep in lockstep with BRC_VERSION (brc_types.mqh)
 #property strict
 
 #include <brc_system/brc_types.mqh>
@@ -39,6 +39,12 @@ input int              InpMaxAge      = 0;
 //--- entry module
 input BRC_ENTRY_TOUCH  InpEntryTouch  = BRC_ENTRY_L1;          // IS-01
 input BRC_ENTRY_SIDE   InpEntrySide   = BRC_CONTINUATION;      // IS-01
+//--- T1-limit expiry: cancel the resting limit this many HOURS after the break
+//    (P4). 72h chosen from the emitted P4->T1 retest-lag distribution (8.5yr H1
+//    primary zones, 2026-06-23): keeps ~86% of retests, drops the stale tail,
+//    frees the single slot (the 1.2% never-retested zones were the 3-trade bug).
+//    0 = GTC (legacy, never expires).
+input int              InpRetestExpiryHrs = 72;                // IS-01
 //--- exit module
 input BRC_EXIT_MODE    InpExitMode    = BRC_EXIT_TIME;         // IS-01
 input int              InpMaxHoldBars = 6;                     // IS-01
@@ -86,9 +92,9 @@ int OnInit()
                BRC_VERSION, BRC_GIT_SHA,
                (BRC_GIT_DIRTY ? "-DIRTY(exploratory)" : ""),
                BRC_BUILD_TIME, EnumToString((ENUM_TIMEFRAMES)_Period));
-   PrintFormat("[BRC TRADER] atom: touch=%s side=%s exit=%s maxhold=%d tp=%.2f size=%s lot=%.2f magic=%I64u",
+   PrintFormat("[BRC TRADER] atom: touch=%s side=%s exit=%s maxhold=%d tp=%.2f expiry=%dh size=%s lot=%.2f magic=%I64u",
                EnumToString(InpEntryTouch), EnumToString(InpEntrySide),
-               EnumToString(InpExitMode), InpMaxHoldBars, InpTpMult,
+               EnumToString(InpExitMode), InpMaxHoldBars, InpTpMult, InpRetestExpiryHrs,
                EnumToString(InpSizeMode), InpFixedLot, InpMagic);
    return INIT_SUCCEEDED;
   }
@@ -233,7 +239,7 @@ ENUM_ORDER_TYPE_FILLING BrcFilling()
 
 ulong BrcPlaceLimit(const ENUM_ORDER_TYPE type, const double volume,
                     const double price, const double sl, const double tp,
-                    const string comment)
+                    const string comment, const datetime expiration)
   {
    MqlTradeRequest req;  MqlTradeResult res;
    ZeroMemory(req);  ZeroMemory(res);
@@ -245,7 +251,10 @@ ulong BrcPlaceLimit(const ENUM_ORDER_TYPE type, const double volume,
    req.price        = NormalizeDouble(price, _Digits);
    req.sl           = NormalizeDouble(sl, _Digits);
    req.tp           = (tp > 0.0) ? NormalizeDouble(tp, _Digits) : 0.0;
-   req.type_time    = ORDER_TIME_GTC;
+   if(expiration > 0)
+     { req.type_time = ORDER_TIME_SPECIFIED; req.expiration = expiration; }
+   else
+      req.type_time = ORDER_TIME_GTC;
    req.type_filling = ORDER_FILLING_RETURN;
    req.comment      = comment;
    if(!OrderSend(req, res))
@@ -338,21 +347,30 @@ int BarsSince(const datetime t0)
 //+------------------------------------------------------------------+
 void TryArm()
   {
-   for(int j = 0; j < ArraySize(g_s.alive_idx); j++)
+   datetime now   = g_s.last_time;
+   long     win_s = (long)InpRetestExpiryHrs * 3600;
+   //--- freshest-first: the newest P4 (end of the formation-ordered alive set)
+   //    wins, so the slot tracks the live break, not the stalest zone. Skip any
+   //    zone already past its retest window (arming it = an already-expired order
+   //    + it was the single-slot starver — see the 8.5yr P4->T1 lag analysis).
+   for(int j = ArraySize(g_s.alive_idx) - 1; j >= 0; j--)
      {
       BrcZone z = g_s.zones[g_s.alive_idx[j]];
       if(!z.alive || !z.is_primary || z.entered)
+         continue;
+      if(win_s > 0 && (long)(now - z.p4_time) >= win_s)
          continue;
 
       BrcEntryPlan plan = BrcBuildEntryPlan(z, InpEntryTouch, InpEntrySide);
       if(!plan.valid)
          continue;
 
-      double lot = BrcLotSize(InpSizeMode, InpFixedLot, InpRiskPct, plan.r_unit);
-      bool   is_long = (plan.type == ORDER_TYPE_BUY_LIMIT);
-      double tp   = BrcTakeProfitFor(InpExitMode, is_long, plan.entry, plan.r_unit, InpTpMult);
+      double   lot     = BrcLotSize(InpSizeMode, InpFixedLot, InpRiskPct, plan.r_unit);
+      bool     is_long = (plan.type == ORDER_TYPE_BUY_LIMIT);
+      double   tp      = BrcTakeProfitFor(InpExitMode, is_long, plan.entry, plan.r_unit, InpTpMult);
+      datetime expiry  = (win_s > 0) ? (datetime)(z.p4_time + win_s) : (datetime)0;
 
-      ulong tk = BrcPlaceLimit(plan.type, lot, plan.entry, plan.sl, tp, z.zone_key);
+      ulong tk = BrcPlaceLimit(plan.type, lot, plan.entry, plan.sl, tp, z.zone_key, expiry);
       if(tk > 0)
         {
          g_pending_ticket = tk;

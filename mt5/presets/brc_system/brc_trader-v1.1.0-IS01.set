@@ -2,6 +2,7 @@ InpSwingWindow=3
 InpMaxAge=0
 InpEntryTouch=0
 InpEntrySide=0
+InpRetestExpiryHrs=72
 InpExitMode=0
 InpMaxHoldBars=6
 InpTpMult=0.0
