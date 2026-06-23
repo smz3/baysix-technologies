@@ -42,8 +42,9 @@ def _parse_rows(path: Path) -> list[dict]:
     with open(path, newline="", encoding="ansi") as f:
         rows = list(csv.DictReader(f))
     for r in rows:
-        for k in ("entry_px", "exit_px", "lots", "range_w", "realized_r", "realized_pnl_usd"):
-            r[k] = float(r[k]) if r[k] not in ("", None) else None
+        for k in ("entry_px", "exit_px", "lots", "range_w", "realized_r", "realized_pnl_usd",
+                  "mfe_px", "mae_px", "mfe_r", "mae_r"):
+            r[k] = float(r[k]) if r.get(k) not in ("", None) else None
         r["position_id"] = int(r["position_id"])
     return rows
 
@@ -98,7 +99,9 @@ def main():
             exit_ts=_ts_dt(r["exit_ts"]).strftime("%Y-%m-%d %H:%M:%S"), exit_px=r["exit_px"],
             exit_reason=r["exit_reason"], lots=r["lots"], risk_unit=r["range_w"],
             realized_R=r["realized_r"], realized_pnl_usd=r["realized_pnl_usd"],
-            meta={"zone_key": r["zone_key"], "time_to_exit_min": round(ttx_min, 1)},
+            meta={"zone_key": r["zone_key"], "time_to_exit_min": round(ttx_min, 1),
+                  "mfe_px": r["mfe_px"], "mae_px": r["mae_px"],
+                  "mfe_r": r["mfe_r"], "mae_r": r["mae_r"]},
         )
 
     # ── the answer Syafiq asked for: immediate vs hours, and gross vs net ──
@@ -115,6 +118,21 @@ def main():
           f"mean {statistics.mean(ttx):.0f}m  max {max(ttx):.0f}m")
     fast = sum(1 for t in ttx if t <= 60)
     print(f"  <=60m exits   : {fast} ({fast/n:.0%})   <- 'immediate' stop-outs")
+
+    # ── MFE/MAE: did the sub-hour SL losers run into profit first, how far? ──
+    have_exc = [r for r in rows if r.get("mfe_r") is not None]
+    if have_exc:
+        all_mfe = [r["mfe_r"] for r in have_exc]
+        print(f"  MFE/MAE (R)   : median MFE {statistics.median(all_mfe):+.2f}R  "
+              f"median MAE {statistics.median([r['mae_r'] for r in have_exc]):+.2f}R  (n={len(have_exc)})")
+        sl_fast = [r for r in have_exc
+                   if r["exit_reason"] == "SL"
+                   and (_ts_dt(r["exit_ts"]) - _ts_dt(r["entry_ts"])).total_seconds() <= 3600]
+        if sl_fast:
+            mfes = sorted(r["mfe_r"] for r in sl_fast)
+            ran_green = sum(1 for m in mfes if m >= 0.5)
+            print(f"  sub-1h SL     : n={len(sl_fast)}  median MFE {statistics.median(mfes):+.2f}R  "
+                  f"max {mfes[-1]:+.2f}R  |  ran >=0.5R green first: {ran_green} ({ran_green/len(sl_fast):.0%})")
 
 
 if __name__ == "__main__":

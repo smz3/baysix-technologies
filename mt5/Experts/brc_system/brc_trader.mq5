@@ -625,6 +625,44 @@ double RangeWForPos(const long pid, string &zkey)
   }
 
 //+------------------------------------------------------------------+
+//| Max favorable / adverse excursion over a trade's hold, measured  |
+//| on the WORKING timeframe (_Period). The open-prices tester model |
+//| only materialises the chart TF — sub-TF (M5) + ticks come back   |
+//| empty, and OnTick is bar-open-only, so this model is path-blind  |
+//| intrabar by design. So MFE/MAE here = excursion ACROSS THE HOLD  |
+//| at bar resolution: faithful for multi-bar TIME runners (steers   |
+//| trail/BE/max-hold); the entry bar's H/L includes pre-fill move   |
+//| (modest overstatement), and same-bar SL trades collapse to one   |
+//| bar — their true intrabar path needs a real-tick run (task 136). |
+//| SIGNED in price + R: favorable = move in trade dir, adverse =    |
+//| against. Negative MFE = never traded past entry.                 |
+//+------------------------------------------------------------------+
+void ExcursionForTrade(const datetime entry_ts, const datetime exit_ts, const int dir,
+                       const double entry_px, const double rw,
+                       double &mfe_px, double &mae_px, double &mfe_r, double &mae_r)
+  {
+   mfe_px = 0.0; mae_px = 0.0; mfe_r = 0.0; mae_r = 0.0;
+   MqlRates r[];
+   ArraySetAsSeries(r, false);
+   datetime t1 = (exit_ts > entry_ts) ? exit_ts : entry_ts + PeriodSeconds((ENUM_TIMEFRAMES)_Period);
+   int got = CopyRates(_Symbol, (ENUM_TIMEFRAMES)_Period, entry_ts, t1, r);
+   if(got <= 0)
+      return;
+   double hi = -DBL_MAX, lo = DBL_MAX;
+   for(int k = 0; k < got; k++)
+     {
+      if(r[k].high > hi) hi = r[k].high;
+      if(r[k].low  < lo) lo = r[k].low;
+     }
+   if(dir > 0)  // long: favorable = up, adverse = down
+     { mfe_px = hi - entry_px;  mae_px = entry_px - lo; }
+   else         // short: favorable = down, adverse = up
+     { mfe_px = entry_px - lo;  mae_px = hi - entry_px; }
+   if(rw > 0.0)
+     { mfe_r = mfe_px / rw;  mae_r = mae_px / rw; }
+  }
+
+//+------------------------------------------------------------------+
 //| Human-readable exit reason from the closing deal's DEAL_REASON.  |
 //| SL / TP are broker-native; EXPERT = our clock/time-exit close.  |
 //+------------------------------------------------------------------+
@@ -689,7 +727,8 @@ void WriteTradeLedger()
       return;
      }
    FileWrite(h, "position_id","direction","entry_ts","entry_px","exit_ts","exit_px",
-             "exit_reason","lots","range_w","realized_r","realized_pnl_usd","zone_key");
+             "exit_reason","lots","range_w","realized_r","realized_pnl_usd",
+             "mfe_px","mae_px","mfe_r","mae_r","zone_key");
 
    //--- pass 2: emit one row per OUT deal, paired to its IN
    int rows = 0;
@@ -719,11 +758,16 @@ void WriteTradeLedger()
       double rw    = RangeWForPos(pid, zkey);
       double rR    = (rw > 0.0) ? (dir * (exit_px - entry_px) / rw) : 0.0;
 
+      double mfe_px, mae_px, mfe_r, mae_r;
+      ExcursionForTrade(entry_ts, exit_ts, dir, entry_px, rw, mfe_px, mae_px, mfe_r, mae_r);
+
       FileWrite(h, (string)pid, (dir > 0 ? "BUY" : "SELL"),
                 TimeToString(entry_ts, TIME_DATE|TIME_SECONDS), DoubleToString(entry_px, _Digits),
                 TimeToString(exit_ts,  TIME_DATE|TIME_SECONDS), DoubleToString(exit_px, _Digits),
                 reason, DoubleToString(lots, 2), DoubleToString(rw, _Digits),
-                DoubleToString(rR, 4), DoubleToString(pnl, 2), zkey);
+                DoubleToString(rR, 4), DoubleToString(pnl, 2),
+                DoubleToString(mfe_px, _Digits), DoubleToString(mae_px, _Digits),
+                DoubleToString(mfe_r, 4), DoubleToString(mae_r, 4), zkey);
       rows++;
      }
    FileClose(h);
