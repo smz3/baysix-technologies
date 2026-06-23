@@ -94,9 +94,12 @@ bool        g_trade_drawn = false;  // entry/level markers drawn for the current
 #define BRC_TR_PREFIX "BRC_TR_"
 
 //--- per-trade ledger: position_id -> 1R unit (range_w = |entry - SL|), captured at
-//    fill so OnDeinit can compute realized_R when it walks the tester deal history.
+//    ARM time (task 138) keyed on the pending-order ticket. In MT5 the triggered
+//    position's identifier == that ticket, so OnDeinit recovers range_w even for
+//    same-bar fill+SL trades that ManageTrades() (bar-close cadence) never sees as
+//    TS_INPOS — the 31% instant-SL cohort that previously logged realized_R=0.
 //    Auto-written to a CSV on deinit -> no manual MT5 "Export XLSX" step (task 43).
-long       g_pid[];                 // position identifiers, one per fill
+long       g_pid[];                 // position identifiers (== arming pending ticket)
 double     g_rw[];                  // matching 1R unit for that position
 string     g_zk[];                  // matching zone_key for that position
 
@@ -501,6 +504,14 @@ void TryArm()
          g_pending_ticket = tk;
          g_armed_key      = z.zone_key;
          g_state          = TS_PENDING;
+         //--- stash 1R + zone_key at ARM keyed on the pending ticket (== future
+         //    position_id). Captures the instant same-bar SL cohort that the
+         //    bar-close ManageTrades() fill-detect would miss (task 138).
+         int m = ArraySize(g_pid);
+         ArrayResize(g_pid, m + 1);  ArrayResize(g_rw, m + 1);  ArrayResize(g_zk, m + 1);
+         g_pid[m] = (long)tk;
+         g_rw[m]  = plan.r_unit;
+         g_zk[m]  = z.zone_key;
         }
       return;   // one at a time
      }
@@ -528,12 +539,8 @@ void ManageTrades()
             DrawTradeEntry(ptime, entry, sl,
                            PositionGetDouble(POSITION_TP), is_long);
             g_trade_drawn = true;
-            //--- stash 1R + zone_key keyed on position id for the OnDeinit ledger
-            int n = ArraySize(g_pid);
-            ArrayResize(g_pid, n + 1);  ArrayResize(g_rw, n + 1);  ArrayResize(g_zk, n + 1);
-            g_pid[n] = (long)PositionGetInteger(POSITION_IDENTIFIER);
-            g_rw[n]  = MathAbs(entry - sl);
-            g_zk[n]  = g_armed_key;
+            //--- range_w / zone_key already stashed at ARM (task 138), keyed on the
+            //    pending ticket == this position's identifier.
            }
         }
       else if(!OrderSelect(g_pending_ticket))   // pending gone (expired/removed)
