@@ -93,6 +93,13 @@ bool        g_trade_drawn = false;  // entry/level markers drawn for the current
 //--- trade-marker object stems (own prefix so brc_visual's ClearAll never wipes them)
 #define BRC_TR_PREFIX "BRC_TR_"
 
+//--- per-trade ledger: position_id -> 1R unit (range_w = |entry - SL|), captured at
+//    fill so OnDeinit can compute realized_R when it walks the tester deal history.
+//    Auto-written to a CSV on deinit -> no manual MT5 "Export XLSX" step (task 43).
+long       g_pid[];                 // position identifiers, one per fill
+double     g_rw[];                  // matching 1R unit for that position
+string     g_zk[];                  // matching zone_key for that position
+
 //--- short TF name matching CBrcVisual::PeriodName (visualizer is chart-TF gated).
 string TraderTfName()
   {
@@ -515,12 +522,18 @@ void ManageTrades()
          g_entry_time = ptime;
          if(PositionSelect(_Symbol))            // draw the fill against the zone level
            {
-            bool is_long = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
-            DrawTradeEntry(ptime,
-                           PositionGetDouble(POSITION_PRICE_OPEN),
-                           PositionGetDouble(POSITION_SL),
+            bool   is_long = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+            double entry   = PositionGetDouble(POSITION_PRICE_OPEN);
+            double sl      = PositionGetDouble(POSITION_SL);
+            DrawTradeEntry(ptime, entry, sl,
                            PositionGetDouble(POSITION_TP), is_long);
             g_trade_drawn = true;
+            //--- stash 1R + zone_key keyed on position id for the OnDeinit ledger
+            int n = ArraySize(g_pid);
+            ArrayResize(g_pid, n + 1);  ArrayResize(g_rw, n + 1);  ArrayResize(g_zk, n + 1);
+            g_pid[n] = (long)PositionGetInteger(POSITION_IDENTIFIER);
+            g_rw[n]  = MathAbs(entry - sl);
+            g_zk[n]  = g_armed_key;
            }
         }
       else if(!OrderSelect(g_pending_ticket))   // pending gone (expired/removed)
@@ -600,10 +613,131 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
   }
 
 //+------------------------------------------------------------------+
-//| Detach / recompile / chart-close -> wipe every drawn object.     |
+//| Map a closed position's id -> its captured 1R unit / zone_key.   |
+//+------------------------------------------------------------------+
+double RangeWForPos(const long pid, string &zkey)
+  {
+   for(int i = ArraySize(g_pid) - 1; i >= 0; i--)
+      if(g_pid[i] == pid)
+        { zkey = g_zk[i]; return g_rw[i]; }
+   zkey = "";
+   return 0.0;
+  }
+
+//+------------------------------------------------------------------+
+//| Human-readable exit reason from the closing deal's DEAL_REASON.  |
+//| SL / TP are broker-native; EXPERT = our clock/time-exit close.  |
+//+------------------------------------------------------------------+
+string ExitReasonName(const long reason)
+  {
+   switch((ENUM_DEAL_REASON)reason)
+     {
+      case DEAL_REASON_SL: return "SL";
+      case DEAL_REASON_TP: return "TP";
+      case DEAL_REASON_SO: return "SO";        // stop-out (margin)
+      case DEAL_REASON_EXPERT: return "TIME";  // EA market-close = our clock exit
+     }
+   return "OTHER";
+  }
+
+//+------------------------------------------------------------------+
+//| Write the per-trade ledger CSV from the tester's deal history.   |
+//| One row per CLOSED position (paired IN->OUT deal), with exact    |
+//| entry/exit time+price, PnL, broker exit reason, and realized_R   |
+//| (using the 1R unit stashed at fill). Auto-runs on deinit so the  |
+//| trade ledger never depends on a manual MT5 "Export XLSX". File   |
+//| lands in Common\Files\BRC alongside the emitter's zone CSVs.     |
+//+------------------------------------------------------------------+
+void WriteTradeLedger()
+  {
+   if(!HistorySelect(0, TimeCurrent()))
+      return;
+   int total = HistoryDealsTotal();
+   if(total <= 0)
+      return;
+
+   //--- pass 1: index the entry (IN) deals by position id
+   long     in_pid[];   datetime in_time[];  double in_px[];  double in_lot[];  int in_dir[];
+   for(int i = 0; i < total; i++)
+     {
+      ulong tk = HistoryDealGetTicket(i);
+      if((long)HistoryDealGetInteger(tk, DEAL_MAGIC) != (long)InpMagic)
+         continue;
+      if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(tk, DEAL_ENTRY) != DEAL_ENTRY_IN)
+         continue;
+      int n = ArraySize(in_pid);
+      ArrayResize(in_pid, n+1); ArrayResize(in_time, n+1); ArrayResize(in_px, n+1);
+      ArrayResize(in_lot, n+1); ArrayResize(in_dir, n+1);
+      in_pid[n]  = (long)HistoryDealGetInteger(tk, DEAL_POSITION_ID);
+      in_time[n] = (datetime)HistoryDealGetInteger(tk, DEAL_TIME);
+      in_px[n]   = HistoryDealGetDouble(tk, DEAL_PRICE);
+      in_lot[n]  = HistoryDealGetDouble(tk, DEAL_VOLUME);
+      //--- DEAL_TYPE of the IN deal: BUY in = long, SELL in = short
+      in_dir[n]  = (HistoryDealGetInteger(tk, DEAL_TYPE) == DEAL_TYPE_BUY) ? 1 : -1;
+     }
+
+   //--- open the CSV (Common\Files\BRC, named like the zone files)
+   string fname = StringFormat("BRC\\brc_trades_%s_v%s_%s.csv",
+                               _Symbol, BRC_VERSION,
+                               TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES));
+   StringReplace(fname, ".", "");   // strip dots from version/symbol for a clean name
+   StringReplace(fname, ":", "");
+   StringReplace(fname, " ", "_");
+   int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
+   if(h == INVALID_HANDLE)
+     {
+      PrintFormat("BRC ledger: FileOpen failed (%d) for %s", GetLastError(), fname);
+      return;
+     }
+   FileWrite(h, "position_id","direction","entry_ts","entry_px","exit_ts","exit_px",
+             "exit_reason","lots","range_w","realized_r","realized_pnl_usd","zone_key");
+
+   //--- pass 2: emit one row per OUT deal, paired to its IN
+   int rows = 0;
+   for(int i = 0; i < total; i++)
+     {
+      ulong tk = HistoryDealGetTicket(i);
+      if((long)HistoryDealGetInteger(tk, DEAL_MAGIC) != (long)InpMagic)
+         continue;
+      if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(tk, DEAL_ENTRY) != DEAL_ENTRY_OUT)
+         continue;
+
+      long     pid      = (long)HistoryDealGetInteger(tk, DEAL_POSITION_ID);
+      datetime exit_ts  = (datetime)HistoryDealGetInteger(tk, DEAL_TIME);
+      double   exit_px  = HistoryDealGetDouble(tk, DEAL_PRICE);
+      double   pnl      = HistoryDealGetDouble(tk, DEAL_PROFIT)
+                          + HistoryDealGetDouble(tk, DEAL_SWAP)
+                          + HistoryDealGetDouble(tk, DEAL_COMMISSION);
+      string   reason   = ExitReasonName(HistoryDealGetInteger(tk, DEAL_REASON));
+
+      //--- find the matching IN deal
+      datetime entry_ts = 0;  double entry_px = 0, lots = 0;  int dir = 0;
+      for(int j = ArraySize(in_pid) - 1; j >= 0; j--)
+         if(in_pid[j] == pid)
+           { entry_ts = in_time[j]; entry_px = in_px[j]; lots = in_lot[j]; dir = in_dir[j]; break; }
+
+      string zkey  = "";
+      double rw    = RangeWForPos(pid, zkey);
+      double rR    = (rw > 0.0) ? (dir * (exit_px - entry_px) / rw) : 0.0;
+
+      FileWrite(h, (string)pid, (dir > 0 ? "BUY" : "SELL"),
+                TimeToString(entry_ts, TIME_DATE|TIME_SECONDS), DoubleToString(entry_px, _Digits),
+                TimeToString(exit_ts,  TIME_DATE|TIME_SECONDS), DoubleToString(exit_px, _Digits),
+                reason, DoubleToString(lots, 2), DoubleToString(rw, _Digits),
+                DoubleToString(rR, 4), DoubleToString(pnl, 2), zkey);
+      rows++;
+     }
+   FileClose(h);
+   PrintFormat("BRC ledger: wrote %d trades -> Common\\Files\\%s", rows, fname);
+  }
+
+//+------------------------------------------------------------------+
+//| Detach / recompile / chart-close -> wipe drawn objects, and on   |
+//| a tester run write the per-trade ledger CSV (no manual export).  |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   WriteTradeLedger();
    g_vis.ClearAll();
    ObjectsDeleteAll(0, BRC_TR_PREFIX);
   }
