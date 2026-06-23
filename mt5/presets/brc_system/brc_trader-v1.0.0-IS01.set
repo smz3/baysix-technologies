@@ -1,0 +1,11 @@
+InpSwingWindow=3
+InpMaxAge=0
+InpEntryTouch=0
+InpEntrySide=0
+InpExitMode=0
+InpMaxHoldBars=6
+InpTpMult=0.0
+InpSizeMode=0
+InpFixedLot=0.01
+InpRiskPct=1.0
+InpMagic=2001

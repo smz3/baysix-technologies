@@ -100,6 +100,28 @@ Decoupled repos (Desktop-level, own git remotes):
 
 ---
 
+## MT5 / EA Workflow (XAUUSD live · Just Markets)
+
+**Trust rule (HARD)** — the **MT5 strategy tester is the arbiter**; a Python/SQL query-layer number is NEVER a gate verdict. This is the ORB look-ahead lesson ([[orb_unsorted_tick_lookahead]]): a query layer manufactured a too-good edge the chronological tester later killed. Cheap query screens are allowed only if explicitly labelled exploratory, never reported as a result.
+
+**Two EAs per system, separation of concerns:**
+- **Emitter** (e.g. [brc_baysix.mq5](mt5/Experts/brc_system/brc_baysix.mq5)) = read-only chronological oracle: detects zones across TFs, writes a UTF-8 lifecycle CSV → ingested to `tester_zones`. NO orders. Keep pristine (needed pure for OOS re-emits).
+- **Trader** (e.g. `brc_trader.mq5`) = the strategy: hosts swappable `brc_entry.mqh` / `brc_exit.mqh` / `brc_sizing.mqh` modules. Reuses the emitter's detection includes so zones are identical.
+
+**Iteration model (no file-copy per version):** variants flip **enum modes + numeric inputs** and save a new **`.set` preset** — code is *changed* (extend an enum branch), **never replaced/duplicated**. One file per role; versions distinguished by git sha + `.set` + version stamp, NOT by copied `.mq5`. Duplicating EAs kills the tester sweep + git lineage.
+
+**Version control / provenance:** `BRC_VERSION` `#define` in [brc_types.mqh](mt5/Include/brc_system/brc_types.mqh) + auto-generated `brc_version.mqh` (git sha/branch/dirty/build-time via `python research/code/infra/gen_brc_version.py`, run before every compile). The EA **prints its sha + dirty flag on init** — a DIRTY-tree number is not reproducible → exploratory only. Frozen tested inputs ship as versioned `.set`. Releases/`.ex5` artifacts + MQL5-Market protection layer deferred until sharing.
+
+**Build (headless):** compile via MetaEditor64 CLI; `/inc` MUST point at `mt5/` (the MQL5 root containing `Include/`), NOT `mt5/Include` — else error 106 cascade. Compile log is UTF-16. ([[brc_compile_workflow]])
+
+**Deploy:** reach the JM MT5 terminal (hash E7DB) via `mklink /J` junctions in Experts + Include (no elevation; `ln -s`/symlink fail on this host). MetaEditor → Refresh to see new files. ([[brc_terminal_junction_deploy]])
+
+**Tester model:** BRC runs **"Open prices only"** — detection + invalidation are close-only so each bar's OHLC is final at close; real-ticks = >24h/8yr quadratic blow-up for no data gain ([[brc_emitter_open_prices_model]]). Fills are level-based (limit at zone level) to stay deterministic under this model. Tester needs UTC offset.
+
+**Conventions:** new MQL5 files (`.mq5` + `.mqh`) = lowercase snake_case (`brc_system`); Sigma CamelCase is legacy, leave it ([[mql5_lowercase_filenames]]). ORB EAs live in their own `orb_system` namespace, magic-number per EA.
+
+---
+
 ## Startup
 
 1. The SessionStart hook prints the live **open backlog**, recently resolved tasks, and latest results straight from `research.db` (via [.claude/hooks/scripts/session_brief.py](.claude/hooks/scripts/session_brief.py)). Read it — it is the source of truth for what is open and what is already tested.
