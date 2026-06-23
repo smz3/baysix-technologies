@@ -61,6 +61,8 @@ def main():
     ap.add_argument("--period", required=True, help="start:end as YYYY-MM-DD:YYYY-MM-DD")
     ap.add_argument("--data-source", default="dukascopy", choices=list(tester.VALID_DATA_SOURCE))
     ap.add_argument("--symbol", default="XAUUSD_dukas")
+    ap.add_argument("--model", default="open_only",
+                    help="tester model label: open_only | real_ticks | 1min_ohlc")
     ap.add_argument("--deposit", type=float, default=10000.0)
     ap.add_argument("--magic", type=int, default=2001)
     ap.add_argument("--src", default=None)
@@ -83,7 +85,7 @@ def main():
     run_id = tester.ingest_tester_run(
         idea_id=args.idea, symbol=args.symbol, data_source=args.data_source,
         ea_name="brc_trader", ea_version="1.10",
-        tester_model="open_only", timeframe=args.tf,
+        tester_model=args.model, timeframe=args.tf,
         period_start=p_start, period_end=p_end,
         magic_number=args.magic, initial_deposit=args.deposit,
         n_trades=n, net_profit_usd=round(net, 2), win_rate=round(win_rate, 4),
