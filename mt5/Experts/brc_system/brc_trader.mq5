@@ -729,7 +729,13 @@ void WriteTradeLedger()
    string stamp = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);  // "2024.06.28 23:59"
    StringReplace(stamp, ".", "");  StringReplace(stamp, ":", "");  StringReplace(stamp, " ", "_");
    string ver = BRC_VERSION;       StringReplace(ver, ".", "");
-   string fname = StringFormat("BRC\\brc_trades_%s_v%s_%s.csv", _Symbol, ver, stamp);
+   //--- encode the variant (entry-touch + side + sl-buffer k) so distinct runs /
+   //--- optimization passes never overwrite each other's ledger (task 145)
+   string touch = EnumToString(InpEntryTouch); StringReplace(touch, "BRC_ENTRY_", "");
+   string side  = EnumToString(InpEntrySide);  StringReplace(side,  "BRC_", "");
+   string ktag  = StringFormat("k%03d", (int)MathRound(InpSlBufferK * 100.0));  // 0.20 -> "k020"
+   string fname = StringFormat("BRC\\brc_trades_%s_v%s_%s_%s_%s_%s.csv",
+                               _Symbol, ver, touch, side, ktag, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      {
