@@ -1,31 +1,48 @@
 # BRC IS-03 — M15-BRC Confirmation Trigger (task #143)
 
-**Status:** DESIGN LOCKED 2026-06-23 (strategy_log #61 PROPOSED, human_decision #85). Build pending.
+**Status:** DESIGN SIMPLIFIED + LOCKED 2026-06-24 (strategy_log #62 supersedes #61, human_decision #85). Build pending.
 **Idea:** BRC-001 · Gate 2 · **Control = IS-01** (blind H1 passive limit) · Real-tick model.
+**Role:** zone-**SCREEN #1 (timing)** — does a LTF reaction confirm the H1 zone? Complements TPO (screen #2, location/quality). NOT a new strategy — a robustness filter on *which* H1 zones we trust.
 
 ## Thesis
-Depth (T1/T2/T3, #132) and stop-width (buffer, #132) both **failed** to rescue the
-never-green / same-bar-SL cohort (~42% of trades, 85% of loss). Both only move *where*
-we sit relative to invalidation. IS-03 changes *which* trades we take: require a
-**fresh M15 BRC** to confirm the H1 reaction before entering — a straight bulldoze
-through the H1 zone never forms a confirming M15, so it is auto-skipped.
+Depth (T1/T2/T3, #132) and stop-width (buffer, #132) both **failed** — they only move
+*where* we sit relative to invalidation. The depth sweep was a process-of-elimination:
+it confirmed BRC zones are **mechanically sound** (price respects them) but that
+**entry-depth is not the lever — selection is**. The loss concentrates in a *removable*
+never-green / bulldozed cohort (~42% of trades, 85% of loss). IS-03 changes *which*
+trades we take: require a **fresh M15 BRC** to confirm the H1 reaction — a straight
+bulldoze through the H1 zone never forms a confirming M15, so it is auto-skipped.
 
-## Gate logic (BUY example; SELL mirrored)
-1. H1 BUY zone gets **retested** → `H1.t1_time` fires (price returns to H1 L1).
-2. Search for an **M15 BUY** zone with **`M15.confirm_time > H1.t1_time`** ("fresh" —
-   armed *after* the H1 retest). **Spatial location ignored** — inside / outside /
-   overlapping the H1 band all qualify. Temporal freshness is the only gate.
-3. **Bind** that M15 zone to the H1 zone (`parent_h1_key = H1.zone_key`).
-4. **Entry:** limit at **`M15.l1`** (fills on pullback to the M15 near-edge).
-5. **Stop:** **`M15.l2 + InpSlBufferK · |M15.l1 − M15.l2|`** (buffered, k default 0.20).
+## The 3 rules (simplified — was 9, see Audit below)
 
-## Locked parameters (2026-06-23)
-| # | Knob | Decision |
-|---|------|----------|
-| 1 | Direction | M15 **same direction** as H1 |
-| 2 | Validity window | While H1 zone is **alive** (`H1.t1_time → H1.invalidation_time`); no separate timer |
-| 3 | Override | A **newer same-direction H1** retest **supersedes** the stale pending M15 |
-| 4 | Multiple M15s | **First fresh** one (first-come) |
+**Rule A — The gate (selection).** An H1 zone that has been **retested** (`t1` fires)
+gets a **fresh, same-direction M15 BRC** that arms *after* the retest
+(`M15.confirm_time > H1.t1_time`). **Spatial location ignored** — inside / outside /
+overlapping the H1 band all qualify. Temporal freshness is the only gate.
+
+**Rule B — The entry (reused IS-01 plan).** Trade the confirming M15 zone with the
+standard entry plan: limit at **`M15.l1`**, stop at **`M15.l2 + InpSlBufferK·|M15.l1−M15.l2|`**
+(k default 0.20). No new logic — `BrcBuildEntryPlan` pointed at the M15 zone.
+
+**Rule C — Lifecycle (one-at-a-time).** Take the **first complete
+(retested-H1 → fresh-M15) pair**. Hold **one at a time**; ignore further H1s and M15s
+until it resolves (fills, or the H1 invalidates). **No supersede.**
+
+## Scoring (pre-committed)
+Report **R-tail distribution (min, p1, p5, count worse than −1R) + n + never-green %**
+*first*; read $/trade *last* ([[er_denominator_illusion]] / result_id 6 lesson —
+the −$0.413 looked survivable while E[R] was −1.26). Success = beat IS-01 on net edge
+(E[R] **and** net $/trade) AND cut never-green %.
+
+## Rule audit (9 → 3, 2026-06-24)
+- R3 (bind / `parent_h1_key`) = bookkeeping, not a decision → folded into Rule A/C.
+- R6 (same direction) = restatement of Rule A's gate → folded in.
+- R4 + R5 (entry L1 / stop L2+buf) = the existing IS-01 entry plan → **Rule B (reused code)**.
+- R7 + R8 + R9 (validity / supersede / first-come) → **Rule C**. R8 (supersede) **deleted**:
+  it forced mid-flight churn in the state machine and tie-broke *opposite* to R9
+  (newer-wins vs older-wins). Replaced by "first complete pair, one at a time."
+- Net: only **Rule A** touches selection logic. Principle — an edge that needs 9 rules
+  to appear is suspect; if it shows in 3 it is real. Strip first, let data earn rules back.
 
 ## Identity / binding (fields already in `tester_zones`)
 - `zone_key` = `TF|DIR|epoch` — stable zone ID (e.g. `M15|BUY|1465849800`).
@@ -37,17 +54,20 @@ through the H1 zone never forms a confirming M15, so it is auto-skipped.
 ## Architecture
 - **Emitter stays pristine** — already emits H1 + M15 zones with `zone_key` + `confirm_time`.
 - **Trader-side build** (`brc_entry.mqh`): consume **both** H1 + M15 zone streams + run
-  the bind state-machine:
+  the (simplified) bind state-machine:
   - track live H1 zones that have been retested (`t1` fired, not yet invalidated),
-  - on each new M15 BRC arm, bind to the oldest unfilled same-dir retested H1 (first-come),
-  - place limit at `M15.l1`, stop at `M15.l2 + buffer`,
-  - drop the pending M15 if a newer same-dir H1 supersedes or the H1 invalidates.
+  - when **no pair is active**, on the first new same-dir M15 BRC arm bind it to its
+    retested H1 (Rule A) and place the entry (Rule B),
+  - **one pair at a time** — while a pair is active, ignore further H1s and M15s,
+  - drop the pending pair only when it resolves (fills, or the H1 invalidates). **No supersede.**
 
 ## Risk flags
 - ⚠️ **Tight-stop / denominator trap (T3 lesson):** `M15.l2` stops are small → micro
-  `r_unit` → fat −R tails on real ticks (killed T3, result_id 6). Report the **R-tail
-  distribution**, not just $/trade. Consider an `r_unit` floor if tails dominate.
-- Sample-size: two-stage gate (H1 retest → fresh M15) will cut trade count — watch n.
+  `r_unit` → fat −R tails on real ticks (killed T3, result_id 6). Mitigation = the
+  pre-committed **R-tail-first scoring** above (read tails + n before $/trade). An
+  `r_unit` floor or H1-stop variant is the A/B fallback if tails dominate (deferred).
+- Sample-size: two-stage gate (H1 retest → fresh M15) + one-at-a-time will cut trade
+  count — watch n.
 
 ## Success criterion
 Beat IS-01 (blind H1 limit) on **net edge** (E[R] and net $/trade) AND reduce never-green %.
