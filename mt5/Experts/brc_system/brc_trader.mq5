@@ -38,28 +38,28 @@
 input int              InpSwingWindow = 3;
 input int              InpMaxAge      = 0;
 //--- entry module
-input BRC_ENTRY_MODE   InpEntryMode   = BRC_MODE_SINGLE;       // IS-01=SINGLE / IS-03=M15_CONFIRM
-input BRC_ENTRY_TOUCH  InpEntryTouch  = BRC_ENTRY_L1;          // IS-01
-input BRC_ENTRY_SIDE   InpEntrySide   = BRC_CONTINUATION;      // IS-01
+input BRC_ENTRY_MODE   InpEntryMode   = BRC_MODE_SINGLE;       // 1) Entry mode (SINGLE / M15_CONFIRM)
+input BRC_ENTRY_TOUCH  InpEntryTouch  = BRC_ENTRY_L1;          // 2) Entry depth (L1 / MID / L2)
+input BRC_ENTRY_SIDE   InpEntrySide   = BRC_CONTINUATION;      // 3) >> ENTRY SIDE: CONTINUATION vs FADE <<
 //--- stop buffer BEYOND L2 as a fraction of zone width: sl = L2 +/- k*|L1-L2|.
 //    0.0 = legacy stop-on-L2 (IS-01/IS-02 baseline); 0.20 = adopted buffered stop.
-input double           InpSlBufferK   = 0.20;                  // SL = L2 + k*zone_width
+input double           InpSlBufferK   = 0.20;                  // 4) SL buffer k (SL = L2 +/- k*width)
 //--- T1-limit expiry: cancel the resting limit this many HOURS after the break
 //    (P4). 72h chosen from the emitted P4->T1 retest-lag distribution (8.5yr H1
 //    primary zones, 2026-06-23): keeps ~86% of retests, drops the stale tail,
 //    frees the single slot (the 1.2% never-retested zones were the 3-trade bug).
 //    0 = GTC (legacy, never expires).
-input int              InpRetestExpiryHrs = 72;                // IS-01
+input int              InpRetestExpiryHrs = 72;                // 5) Retest limit expiry (hours)
 //--- exit module
-input BRC_EXIT_MODE    InpExitMode    = BRC_EXIT_TIME;         // IS-01
-input int              InpMaxHoldBars = 6;                     // IS-01
-input double           InpTpMult      = 0.0;                   // IS-01 (no TP)
+input BRC_EXIT_MODE    InpExitMode    = BRC_EXIT_TIME;         // 6) Exit mode (TIME = max-hold)
+input int              InpMaxHoldBars = 6;                     // 7) Max hold (H1 bars)
+input double           InpTpMult      = 0.0;                   // 8) TP multiple (0 = no TP)
 //--- sizing module
-input BRC_SIZE_MODE    InpSizeMode    = BRC_SIZE_FIXED_LOT;    // IS-01
-input double           InpFixedLot    = 0.01;                  // $50 min-lot floor
-input double           InpRiskPct     = 1.0;                   // FIXED_FRAC only
+input BRC_SIZE_MODE    InpSizeMode    = BRC_SIZE_FIXED_LOT;    // 9) Sizing (FIXED_LOT / FIXED_FRAC)
+input double           InpFixedLot    = 0.01;                  // 10) Fixed lot
+input double           InpRiskPct     = 1.0;                   // 11) Risk % (FIXED_FRAC only)
 //--- execution
-input ulong            InpMagic       = 2001;                  // BRC trader magic
+input ulong            InpMagic       = 2001;                  // 12) Magic number
 //--- trade visuals (eyeball: do entries land on the zone level?). Needs tester
 //    Visual Mode; gated under InpVisualize (the emitter's master toggle).
 input bool             InpBrcShowTrades = true;                // draw entry/SL/TP/exit markers

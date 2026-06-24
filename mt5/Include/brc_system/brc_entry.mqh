@@ -35,9 +35,8 @@ enum BRC_ENTRY_TOUCH
 //--- which side of the level to take.
 enum BRC_ENTRY_SIDE
   {
-   BRC_CONTINUATION = 0,   // IS-01: trade WITH the break (buy pullback / sell rally)
-   BRC_FADE         = 1    // H_alt-1 (task 131): mirror-R fade — fail the retest, opposite
-                          //   side, STOP entry at the same level, identical |risk|
+   BRC_CONTINUATION = 0,   // CONTINUATION (with the break: buy pullback / sell rally)
+   BRC_FADE         = 1    // FADE (mirror-R reversal: fail the retest, opposite side)
   };
 
 //--- which ZONE FEEDS the entry plan (the IS-03 build, task 146).
