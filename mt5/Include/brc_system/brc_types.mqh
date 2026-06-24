@@ -19,7 +19,7 @@
 //    version, and stamped into the run-id so every emitted CSV traces back
 //    to the exact code that produced it (filenames stay unversioned — git
 //    SHA + this define are the real version control).
-#define BRC_VERSION "1.2.1"
+#define BRC_VERSION "1.3.0"
 
 //--- direction / swing type (self-contained; mirrors SignalDirection/SwingType)
 enum BRC_DIR        { BRC_BULL = 0, BRC_BEAR = 1 };

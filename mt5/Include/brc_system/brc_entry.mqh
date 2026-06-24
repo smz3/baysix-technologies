@@ -36,7 +36,8 @@ enum BRC_ENTRY_TOUCH
 enum BRC_ENTRY_SIDE
   {
    BRC_CONTINUATION = 0,   // IS-01: trade WITH the break (buy pullback / sell rally)
-   BRC_FADE         = 1    // H_alt-1 (task 131) — NOT yet specified, EA rejects
+   BRC_FADE         = 1    // H_alt-1 (task 131): mirror-R fade — fail the retest, opposite
+                          //   side, STOP entry at the same level, identical |risk|
   };
 
 //--- which ZONE FEEDS the entry plan (the IS-03 build, task 146).
@@ -77,9 +78,12 @@ double BrcEntryLevelFor(const BrcZone &z, const BRC_ENTRY_TOUCH touch)
   }
 
 //+------------------------------------------------------------------+
-//| Build the entry plan. Continuation only for now; fade is a        |
-//| declared-but-unspecified mode (task 131) and returns !valid so we |
-//| never silently invent its stop structure.                         |
+//| Build the entry plan. Two sides off the SAME atom (task 131):     |
+//|  CONTINUATION (IS-01) — limit at the level, trade WITH the break. |
+//|  FADE         (H_alt-1) — mirror-R reversal: same level, opposite |
+//|    direction, STOP entry, stop mirrored across the entry so the   |
+//|    risk unit is IDENTICAL to continuation. This isolates pure     |
+//|    direction (the only variable changed) for the G3 comparison.   |
 //+------------------------------------------------------------------+
 BrcEntryPlan BrcBuildEntryPlan(const BrcZone &z,
                                const BRC_ENTRY_TOUCH touch,
@@ -94,22 +98,17 @@ BrcEntryPlan BrcBuildEntryPlan(const BrcZone &z,
    p.r_unit = 0.0;
    p.reason = "";
 
-   if(side == BRC_FADE)
-     {
-      p.reason = "fade mode not yet specified (task 131)";
-      return p;
-     }
-
-   bool   bull  = (z.direction == BRC_BULL);   // broke UP -> buy the pullback
+   bool   bull  = (z.direction == BRC_BULL);   // broke UP -> retest from above
    double entry = BrcEntryLevelFor(z, touch);
-   //--- stop = invalidation edge (L2) pushed a buffer BEYOND it, away from entry,
-   //    scaled by zone width. k=0 reproduces the legacy stop-on-L2. The buffer
-   //    (a) gives noise/spread room before genuine invalidation and (b) makes the
-   //    deep L2 entry (T3) non-degenerate (r_unit = k*width instead of 0).
-   double w     = MathAbs(z.l1 - z.l2);
-   double sl    = bull ? (z.l2 - sl_buffer_k * w)    // bull: L2 is the low edge -> stop below
-                       : (z.l2 + sl_buffer_k * w);   // bear: L2 is the high edge -> stop above
-   double r     = MathAbs(entry - sl);
+   //--- continuation stop = invalidation edge (L2) pushed a buffer BEYOND it, away
+   //    from entry, scaled by zone width. k=0 reproduces the legacy stop-on-L2. The
+   //    buffer (a) gives noise/spread room before genuine invalidation and (b) makes
+   //    the deep L2 entry (T3) non-degenerate (r_unit = k*width instead of 0). This
+   //    distance is the shared risk unit — the fade mirrors the SAME r across entry.
+   double w       = MathAbs(z.l1 - z.l2);
+   double cont_sl = bull ? (z.l2 - sl_buffer_k * w)    // bull: L2 is the low edge -> stop below
+                         : (z.l2 + sl_buffer_k * w);   // bear: L2 is the high edge -> stop above
+   double r       = MathAbs(entry - cont_sl);
 
    if(r <= 0.0)
      {
@@ -117,12 +116,28 @@ BrcEntryPlan BrcBuildEntryPlan(const BrcZone &z,
       return p;
      }
 
-   // Continuation: price pulls back TO the level, so the entry is a LIMIT.
-   // bull -> price comes down to entry -> BUY LIMIT (sl below at L2)
-   // bear -> price comes up   to entry -> SELL LIMIT (sl above at L2)
-   p.type   = bull ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+   if(side == BRC_FADE)
+     {
+      // Fail-the-retest, mirror-R. Same fill event (price reaching the level), but
+      // because price arrives from the wrong side for a limit, the entry is a STOP:
+      //   bull zone -> SHORT the failed retest -> SELL STOP @ entry, sl mirrored ABOVE
+      //   bear zone -> LONG  the failed retest -> BUY  STOP @ entry, sl mirrored BELOW
+      // r_unit is identical to continuation -> the only variable changed is direction.
+      // No zone-invalidation exit: an L2 break is now the fade WINNING (handled by the
+      // trader keeping the position until native SL or max-hold).
+      p.type = bull ? ORDER_TYPE_SELL_STOP : ORDER_TYPE_BUY_STOP;
+      p.sl   = bull ? (entry + r) : (entry - r);
+     }
+   else
+     {
+      // Continuation: price pulls back TO the level, so the entry is a LIMIT.
+      // bull -> price comes down to entry -> BUY LIMIT (sl below at L2)
+      // bear -> price comes up   to entry -> SELL LIMIT (sl above at L2)
+      p.type = bull ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+      p.sl   = cont_sl;
+     }
+
    p.entry  = entry;
-   p.sl     = sl;
    p.r_unit = r;
    p.valid  = true;
    return p;

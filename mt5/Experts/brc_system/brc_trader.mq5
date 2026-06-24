@@ -517,7 +517,8 @@ void TryArm()
          continue;
 
       double   lot     = BrcLotSize(InpSizeMode, InpFixedLot, InpRiskPct, plan.r_unit);
-      bool     is_long = (plan.type == ORDER_TYPE_BUY_LIMIT);
+      //--- fade enters via STOP orders, so a long can be BUY_STOP (not just BUY_LIMIT)
+      bool     is_long = (plan.type == ORDER_TYPE_BUY_LIMIT || plan.type == ORDER_TYPE_BUY_STOP);
       double   tp      = BrcTakeProfitFor(InpExitMode, is_long, plan.entry, plan.r_unit, InpTpMult);
       datetime expiry  = (win_s > 0) ? (datetime)(z.p4_time + win_s) : (datetime)0;
 
