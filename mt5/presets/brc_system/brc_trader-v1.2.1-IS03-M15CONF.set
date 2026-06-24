@@ -1,0 +1,15 @@
+InpSwingWindow=3
+InpMaxAge=0
+InpEntryMode=1
+InpEntryTouch=0
+InpEntrySide=0
+InpSlBufferK=0.20
+InpRetestExpiryHrs=72
+InpExitMode=0
+InpMaxHoldBars=6
+InpTpMult=0.0
+InpSizeMode=0
+InpFixedLot=0.01
+InpRiskPct=1.0
+InpMagic=2001
+InpBrcShowTrades=true
