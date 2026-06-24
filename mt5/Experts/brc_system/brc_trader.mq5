@@ -20,7 +20,7 @@
 //|  ⚠️ COMPILE-UNTESTED until headless compile passes.                |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.20"        // keep in lockstep with BRC_VERSION (brc_types.mqh)
+#property version   "1.21"        // keep in lockstep with BRC_VERSION (brc_types.mqh)
 #property strict
 
 #include <brc_system/brc_types.mqh>
@@ -572,11 +572,18 @@ bool H1Spent(const string key)
 //+------------------------------------------------------------------+
 void TryArmConfirm()
   {
+   datetime now   = g_s.last_time;
+   long     win_s = (long)InpRetestExpiryHrs * 3600;   // M15-limit lifetime from M15.p4
    int nm = ArraySize(g_m15.alive_idx);
    for(int a = 0; a < nm; a++)               // oldest-first -> first fresh M15 wins
      {
       BrcZone m = g_m15.zones[g_m15.alive_idx[a]];
       if(!m.alive || !m.is_primary)
+         continue;
+      //--- skip M15s whose retest window has already lapsed: arming them = a
+      //    dead-on-arrival order, and a GTC arm here was the single-slot starver
+      //    that froze the 8.5yr run at 2018 (mirror of IS-01 TryArm, task 138).
+      if(win_s > 0 && (long)(now - m.p4_time) >= win_s)
          continue;
 
       //--- find a retested, alive, primary, unspent same-dir H1 whose retest
@@ -606,8 +613,10 @@ void TryArmConfirm()
       bool   is_long = (plan.type == ORDER_TYPE_BUY_LIMIT);
       double tp      = BrcTakeProfitFor(InpExitMode, is_long, plan.entry, plan.r_unit, InpTpMult);
 
-      //--- GTC: no separate timer — validity is parent-H1 aliveness (Rule C).
-      ulong tk = BrcPlaceLimit(plan.type, lot, plan.entry, plan.sl, tp, m.zone_key, (datetime)0);
+      //--- limit expires InpRetestExpiryHrs after the M15 confirm (frees the slot if
+      //    the pullback never comes); parent-H1 aliveness still governs cancel (Rule C).
+      datetime expiry = (win_s > 0) ? (datetime)(m.p4_time + win_s) : (datetime)0;
+      ulong tk = BrcPlaceLimit(plan.type, lot, plan.entry, plan.sl, tp, m.zone_key, expiry);
       if(tk > 0)
         {
          g_pending_ticket = tk;
