@@ -39,6 +39,17 @@ enum BRC_ENTRY_SIDE
    BRC_FADE         = 1    // H_alt-1 (task 131) — NOT yet specified, EA rejects
   };
 
+//--- which ZONE FEEDS the entry plan (the IS-03 build, task 146).
+//    SINGLE      : IS-01 — trade the chart-TF (H1) zone directly.
+//    M15_CONFIRM : IS-03 — a retested H1 zone must be confirmed by a FRESH same-dir
+//                  M15 BRC (M15.confirm > H1.t1); the entry plan is built on that M15
+//                  zone (limit M15.l1 / stop M15.l2+buf), validity = parent H1 alive.
+enum BRC_ENTRY_MODE
+  {
+   BRC_MODE_SINGLE      = 0,   // IS-01
+   BRC_MODE_M15_CONFIRM = 1    // IS-03 (task 146)
+  };
+
 //+------------------------------------------------------------------+
 //| A concrete, send-ready entry plan for one zone.                  |
 //+------------------------------------------------------------------+
