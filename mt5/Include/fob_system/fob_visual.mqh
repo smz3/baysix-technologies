@@ -9,28 +9,31 @@
 //|                                                                    |
 //|  ONE CHART PER TIMEFRAME: a chart draws breaks that FIRED on its    |
 //|  own TF (event_tf == ChartPeriod), on their NATIVE bars (no cross-  |
-//|  TF projection). Every break is a PBO for its own TF and MAY also   |
-//|  be a VR/CF for the TF one above — both roles on one dot. The #id   |
-//|  is the cross-chart link: "VR H1 #1" on the M30 chart <-> "PBO H1   |
-//|  #1" on the H1 chart.                                              |
+//|  TF projection). The #id is the cross-chart link: "vr h1 #1" on the  |
+//|  M30 chart <-> "pbo h1 #1" on the H1 chart.                         |
 //|                                                                    |
-//|  Label grammar (E = this TF, E-1 = TF below = VR source, E+1 =      |
-//|  TF above = the setup this break serves). DIR = thesis direction:  |
-//|    A  PBO E #p DIR · pending {E-1} VR      (forming, no VR yet)      |
-//|    B  PBO E #p DIR                          (VR locked = confirmed)  |
-//|    C  PBO E #p DIRe  |  VR  {E+1} #q DIRp   (also parent retrace)    |
-//|    D  PBO E #p DIRe  |  CF  {E+1} #q DIRp   (also parent confirm)    |
-//|  DIR for a parent role is DERIVED from the break: VR = OPP(break),   |
-//|  CF = same-as(break) — no parent-state lookup needed.              |
+//|  ONE JOB PER DOT (task 2, 2026-06-25): a break is a PBO for its own  |
+//|  TF and MAY also be a VR/CF for the TF above — but a dot shows ONLY  |
+//|  ONE role, by precedence: if it serves an ACTIVE parent VR/CF it is  |
+//|  drawn as THAT (the higher-TF setup is the live story); otherwise it |
+//|  is drawn as its own PBO. So a setup spans two charts — its pbo on   |
+//|  its own TF, its vr/cf on the TF below — joined by #id. No dual tag. |
 //|                                                                    |
-//|  Colour: PBO blue / VR purple / CF green. A dual dot is coloured by |
-//|  its PARENT role (the "interesting" one); PBO identity is in text.  |
+//|  Label grammar (E = this TF, E-1 = below, E+1 = above). DIR =        |
+//|  thesis direction. A dot is exactly one of:                        |
+//|    PBO E #p DIR · pending {E-1} VR   (own PBO, no VR yet)            |
+//|    PBO E #p DIR                       (own PBO, VR locked)            |
+//|    VR  {E+1} #q DIR                   (serves the TF-above setup)     |
+//|    CF  {E+1} #q DIR                   (serves the TF-above setup)     |
+//|  Parent DIR is DERIVED: VR = OPP(break), CF = same-as(break).        |
+//|  M1 has NO own PBO (task 1) — the M1 chart shows only vr/cf for M5.  |
+//|                                                                    |
+//|  Colour follows the shown role: PBO blue / VR yellow / CF green.    |
 //|                                                                    |
 //|  Visibility (ACTIVE CYCLE ONLY, task 157): a superseded cycle is    |
-//|  VOIDED and must vanish. Show (1) the ACTIVE (latest) PBO of this   |
-//|  TF — forming or developed — and (2) parent VR/CF dots that belong  |
-//|  to the ACTIVE cycle of the TF above (parSeq == its current seq).   |
-//|  Older seqs (the +1-prior retention) are gone.                     |
+//|  VOIDED and must vanish. The own PBO shows only if it is the active  |
+//|  (latest) seq for E; a parent VR/CF shows only if it belongs to the  |
+//|  active cycle of the TF above (parSeq == its current seq).          |
 //|                                                                    |
 //|  Needs tester model = Visual Mode to paint live.                   |
 //+------------------------------------------------------------------+
@@ -186,36 +189,36 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
               { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; }
            }
 
-         //--- ACTIVE-CYCLE-ONLY gate (task 157): a superseded cycle is
-         //--- voided and vanishes. Own PBO shows only if it IS the active
-         //--- seq for E; a parent VR/CF shows only if it belongs to the
-         //--- active cycle of the TF above. (M1 has no own PBO — task 1,
-         //--- 2026-06-25 — so on the M1 chart only parent-role dots draw.)
-         bool anchorQual = (pOwn >= 0 && pOwn == curSeq[E]);
+         //--- ACTIVE-CYCLE-ONLY gate (task 157) + ONE-JOB-PER-DOT
+         //--- precedence (task 2, 2026-06-25): if this break serves an
+         //--- ACTIVE parent VR/CF, draw it as THAT role only; else draw it
+         //--- as its own active PBO. No dual labels. (M1 has no own PBO —
+         //--- task 1 — so the M1 chart shows only parent vr/cf dots.)
          bool parentQual = hasPar && (parSeq == curSeq[E + 1]);
+         bool anchorQual = (pOwn >= 0 && pOwn == curSeq[E]);
 
-         if(anchorQual || parentQual)
+         string txt = "";
+         color  clr = clrNONE;
+
+         if(parentQual)
            {
-            //--- thesis dirs: own = break dir; parent = VR->OPP, CF->same
-            int parThesis = hasPar ? ((parLab == FOB_VR) ? OppDir(parDir) : parDir) : -1;
+            //--- thesis dir: VR = OPP(break), CF = same-as(break)
+            int parThesis = (parLab == FOB_VR) ? OppDir(parDir) : parDir;
+            txt = StringFormat("  %s %s #%d %s",
+                               FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
+            clr = FobLabelColor(parLab);
+           }
+         else if(anchorQual)
+           {
+            txt = StringFormat("  PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
+            if(!vrLocked[E] && E > 0)   // "still forming" badge
+               txt += StringFormat(" · pending %s VR", FobTfName(E - 1));
+            clr = FobLabelColor(FOB_PBO);
+           }
 
-            string txt = "";
-            if(pOwn >= 0)
-              {
-               txt = StringFormat("  PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
-               if(anchorQual && !vrLocked[E] && E > 0)   // "still forming" badge
-                  txt += StringFormat(" · pending %s VR", FobTfName(E - 1));
-              }
-            if(hasPar)
-              {
-               string par = StringFormat("%s %s #%d %s",
-                                         FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
-               txt += (pOwn >= 0) ? ("  |  " + par) : ("  " + par);
-              }
+         if(clr != clrNONE)
+           {
             StringToLower(txt);   // small-caps display (task 3, 2026-06-25)
-
-            color clr = hasPar ? FobLabelColor(parLab) : FobLabelColor(FOB_PBO);
-
             string base = FOB_VIS_PREFIX + (string)swt + "_" + (string)ev[i].bar_time;
             Bullet(base + "_b", swt, lvl, clr);
             Label (base + "_t", swt, lvl, txt, clr);
