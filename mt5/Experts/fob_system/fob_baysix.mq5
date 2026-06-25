@@ -21,7 +21,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "0.21"          // keep in lockstep with FOB_VERSION (fob_types.mqh)
+#property version   "1.6.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
