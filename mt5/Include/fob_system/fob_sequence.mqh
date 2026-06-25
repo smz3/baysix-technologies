@@ -25,19 +25,20 @@
 //| Append one classified event to out[]. Returns 1 (events made).    |
 //+------------------------------------------------------------------+
 int FobAppendEvent(FobEvent &out[], const int setup_tf, const int seq, const int label,
-                   const int event_tf, const int dir, const datetime bar_time,
-                   const double level, const double bar_close)
+                   const int event_tf, const int dir, const datetime swing_time,
+                   const datetime bar_time, const double level, const double bar_close)
   {
    int k = ArraySize(out);
    ArrayResize(out, k + 1, 1024);
-   out[k].setup_tf  = setup_tf;
-   out[k].seq       = seq;
-   out[k].label     = label;
-   out[k].event_tf  = event_tf;
-   out[k].dir       = dir;
-   out[k].bar_time  = bar_time;
-   out[k].level     = level;
-   out[k].bar_close = bar_close;
+   out[k].setup_tf   = setup_tf;
+   out[k].seq        = seq;
+   out[k].label      = label;
+   out[k].event_tf   = event_tf;
+   out[k].dir        = dir;
+   out[k].swing_time = swing_time;
+   out[k].bar_time   = bar_time;
+   out[k].level      = level;
+   out[k].bar_close  = bar_close;
    return 1;
   }
 
@@ -50,7 +51,7 @@ int FobAppendEvent(FobEvent &out[], const int setup_tf, const int seq, const int
 //| MUST be called in chronological bar_time order.                   |
 //+------------------------------------------------------------------+
 int FobClassifyBreak(FobSetupState &st[], const int n_tf,
-                     const int etf, const int dir, const datetime bt,
+                     const int etf, const int dir, const datetime swt, const datetime bt,
                      const double level, const double close,
                      FobEvent &ev[])
   {
@@ -65,7 +66,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
    st[etf].vr_time   = 0;
    st[etf].cf_done   = false;
    st[etf].hrcf_done = false;
-   made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, bt, level, close);
+   made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
 
    //--- ROLE 2: VR or CF for the setup TF one above (n = etf+1) ------
    int up1 = etf + 1;
@@ -78,7 +79,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
            {
             st[up1].vr_locked = true;
             st[up1].vr_time   = bt;
-            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_VR, etf, dir, bt, level, close);
+            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_VR, etf, dir, swt, bt, level, close);
            }
         }
       else
@@ -87,7 +88,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
          if(dir == st[up1].pbo_dir && !st[up1].cf_done && bt > st[up1].vr_time)
            {
             st[up1].cf_done = true;
-            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_CF, etf, dir, bt, level, close);
+            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_CF, etf, dir, swt, bt, level, close);
            }
         }
      }
@@ -99,7 +100,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
       if(dir == st[up2].pbo_dir && !st[up2].hrcf_done && bt > st[up2].vr_time)
         {
          st[up2].hrcf_done = true;
-         made += FobAppendEvent(ev, up2, st[up2].seq, FOB_HRCF, etf, dir, bt, level, close);
+         made += FobAppendEvent(ev, up2, st[up2].seq, FOB_HRCF, etf, dir, swt, bt, level, close);
         }
      }
 

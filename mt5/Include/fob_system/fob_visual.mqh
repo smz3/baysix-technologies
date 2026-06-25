@@ -168,7 +168,7 @@ void CFobVisual::RenderEvent(const FobEvent &e)
    int    s    = e.setup_tf;
    color  clr  = FobLabelColor(e.label);
    string cp   = ChainPrefix(e);
-   string base = cp + FobTfName(e.event_tf) + "_" + (string)e.bar_time;
+   string base = cp + FobTfName(e.event_tf) + "_" + (string)e.swing_time + "_" + (string)e.bar_time;
 
    //--- PBO = chain start (supersede -> fresh seq): register for FIFO prune
    if(e.label == FOB_PBO && e.seq != m_lastSeq[s])
@@ -181,18 +181,18 @@ void CFobVisual::RenderEvent(const FobEvent &e)
       m_lastT[s]   = 0;          // anchor set at the end of this call
      }
 
-   //--- connector: link from the previous point in THIS same chain
+   //--- connector: link from the previous swingpoint in THIS same chain
    if(InpFobConnect && m_lastSeq[s] == e.seq && m_lastT[s] > 0)
-      Line(base + "_ln", m_lastT[s], m_lastP[s], e.bar_time, e.level, InpFobConnClr);
+      Line(base + "_ln", m_lastT[s], m_lastP[s], e.swing_time, e.level, InpFobConnClr);
 
-   //--- the dot + role tag (role · the TF the break fired on · chain seq)
-   Bullet(base + "_b", e.bar_time, e.level, clr, InpFobBulletSize);
-   Label (base + "_t", e.bar_time, e.level,
+   //--- the dot + role tag, drawn AT THE BROKEN SWINGPOINT (like BRC raw breakouts)
+   Bullet(base + "_b", e.swing_time, e.level, clr, InpFobBulletSize);
+   Label (base + "_t", e.swing_time, e.level,
           StringFormat("  %s %s #%d", FobLabelName(e.label), FobTfName(e.event_tf), e.seq), clr);
 
-   //--- advance the chain anchor to this point
+   //--- advance the chain anchor to this swingpoint
    m_lastSeq[s] = e.seq;
-   m_lastT[s]   = e.bar_time;
+   m_lastT[s]   = e.swing_time;
    m_lastP[s]   = e.level;
   }
 

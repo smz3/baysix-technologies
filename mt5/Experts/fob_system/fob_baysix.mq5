@@ -21,7 +21,7 @@
 //|    fob_types · fob_sequence · fob_csv · fob_visual                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "0.20"          // keep in lockstep with FOB_VERSION (fob_types.mqh)
+#property version   "0.21"          // keep in lockstep with FOB_VERSION (fob_types.mqh)
 #property strict
 
 #include <brc_system/brc_swings.mqh>      // STRUCT-001: BrcSwingRadius / BrcDetectSwingAt
@@ -58,6 +58,7 @@ struct FobTfState
 struct FobPending
   {
    int      tf;
+   datetime swt;          // broken swing time (dot x-coord)
    datetime bt;
    int      dir;
    double   level;
@@ -191,6 +192,7 @@ void OnTick()
          int pi = ArraySize(pend);
          ArrayResize(pend, pi + 1, 64);
          pend[pi].tf    = t;
+         pend[pi].swt   = g_tf[t].breaks[b].swing_time;
          pend[pi].bt    = g_tf[t].breaks[b].bar_time;
          pend[pi].dir   = g_tf[t].breaks[b].dir;
          pend[pi].level = g_tf[t].breaks[b].swing_price;
@@ -208,7 +210,7 @@ void OnTick()
    for(int q = 0; q < np; q++)
      {
       int before = ArraySize(g_events);
-      FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].bt,
+      FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
                        pend[q].level, pend[q].close, g_events);
       int after = ArraySize(g_events);
       for(int e = before; e < after; e++)

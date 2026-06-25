@@ -42,7 +42,7 @@ int FobCsvOpen(const string symbol, const string runid)
       return INVALID_HANDLE;
      }
    FileWriteString(fh,
-      "event_id,setup_tf,setup_seq,label,event_tf,direction,bar_time,level,bar_close\r\n");
+      "event_id,setup_tf,setup_seq,label,event_tf,direction,swing_time,bar_time,level,bar_close\r\n");
    return fh;
   }
 
@@ -63,6 +63,7 @@ void FobCsvWriteEvent(const int fh, const int event_id, const FobEvent &e)
       FobLabelName(e.label) + "," +
       FobTfName(e.event_tf) + "," +
       dir + "," +
+      FobFmtTime(e.swing_time) + "," +
       FobFmtTime(e.bar_time) + "," +
       FobFmtPrice(e.level) + "," +
       FobFmtPrice(e.bar_close) + "\r\n";

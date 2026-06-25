@@ -31,7 +31,7 @@
 #include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_DIR (BRC_BULL/BRC_BEAR)
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "0.2.0"
+#define FOB_VERSION "0.2.1"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -57,8 +57,9 @@ struct FobEvent
    int       label;      // FOB_LABEL
    int       event_tf;   // TF index where THIS break actually fired
    int       dir;        // BRC_BULL | BRC_BEAR of this break
-   datetime  bar_time;   // break bar time (the close that crossed the level)
-   double    level;      // broken swing price (the level that was taken)
+   datetime  swing_time; // broken swing TIME — the dot's x (drawn AT the swingpoint, like BRC)
+   datetime  bar_time;   // break bar time (the close that crossed the level; chain ordering)
+   double    level;      // broken swing price — the dot's y (the level that was taken)
    double    bar_close;  // break bar close (beyond the level)
   };
 
