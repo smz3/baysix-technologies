@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
 //|                                                     fob_types.mqh  |
-//|        FOB (First Opposite Breakout) — shared types.              |
+//|        FOB (First Opposite Breakout) — FOB's OWN types.           |
 //|                                                                    |
-//|  FOB-001 = sibling of BRC-001 under STRUCT-001. It REUSES the      |
-//|  STRUCT primitives (swing pivots + raw breakouts) from brc_system  |
-//|  and adds ONE new thing: a cross-timeframe classifier that walks   |
-//|  every raw breakout in chronological order and labels each as      |
-//|  PBO / VR / HRCF / CF.                                             |
+//|  FOB-001 owns its full detection stack — swing pivots, raw break-  |
+//|  outs, and its own data types — with NOTHING shared from           |
+//|  brc_system. On top it adds the cross-timeframe classifier that    |
+//|  walks every raw breakout in chronological order and labels each   |
+//|  as PBO / VR / HRCF / CF.                                          |
 //|                                                                    |
 //|  SOP : CMP -> BO(PBO) -> VR -> CF -> CONTI.                        |
 //|  Ladder (this file's TF order, index 0..8):                       |
@@ -20,21 +20,51 @@
 //|                                 d == OPPOSITE of that PBO          |
 //|    • CF   for setup-TF etf+1    if VR locked, d == SAME, no CF yet |
 //|    • HRCF for setup-TF etf+2    if VR locked, d == SAME, no HRCF   |
-//|                                                                    |
-//|  Tech-debt: brc_swings/brc_breakouts/brc_types are really STRUCT   |
-//|  primitives; promote to a shared `struct_system` namespace later.  |
 //+------------------------------------------------------------------+
 #ifndef FOB_TYPES_MQH
 #define FOB_TYPES_MQH
 #property strict
 
-#include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_DIR (BRC_BULL/BRC_BEAR)
-
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "0.9.0"
+#define FOB_VERSION "1.0.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
+
+//--- FOB OWNS its primitive types — NOTHING shared from brc_system.
+enum FOB_DIR
+  {
+   FOB_BULL = 0,   // close broke ABOVE a swing high
+   FOB_BEAR = 1    // close broke BELOW a swing low
+  };
+
+enum FOB_SWING_TYPE
+  {
+   FOB_SWING_HIGH = 0,
+   FOB_SWING_LOW  = 1
+  };
+
+//--- one confirmed close-based swing pivot
+struct FobSwing
+  {
+   datetime  time;       // pivot bar time
+   double    price;      // pivot bar CLOSE (close-based detection)
+   int       type;       // FOB_SWING_TYPE
+   int       bar_index;  // absolute series index of the pivot
+   bool      broken;     // has a later close crossed it?
+  };
+
+//--- one raw breakout (a close crossing an unbroken swing)
+struct FobBreak
+  {
+   datetime  swing_time;   // broken swing pivot time
+   double    swing_price;  // broken swing pivot price (the level taken)
+   int       swing_type;   // FOB_SWING_TYPE of the broken swing
+   int       dir;          // FOB_DIR of the break
+   datetime  bar_time;     // breaking bar time
+   double    bar_close;    // breaking bar close (beyond the level)
+   int       bar_index;    // absolute series index of the breaking bar
+  };
 
 //--- the four cross-TF roles a raw breakout can play
 enum FOB_LABEL
@@ -56,7 +86,7 @@ struct FobEvent
    int       seq;        // per-setup_tf PBO sequence id (1-based, increments per new PBO)
    int       label;      // FOB_LABEL
    int       event_tf;   // TF index where THIS break actually fired
-   int       dir;        // BRC_BULL | BRC_BEAR of this break
+   int       dir;        // FOB_BULL | FOB_BEAR of this break
    datetime  swing_time; // broken swing TIME — the dot's x (drawn AT the swingpoint, like BRC)
    datetime  bar_time;   // break bar time (the close that crossed the level; chain ordering)
    double    level;      // broken swing price — the dot's y (the level that was taken)
@@ -105,8 +135,8 @@ string FobDirName(const int dir)
   {
    switch(dir)
      {
-      case BRC_BULL: return "BUY";
-      case BRC_BEAR: return "SELL";
+      case FOB_BULL: return "BUY";
+      case FOB_BEAR: return "SELL";
      }
    return "?";
   }

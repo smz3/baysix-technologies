@@ -54,7 +54,7 @@ void FobCsvWriteEvent(const int fh, const int event_id, const FobEvent &e)
    if(fh == INVALID_HANDLE)
       return;
 
-   string dir = (e.dir == BRC_BEAR) ? "SELL" : "BUY";
+   string dir = (e.dir == FOB_BEAR) ? "SELL" : "BUY";
 
    string row =
       IntegerToString(event_id) + "," +

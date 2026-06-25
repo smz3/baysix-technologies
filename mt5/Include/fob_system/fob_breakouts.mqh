@@ -1,23 +1,19 @@
 //+------------------------------------------------------------------+
 //|                                                 fob_breakouts.mqh  |
-//|  FOB's OWN raw breakout primitive — copy of the STRUCT-001         |
-//|  detector (brc_breakouts.mqh), so FOB owns its detection and is    |
-//|  never coupled to brc_system's copy. Logic is identical (faithful  |
-//|  port of rawbreakout.py).                                          |
+//|  FOB's OWN raw breakout primitive — FOB owns its detection, NOTHING |
+//|  shared with brc_system (types incl.). Faithful port of            |
+//|  rawbreakout.py.                                                    |
 //|                                                                    |
 //|  bull = close > swing HIGH ;  bear = close < swing LOW.            |
 //|  Eligibility per swing: not broken; swing older than the bar;      |
 //|  confirmation gate (bar_index >= swing.bar_index + radius);        |
 //|  age filter (max_age<=0 disables). A swing breaks at most once.    |
-//|                                                                    |
-//|  Types (BrcSwing / BrcBreak / BRC_*) stay shared from brc_types —  |
-//|  the STRUCT-001 data primitive, not detection logic.               |
 //+------------------------------------------------------------------+
 #ifndef FOB_BREAKOUTS_MQH
 #define FOB_BREAKOUTS_MQH
 #property strict
 
-#include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_BULL/BEAR (STRUCT-001 types)
+#include "fob_types.mqh"   // FobSwing, FobBreak, FOB_BULL/BEAR (FOB's own types)
 
 //+------------------------------------------------------------------+
 //| Scan UNBROKEN swings against ONE just-closed bar; mark newly-broken|
@@ -29,10 +25,10 @@
 //|   breaks[]   : persistent event log, appended in-place.           |
 //| Returns the number of breaks appended on this bar.                |
 //+------------------------------------------------------------------+
-int FobDetectBreaksOnBar(BrcSwing &swings[], int &live[],
+int FobDetectBreaksOnBar(FobSwing &swings[], int &live[],
                          const int bar_index, const datetime bar_time, const double bar_close,
                          const int radius, const int max_age,
-                         BrcBreak &breaks[])
+                         FobBreak &breaks[])
   {
    int n_live = ArraySize(live);
    int added  = 0;
@@ -47,8 +43,8 @@ int FobDetectBreaksOnBar(BrcSwing &swings[], int &live[],
       if(bar_index < swings[s].bar_index + radius)         { live[w++] = live[j]; continue; }  // confirmation gate
       if(max_age > 0 && (bar_index - swings[s].bar_index) > max_age) { live[w++] = live[j]; continue; }
 
-      bool is_bull = (swings[s].type == BRC_SWING_HIGH && bar_close > swings[s].price);
-      bool is_bear = (swings[s].type == BRC_SWING_LOW  && bar_close < swings[s].price);
+      bool is_bull = (swings[s].type == FOB_SWING_HIGH && bar_close > swings[s].price);
+      bool is_bear = (swings[s].type == FOB_SWING_LOW  && bar_close < swings[s].price);
       if(!is_bull && !is_bear)
         { live[w++] = live[j]; continue; }                // price didn't cross -> stays live
 
@@ -60,7 +56,7 @@ int FobDetectBreaksOnBar(BrcSwing &swings[], int &live[],
       breaks[k].swing_time  = swings[s].time;
       breaks[k].swing_price = swings[s].price;
       breaks[k].swing_type  = swings[s].type;
-      breaks[k].dir         = is_bull ? BRC_BULL : BRC_BEAR;
+      breaks[k].dir         = is_bull ? FOB_BULL : FOB_BEAR;
       breaks[k].bar_time    = bar_time;
       breaks[k].bar_close   = bar_close;
       breaks[k].bar_index   = bar_index;

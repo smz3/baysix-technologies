@@ -2,8 +2,8 @@
 //|                                                     fob_baysix.mq5 |
 //|        FOB (First Opposite Breakout) classifier EMITTER.          |
 //|                                                                    |
-//|  ONE job: across 9 TFs (M1..MN1), detect raw breakouts (reusing    |
-//|  the STRUCT-001 primitives from brc_system) and CLASSIFY each in   |
+//|  ONE job: across 9 TFs (M1..MN1), detect raw breakouts (FOB's OWN  |
+//|  swing + breakout detection, fob_swings/fob_breakouts) and CLASSIFY|
 //|  chronological order as PBO / VR / HRCF / CF, then (a) draw them   |
 //|  colour-coded and (b) emit a UTF-8 event ledger to CSV. NO orders, |
 //|  NO money — this is the read-only oracle that feeds Python.        |
@@ -16,10 +16,9 @@
 //|  and fed to the classifier in true chronological order — the same  |
 //|  ordering guard that kills the ORB unsorted-tick look-ahead.       |
 //|                                                                    |
-//|  Modules (FOB owns its full detection; only STRUCT-001 data types  |
-//|  are shared from brc_types):                                        |
-//|    fob_swings · fob_breakouts   (FOB's OWN detection, copied logic) |
-//|    fob_types · fob_sequence · fob_csv · fob_visual                 |
+//|  Modules — FOB owns EVERYTHING, nothing shared with brc_system:    |
+//|    fob_types (own swing/break/dir types) · fob_swings · fob_break-  |
+//|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
 #property version   "0.21"          // keep in lockstep with FOB_VERSION (fob_types.mqh)
@@ -50,9 +49,9 @@ struct FobTfState
    double   bh[];
    double   bl[];
    double   bc[];
-   BrcSwing swings[];
+   FobSwing swings[];
    int      live_sw[];     // indices into swings[] of UNBROKEN swings (O(live) scan)
-   BrcBreak breaks[];       // full raw-break log for this TF
+   FobBreak breaks[];       // full raw-break log for this TF
   };
 
 //--- one new raw break awaiting chronological classification this tick
@@ -137,7 +136,7 @@ void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double
    int p = i - g_radius;
    if(p >= 0)
      {
-      BrcSwing sw;
+      FobSwing sw;
       if(FobDetectSwingAt(s.bt, s.bc, n, p, g_radius, sw))
         {
          int si = ArraySize(s.swings);
@@ -233,7 +232,7 @@ void OnTick()
       g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
       int ci = g_vis.ChartIdx();
       if(ci >= 0)
-         g_vis.DrawRawLayer(g_tf[ci].swings, g_tf[ci].breaks);   // DEBUG overlay (toggles)
+         g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks
      }
   }
 
@@ -248,7 +247,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
    int ci = g_vis.ChartIdx();
    if(ci >= 0)
-      g_vis.DrawRawLayer(g_tf[ci].swings, g_tf[ci].breaks);   // DEBUG overlay (toggles)
+      g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks
   }
 
 //+------------------------------------------------------------------+

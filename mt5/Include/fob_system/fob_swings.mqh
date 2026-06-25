@@ -1,22 +1,18 @@
 //+------------------------------------------------------------------+
 //|                                                    fob_swings.mqh  |
-//|  FOB's OWN close-based swing pivots — copy of the STRUCT-001        |
-//|  primitive (brc_swings.mqh), so FOB owns its detection end-to-end  |
-//|  and is never coupled to brc_system's copy. Logic is identical     |
-//|  (faithful port of detectors.py detect_swings).                    |
+//|  FOB's OWN close-based swing pivots — FOB owns its detection end-   |
+//|  to-end, NOTHING shared with brc_system (types incl.). Logic is a   |
+//|  faithful port of detectors.py detect_swings.                      |
 //|                                                                    |
 //|  Rule: a pivot close must be STRICTLY greater (high) / lower (low) |
 //|  than EVERY other close in a window of `window` bars centred on it |
 //|  (radius = window // 2). window must be odd and >= 3; live EA = 3. |
-//|                                                                    |
-//|  Types (BrcSwing / BRC_SWING_*) stay shared from brc_types — they  |
-//|  are the STRUCT-001 data primitive, not detection logic.           |
 //+------------------------------------------------------------------+
 #ifndef FOB_SWINGS_MQH
 #define FOB_SWINGS_MQH
 #property strict
 
-#include <brc_system/brc_types.mqh>   // BrcSwing, BRC_SWING_HIGH/LOW (STRUCT-001 types)
+#include "fob_types.mqh"   // FobSwing, FOB_SWING_HIGH/LOW (FOB's own types)
 
 //+------------------------------------------------------------------+
 //| radius = window // 2, with the odd/>=3 guard.                     |
@@ -39,7 +35,7 @@ int FobSwingRadius(const int window)
 //| Returns true + fills `out` (bar_index=p, price=close, broken=false)|
 //+------------------------------------------------------------------+
 bool FobDetectSwingAt(const datetime &t[], const double &c[], const int n,
-                      const int p, const int radius, BrcSwing &out)
+                      const int p, const int radius, FobSwing &out)
   {
    if(p - radius < 0 || p + radius >= n)
       return false;                          // not enough neighbours to confirm
@@ -63,7 +59,7 @@ bool FobDetectSwingAt(const datetime &t[], const double &c[], const int n,
 
    out.time      = t[p];
    out.price     = curr;
-   out.type      = is_high ? BRC_SWING_HIGH : BRC_SWING_LOW;
+   out.type      = is_high ? FOB_SWING_HIGH : FOB_SWING_LOW;
    out.bar_index = p;
    out.broken    = false;
    return true;

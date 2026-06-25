@@ -46,12 +46,6 @@
 //--- master toggle (ACTIVE cycle only — no prior-cycle retention, task 157)
 input bool InpVisualize    = true;        // MASTER: draw chart objects
 
-//--- DEBUG overlays (sanity-check FOB's OWN detection on the chart TF):
-//--- the raw STRUCT primitives BEFORE classification — swing pivots and
-//--- raw breakouts. Default off (clutter); flip on to verify detection.
-input bool InpShowSwings   = false;       // DEBUG: mark every swing pivot (chart TF)
-input bool InpShowRawBreaks= false;       // DEBUG: line each raw break (swing -> break bar)
-
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
 const int   InpFobLabelSize  = 9;
@@ -75,7 +69,7 @@ private:
 
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
-   int      OppDir(const int d) const { return d == BRC_BULL ? BRC_BEAR : BRC_BULL; }
+   int      OppDir(const int d) const { return d == FOB_BULL ? FOB_BEAR : FOB_BULL; }
 
 public:
             CFobVisual(void) { m_tf = ""; m_idx = -1; }
@@ -87,10 +81,10 @@ public:
    //--- full rebuild of the current chart's lens from the event log
    void     RedrawCurrentTF(const FobEvent &ev[], const int n);
 
-   //--- DEBUG: draw the chart TF's RAW detection (swings + raw breaks).
-   //--- Call AFTER RedrawCurrentTF (which ClearAll's first), with the
-   //--- chart-TF's own g_tf[ChartIdx()] swing/break arrays.
-   void     DrawRawLayer(const BrcSwing &sw[], const BrcBreak &br[]);
+   //--- draw the chart TF's OWN detected structure (swing pivots + raw
+   //--- breakouts). Call AFTER RedrawCurrentTF (which ClearAll's first),
+   //--- with the chart-TF's own g_tf[ChartIdx()] swing/break arrays.
+   void     DrawStructure(const FobSwing &sw[], const FobBreak &br[]);
   };
 
 //+------------------------------------------------------------------+
@@ -241,52 +235,46 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
   }
 
 //+------------------------------------------------------------------+
-//| DEBUG raw-detection overlay for the chart TF.                     |
-//|  Swings: a small caret at each pivot (close price), greyed if      |
-//|  already broken. Raw breaks: a dotted line from the broken swing   |
-//|  pivot to the breaking bar's close. Both are FOB_-prefixed so the  |
-//|  next RedrawCurrentTF()->ClearAll() wipes them (re-drawn each tick).|
+//| Draw the chart TF's OWN detected structure (FOB detection output). |
+//|  Swings: a small caret at each pivot (close price), greyed once    |
+//|  broken. Raw breaks: a dotted line from the broken swing pivot to  |
+//|  the breaking bar's close (green=bull, red=bear). FOB_-prefixed so |
+//|  the next RedrawCurrentTF()->ClearAll() wipes + repaints them.     |
 //+------------------------------------------------------------------+
-void CFobVisual::DrawRawLayer(const BrcSwing &sw[], const BrcBreak &br[])
+void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
   {
    if(m_idx < 0)
       return;
 
-   if(InpShowSwings)
+   int ns = ArraySize(sw);
+   for(int i = 0; i < ns; i++)
      {
-      int n = ArraySize(sw);
-      for(int i = 0; i < n; i++)
-        {
-         string nm = FOB_VIS_PREFIX + "SW_" + (string)sw[i].time;
-         color  c  = sw[i].broken ? clrDimGray : clrSilver;
-         ObjectCreate(0, nm, OBJ_TEXT, 0, sw[i].time, sw[i].price);
-         ObjectSetString (0, nm, OBJPROP_TEXT, (sw[i].type == BRC_SWING_HIGH) ? "v" : "^");
-         ObjectSetString (0, nm, OBJPROP_FONT, FOB_VIS_FONT);
-         ObjectSetInteger(0, nm, OBJPROP_FONTSIZE, 7);
-         ObjectSetInteger(0, nm, OBJPROP_ANCHOR, ANCHOR_CENTER);
-         ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
-         ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
-         ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
-         ObjectSetInteger(0, nm, OBJPROP_BACK, true);
-        }
+      string nm = FOB_VIS_PREFIX + "SW_" + (string)sw[i].time;
+      color  c  = sw[i].broken ? clrDimGray : clrSilver;
+      ObjectCreate(0, nm, OBJ_TEXT, 0, sw[i].time, sw[i].price);
+      ObjectSetString (0, nm, OBJPROP_TEXT, (sw[i].type == FOB_SWING_HIGH) ? "v" : "^");
+      ObjectSetString (0, nm, OBJPROP_FONT, FOB_VIS_FONT);
+      ObjectSetInteger(0, nm, OBJPROP_FONTSIZE, 7);
+      ObjectSetInteger(0, nm, OBJPROP_ANCHOR, ANCHOR_CENTER);
+      ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
+      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, nm, OBJPROP_BACK, true);
      }
 
-   if(InpShowRawBreaks)
+   int nb = ArraySize(br);
+   for(int i = 0; i < nb; i++)
      {
-      int n = ArraySize(br);
-      for(int i = 0; i < n; i++)
-        {
-         string nm = FOB_VIS_PREFIX + "RB_" + (string)br[i].swing_time + "_" + (string)br[i].bar_time;
-         ObjectCreate(0, nm, OBJ_TREND, 0,
-                      br[i].swing_time, br[i].swing_price, br[i].bar_time, br[i].bar_close);
-         ObjectSetInteger(0, nm, OBJPROP_COLOR, (br[i].dir == BRC_BULL) ? clrSeaGreen : clrIndianRed);
-         ObjectSetInteger(0, nm, OBJPROP_STYLE, STYLE_DOT);
-         ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
-         ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, false);
-         ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
-         ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
-         ObjectSetInteger(0, nm, OBJPROP_BACK, true);
-        }
+      string nm = FOB_VIS_PREFIX + "RB_" + (string)br[i].swing_time + "_" + (string)br[i].bar_time;
+      ObjectCreate(0, nm, OBJ_TREND, 0,
+                   br[i].swing_time, br[i].swing_price, br[i].bar_time, br[i].bar_close);
+      ObjectSetInteger(0, nm, OBJPROP_COLOR, (br[i].dir == FOB_BULL) ? clrSeaGreen : clrIndianRed);
+      ObjectSetInteger(0, nm, OBJPROP_STYLE, STYLE_DOT);
+      ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, false);
+      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, nm, OBJPROP_BACK, true);
      }
   }
 
