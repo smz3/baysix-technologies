@@ -54,6 +54,13 @@ input bool InpShowRawBreaks= true;        // FOB raw breakouts (dotted lines)
 const int   InpFobBulletSize = 12;
 const int   InpFobLabelSize  = 9;
 
+//--- structure-layer colours (mirror of BRC swings/breaks; tweak in source)
+const color InpFobClrSwingHigh = clrTomato;
+const color InpFobClrSwingLow  = clrDodgerBlue;
+const color InpFobClrSwingDead = clrDimGray;
+const color InpFobClrBreakBull = clrLimeGreen;
+const color InpFobClrBreakBear = clrOrangeRed;
+
 #define FOB_VIS_PREFIX "FOB_"
 #define FOB_VIS_FONT   "Calibri Light"
 
@@ -69,7 +76,8 @@ private:
    int      LadderIndex(const ENUM_TIMEFRAMES p) const;
 
    void     Bullet(const string name, const datetime t, const double p, const color clr);
-   void     Label (const string name, const datetime t, const double p, const string txt, const color clr);
+   void     Label (const string name, const datetime t, const double p, const string txt, const color clr,
+                   const ENUM_ANCHOR_POINT anchor = ANCHOR_LEFT);
 
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
@@ -131,13 +139,14 @@ void CFobVisual::Bullet(const string name, const datetime t, const double p, con
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
   }
 
-void CFobVisual::Label(const string name, const datetime t, const double p, const string txt, const color clr)
+void CFobVisual::Label(const string name, const datetime t, const double p, const string txt, const color clr,
+                       const ENUM_ANCHOR_POINT anchor)
   {
    ObjectCreate(0, name, OBJ_TEXT, 0, t, p);
    ObjectSetString (0, name, OBJPROP_TEXT, txt);
    ObjectSetString (0, name, OBJPROP_FONT, FOB_VIS_FONT);
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, InpFobLabelSize);
-   ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_LEFT);
+   ObjectSetInteger(0, name, OBJPROP_ANCHOR, anchor);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
@@ -242,10 +251,14 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
 
 //+------------------------------------------------------------------+
 //| Draw the chart TF's OWN detected structure (FOB detection output). |
-//|  Swings: a small caret at each pivot (close price), greyed once    |
-//|  broken. Raw breaks: a dotted line from the broken swing pivot to  |
-//|  the breaking bar's close (green=bull, red=bear). FOB_-prefixed so |
-//|  the next RedrawCurrentTF()->ClearAll() wipes + repaints them.     |
+//|  Faithful mirror of BRC's swing/break visuals (brc_visual.mqh):    |
+//|    • SWING  -> "•" bullet at the pivot + "High/Low <price>" label   |
+//|               (high=Tomato, low=DodgerBlue, dimmed once broken).    |
+//|    • BREAK  -> "•" bullet at the BROKEN swing + "Bob/Bos <swing>    |
+//|               (<close>)" label (bull=LimeGreen, bear=OrangeRed),    |
+//|               anchored RIGHT. Keyed on broken-swing + break-bar so  |
+//|               one bar breaking several swings keeps every dot.      |
+//|  FOB_-prefixed so RedrawCurrentTF()->ClearAll() wipes + repaints.   |
 //+------------------------------------------------------------------+
 void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
   {
@@ -255,32 +268,28 @@ void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
    int ns = InpShowSwings ? ArraySize(sw) : 0;
    for(int i = 0; i < ns; i++)
      {
-      string nm = FOB_VIS_PREFIX + "SW_" + (string)sw[i].time;
-      color  c  = sw[i].broken ? clrDimGray : clrSilver;
-      ObjectCreate(0, nm, OBJ_TEXT, 0, sw[i].time, sw[i].price);
-      ObjectSetString (0, nm, OBJPROP_TEXT, (sw[i].type == FOB_SWING_HIGH) ? "v" : "^");
-      ObjectSetString (0, nm, OBJPROP_FONT, FOB_VIS_FONT);
-      ObjectSetInteger(0, nm, OBJPROP_FONTSIZE, 7);
-      ObjectSetInteger(0, nm, OBJPROP_ANCHOR, ANCHOR_CENTER);
-      ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
-      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
-      ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+      bool   high = (sw[i].type == FOB_SWING_HIGH);
+      color  c    = sw[i].broken ? InpFobClrSwingDead
+                                  : (high ? InpFobClrSwingHigh : InpFobClrSwingLow);
+      string stem = FOB_VIS_PREFIX + "SW_" + (string)sw[i].time + "_" + (high ? "H" : "L");
+      Bullet(stem + "_b", sw[i].time, sw[i].price, c);
+      Label (stem + "_t", sw[i].time, sw[i].price,
+             "  " + (high ? "High " : "Low ") + DoubleToString(sw[i].price, _Digits),
+             c, ANCHOR_LEFT);
      }
 
    int nb = InpShowRawBreaks ? ArraySize(br) : 0;
    for(int i = 0; i < nb; i++)
      {
-      string nm = FOB_VIS_PREFIX + "RB_" + (string)br[i].swing_time + "_" + (string)br[i].bar_time;
-      ObjectCreate(0, nm, OBJ_TREND, 0,
-                   br[i].swing_time, br[i].swing_price, br[i].bar_time, br[i].bar_close);
-      ObjectSetInteger(0, nm, OBJPROP_COLOR, (br[i].dir == FOB_BULL) ? clrSeaGreen : clrIndianRed);
-      ObjectSetInteger(0, nm, OBJPROP_STYLE, STYLE_DOT);
-      ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
-      ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, false);
-      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
-      ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+      bool   bull = (br[i].dir == FOB_BULL);
+      color  c    = bull ? InpFobClrBreakBull : InpFobClrBreakBear;
+      string tag  = bull ? "Bob" : "Bos";   // Break-of-bull / Break-of-bear (Sigma/BRC naming)
+      string stem = FOB_VIS_PREFIX + "RB_" + (string)br[i].swing_time + "_" + (string)br[i].bar_time;
+      Bullet(stem + "_b", br[i].swing_time, br[i].swing_price, c);
+      Label (stem + "_t", br[i].swing_time, br[i].swing_price,
+             StringFormat("  %s %s (%s)", tag, DoubleToString(br[i].swing_price, _Digits),
+                          DoubleToString(br[i].bar_close, _Digits)),
+             c, ANCHOR_RIGHT);
      }
   }
 
