@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.2.0"
+#define FOB_VERSION "1.3.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -84,6 +84,7 @@ struct FobEvent
   {
    int       setup_tf;   // TF index of the governing PBO (the "setup" TF)
    int       seq;        // per-setup_tf PBO sequence id (1-based, increments per new PBO)
+   int       cf_idx;     // CF ordinal WITHIN this cycle (1=1st CF, 2=2nd CF, ...; 0 for PBO/VR)
    int       label;      // FOB_LABEL
    int       event_tf;   // TF index where THIS break actually fired
    int       dir;        // FOB_BULL | FOB_BEAR of this break
@@ -105,8 +106,10 @@ struct FobSetupState
    datetime  pbo_time;   // bar_time of the active PBO
    bool      vr_locked;  // has the (one-and-only) VR been found?
    datetime  vr_time;    // bar_time of the locked VR
+   int       cf_count;   // CFs emitted SO FAR in the active cycle (1st-CF entry vs Nth-CF layering)
    // NOTE: no cf_done — a cycle allows MULTIPLE CFs (2nd-CF layering, task 156).
    // Every same-dir continuation after the VR is a fresh CF until superseded.
+   // cf_count is the ordinal counter: reset to 0 on each new PBO, +1 per CF emit.
   };
 
 //--- TF index -> name (the FOB ladder; hardcoded to FOB_N_TF=8)

@@ -47,8 +47,8 @@
 input bool InpVisualize    = true;        // MASTER: draw chart objects
 //--- 3 independent layers under the master (task 158) — each gated alone
 input bool InpShowSequence = true;        // PBO/VR/CF classification dots
-input bool InpShowSwings   = true;        // FOB swing pivots (carets)
-input bool InpShowRawBreaks= true;        // FOB raw breakouts (dotted lines)
+input bool InpShowSwings   = false;        // FOB swing pivots (carets)
+input bool InpShowRawBreaks= false;        // FOB raw breakouts (dotted lines)
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
@@ -200,14 +200,14 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
          int    pOwn = -1, ownDir = -1;
          datetime swt = ev[i].swing_time;
          double   lvl = ev[i].level;
-         bool   hasPar = false; int parLab = -1, parSeq = -1, parDir = -1;
+         bool   hasPar = false; int parLab = -1, parSeq = -1, parDir = -1, parCf = 0;
 
          for(int k = i; k < j; k++)
            {
             if(ev[k].label == FOB_PBO && ev[k].setup_tf == E)
               { pOwn = ev[k].seq; ownDir = ev[k].dir; }
             else if((ev[k].label == FOB_VR || ev[k].label == FOB_CF) && ev[k].setup_tf == E + 1)
-              { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; }
+              { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; parCf = ev[k].cf_idx; }
            }
 
          //--- ACTIVE-CYCLE-ONLY gate (task 157) + ONE-JOB-PER-DOT
@@ -225,8 +225,14 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
            {
             //--- thesis dir: VR = OPP(break), CF = same-as(break)
             int parThesis = (parLab == FOB_VR) ? OppDir(parDir) : parDir;
-            txt = StringFormat("  %s %s #%d %s",
-                               FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
+            //--- CF carries its per-cycle ordinal (#seq.cf): "cf h1 #1.2" = 2nd
+            //--- CF of cycle 1 — the layering count the entry test keys on.
+            if(parLab == FOB_CF)
+               txt = StringFormat("  %s %s #%d.%d %s",
+                                  FobLabelName(parLab), FobTfName(E + 1), parSeq, parCf, FobDirName(parThesis));
+            else
+               txt = StringFormat("  %s %s #%d %s",
+                                  FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
             clr = FobLabelColor(parLab);
            }
          else if(anchorQual)

@@ -28,12 +28,14 @@
 //+------------------------------------------------------------------+
 int FobAppendEvent(FobEvent &out[], const int setup_tf, const int seq, const int label,
                    const int event_tf, const int dir, const datetime swing_time,
-                   const datetime bar_time, const double level, const double bar_close)
+                   const datetime bar_time, const double level, const double bar_close,
+                   const int cf_idx = 0)
   {
    int k = ArraySize(out);
    ArrayResize(out, k + 1, 1024);
    out[k].setup_tf   = setup_tf;
    out[k].seq        = seq;
+   out[k].cf_idx     = cf_idx;
    out[k].label      = label;
    out[k].event_tf   = event_tf;
    out[k].dir        = dir;
@@ -71,6 +73,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
       st[etf].pbo_time  = bt;
       st[etf].vr_locked = false;
       st[etf].vr_time   = 0;
+      st[etf].cf_count  = 0;   // new cycle -> CF ordinal restarts
       made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
      }
 
@@ -93,8 +96,14 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
          //--- VR locked: EVERY SAME-direction continuation break = a CF.
          //--- Multiple CFs per cycle (2nd-CF layering, task 156) — no lock;
          //--- the cycle only ends when a fresh setup-TF break supersedes it.
+         //--- cf_count++ stamps the per-cycle ordinal (1st CF, 2nd CF, ...)
+         //--- so the entry test can separate 1st-CF vs Nth-CF accuracy.
          if(dir == st[up1].pbo_dir && bt > st[up1].vr_time)
-            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_CF, etf, dir, swt, bt, level, close);
+           {
+            st[up1].cf_count += 1;
+            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_CF, etf, dir, swt, bt, level, close,
+                                   st[up1].cf_count);
+           }
         }
      }
 
