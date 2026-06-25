@@ -85,7 +85,6 @@ int OnInit()
       g_setup[i].active     = false;
       g_setup[i].seq        = 0;
       g_setup[i].vr_locked  = false;
-      g_setup[i].cf_done    = false;
      }
 
    string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);

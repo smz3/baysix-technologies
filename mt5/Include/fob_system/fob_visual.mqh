@@ -26,10 +26,11 @@
 //|  Colour: PBO blue / VR purple / CF green. A dual dot is coloured by |
 //|  its PARENT role (the "interesting" one); PBO identity is in text.  |
 //|                                                                    |
-//|  Visibility: hide superseded bare PBOs. Show (1) the latest forming |
-//|  PBO of this TF, (2) the last InpFobMaxChains DEVELOPED setups of   |
-//|  this TF, (3) parent VR/CF dots within the last InpFobMaxChains     |
-//|  developed setups of the TF above.                                 |
+//|  Visibility (ACTIVE CYCLE ONLY, task 157): a superseded cycle is    |
+//|  VOIDED and must vanish. Show (1) the ACTIVE (latest) PBO of this   |
+//|  TF — forming or developed — and (2) parent VR/CF dots that belong  |
+//|  to the ACTIVE cycle of the TF above (parSeq == its current seq).   |
+//|  Older seqs (the +1-prior retention) are gone.                     |
 //|                                                                    |
 //|  Needs tester model = Visual Mode to paint live.                   |
 //+------------------------------------------------------------------+
@@ -39,9 +40,8 @@
 
 #include "fob_types.mqh"
 
-//--- master toggle + rolling cap (developed setups kept per TF lens)
+//--- master toggle (ACTIVE cycle only — no prior-cycle retention, task 157)
 input bool InpVisualize    = true;        // MASTER: draw chart objects
-input int  InpFobMaxChains = 2;           // developed setups kept per TF (current + N-1 prior)
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
@@ -66,7 +66,6 @@ private:
 
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
-   bool     SeqIn(const int &arr[], const int cnt, const int sq) const;
    int      OppDir(const int d) const { return d == BRC_BULL ? BRC_BEAR : BRC_BULL; }
 
 public:
@@ -104,15 +103,6 @@ void CFobVisual::SyncChartTF()
   }
 
 //+------------------------------------------------------------------+
-bool CFobVisual::SeqIn(const int &arr[], const int cnt, const int sq) const
-  {
-   for(int i = 0; i < cnt; i++)
-      if(arr[i] == sq)
-         return true;
-   return false;
-  }
-
-//+------------------------------------------------------------------+
 //| Primitives                                                        |
 //+------------------------------------------------------------------+
 void CFobVisual::Bullet(const string name, const datetime t, const double p, const color clr)
@@ -144,10 +134,9 @@ void CFobVisual::Label(const string name, const datetime t, const double p, cons
 //+------------------------------------------------------------------+
 //| Full rebuild for the current chart TF.                            |
 //|  PASS 1 (all events): reconstruct per-setup state from the log —   |
-//|    latest seq, whether its VR locked, and the list of DEVELOPED     |
-//|    (VR-reached) seqs for THIS TF (E) and the TF above (E+1).        |
+//|    the ACTIVE (latest) seq per TF and whether its VR is locked.     |
 //|  PASS 2 (this-TF breaks only): merge each physical break's roles    |
-//|    into one labelled dot, apply visibility, draw.                   |
+//|    into one labelled dot, keep only the ACTIVE cycle, draw.         |
 //+------------------------------------------------------------------+
 void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
   {
@@ -155,16 +144,12 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
    if(!InpVisualize || m_idx < 0)
       return;
 
-   int E   = m_idx;
-   int cap = (InpFobMaxChains > 0) ? InpFobMaxChains : 1;
+   int E = m_idx;
 
    //--- PASS 1 : reconstruct state -----------------------------------
    int  curSeq[FOB_N_TF];
    bool vrLocked[FOB_N_TF];
    for(int i = 0; i < FOB_N_TF; i++) { curSeq[i] = -1; vrLocked[i] = false; }
-
-   int devE[];  int devECnt = 0;     // developed seqs on this TF (E)
-   int devP[];  int devPCnt = 0;     // developed seqs on the TF above (E+1)
 
    for(int i = 0; i < n; i++)
      {
@@ -172,18 +157,9 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
       int sq = ev[i].seq;
       if(ev[i].label == FOB_PBO)
         { curSeq[s] = sq; vrLocked[s] = false; }
-      else if(ev[i].label == FOB_VR)
-        {
-         if(sq == curSeq[s])
-            vrLocked[s] = true;
-         if(s == E)     { ArrayResize(devE, devECnt + 1); devE[devECnt++] = sq; }
-         if(s == E + 1) { ArrayResize(devP, devPCnt + 1); devP[devPCnt++] = sq; }
-        }
+      else if(ev[i].label == FOB_VR && sq == curSeq[s])
+         vrLocked[s] = true;
      }
-
-   //--- rolling-cap thresholds (keep the last `cap` developed setups) -
-   int keepE = (devECnt > cap) ? devE[devECnt - cap] : (devECnt > 0 ? devE[0] : 2147483647);
-   int keepP = (devPCnt > cap) ? devP[devPCnt - cap] : (devPCnt > 0 ? devP[0] : 2147483647);
 
    //--- PASS 2 : draw this TF's breaks -------------------------------
    int i = 0;
@@ -212,11 +188,12 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
 
          if(pOwn >= 0)
            {
-            bool ownDeveloped  = SeqIn(devE, devECnt, pOwn);
-            bool latestPending = (pOwn == curSeq[E] && !vrLocked[E]);
-
-            bool anchorQual = latestPending || (ownDeveloped && pOwn >= keepE);
-            bool parentQual = hasPar && SeqIn(devP, devPCnt, parSeq) && parSeq >= keepP;
+            //--- ACTIVE-CYCLE-ONLY gate (task 157): a superseded cycle is
+            //--- voided and vanishes. Own PBO shows only if it IS the active
+            //--- seq for E; a parent VR/CF shows only if it belongs to the
+            //--- active cycle of the TF above.
+            bool anchorQual = (pOwn == curSeq[E]);
+            bool parentQual = hasPar && (parSeq == curSeq[E + 1]);
 
             if(anchorQual || parentQual)
               {
@@ -225,7 +202,7 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
 
                string txt = StringFormat("  PBO %s #%d %s",
                                          FobTfName(E), pOwn, FobDirName(ownDir));
-               if(!ownDeveloped && E > 0)            // consistent "still forming" badge
+               if(anchorQual && !vrLocked[E] && E > 0)   // "still forming" badge
                   txt += StringFormat(" · pending %s VR", FobTfName(E - 1));
                if(hasPar)
                   txt += StringFormat("  |  %s %s #%d %s",

@@ -31,7 +31,7 @@
 #include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_DIR (BRC_BULL/BRC_BEAR)
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "0.4.0"
+#define FOB_VERSION "0.5.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -75,7 +75,8 @@ struct FobSetupState
    datetime  pbo_time;   // bar_time of the active PBO
    bool      vr_locked;  // has the (one-and-only) VR been found?
    datetime  vr_time;    // bar_time of the locked VR
-   bool      cf_done;    // first CF already labeled?
+   // NOTE: no cf_done — a cycle allows MULTIPLE CFs (2nd-CF layering, task 156).
+   // Every same-dir continuation after the VR is a fresh CF until superseded.
   };
 
 //--- TF index -> name (the FOB ladder; hardcoded to FOB_N_TF=8)

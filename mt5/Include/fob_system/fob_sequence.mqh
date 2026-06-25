@@ -12,8 +12,10 @@
 //|  ORB unsorted-tick lesson is that ordering IS the edge guard.      |
 //|                                                                    |
 //|  Supersede rule (locked 2026-06-25): a fresh break on setup-TF n   |
-//|  (any direction) becomes the new PBO for n and resets its VR/CF    |
-//|  progress. So a PBO is the "current price" read on its TF.         |
+//|  (any direction) becomes the new PBO for n, voids the prior VR and |
+//|  starts a NEW cycle. So a PBO is the "current price" read on its   |
+//|  TF, and only the latest (active) cycle per setup TF is alive.     |
+//|  VR locks once; CF can fire MANY times within a cycle (task 156).  |
 //+------------------------------------------------------------------+
 #ifndef FOB_SEQUENCE_MQH
 #define FOB_SEQUENCE_MQH
@@ -64,7 +66,6 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
    st[etf].pbo_time  = bt;
    st[etf].vr_locked = false;
    st[etf].vr_time   = 0;
-   st[etf].cf_done   = false;
    made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
 
    //--- ROLE 2: VR or CF for the setup TF one above (n = etf+1) ------
@@ -83,12 +84,11 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
         }
       else
         {
-         //--- VR locked: first SAME-direction (continuation) break = CF
-         if(dir == st[up1].pbo_dir && !st[up1].cf_done && bt > st[up1].vr_time)
-           {
-            st[up1].cf_done = true;
+         //--- VR locked: EVERY SAME-direction continuation break = a CF.
+         //--- Multiple CFs per cycle (2nd-CF layering, task 156) — no lock;
+         //--- the cycle only ends when a fresh setup-TF break supersedes it.
+         if(dir == st[up1].pbo_dir && bt > st[up1].vr_time)
             made += FobAppendEvent(ev, up1, st[up1].seq, FOB_CF, etf, dir, swt, bt, level, close);
-           }
         }
      }
 
