@@ -57,25 +57,38 @@ int FobAppendEvent(FobEvent &out[], const int setup_tf, const int seq, const int
 int FobClassifyBreak(FobSetupState &st[], const int n_tf,
                      const int etf, const int dir, const datetime swt, const datetime bt,
                      const double level, const double close,
-                     FobEvent &ev[])
+                     FobEvent &ev[], const bool pbo_newest_only = true)
   {
    int made = 0;
 
-   //--- ROLE 1: PBO for its own setup TF (supersede — always fires).
+   //--- ROLE 1: PBO for its own setup TF (the SOURCE of the current leg near CMP).
    //--- SKIP the lowest TF (etf==0, M1): a PBO needs a TF below to ever
    //--- supply its VR/CF, and there is none under M1, so an M1 PBO could
    //--- never develop. M1 breaks still play ROLE 2 (VR/CF for M5) below.
    if(etf > 0)
      {
-      st[etf].active    = true;
-      st[etf].seq      += 1;
-      st[etf].pbo_dir   = dir;
-      st[etf].pbo_time  = bt;
-      st[etf].vr_locked = false;
-      st[etf].vr_time   = 0;
-      st[etf].cf_count  = 0;   // new cycle -> CF ordinal restarts
-      st[etf].last_conf_swing = 0;   // new cycle -> confirming-chain watermark clears
-      made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
+      //--- CMP-freshness gate (task PBO-newest): a reversal (opp dir, or no
+      //--- live PBO) is always a fresh source -> supersede. A SAME-direction
+      //--- break supersedes ONLY if it breaks a NEWER swing than the current
+      //--- PBO; a same-dir reach-back to OLDER structure is stale context and
+      //--- must NOT become the PBO (it still plays ROLE 2 below). Legacy
+      //--- "latest-always-wins" behaviour kept under pbo_newest_only=false.
+      bool reversal = (!st[etf].active) || (dir != st[etf].pbo_dir);
+      bool fresher  = (swt > st[etf].pbo_swing);
+      bool supersede = pbo_newest_only ? (reversal || fresher) : true;
+      if(supersede)
+        {
+         st[etf].active    = true;
+         st[etf].seq      += 1;
+         st[etf].pbo_dir   = dir;
+         st[etf].pbo_time  = bt;
+         st[etf].pbo_swing = swt;
+         st[etf].vr_locked = false;
+         st[etf].vr_time   = 0;
+         st[etf].cf_count  = 0;   // new cycle -> CF ordinal restarts
+         st[etf].last_conf_swing = 0;   // new cycle -> confirming-chain watermark clears
+         made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
+        }
      }
 
    //--- ROLE 2: VR or CF for the setup TF one above (n = etf+1) ------

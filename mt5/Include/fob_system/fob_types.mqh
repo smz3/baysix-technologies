@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.4.0"
+#define FOB_VERSION "1.5.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -103,7 +103,12 @@ struct FobSetupState
    bool      active;     // is there a live PBO on this setup TF?
    int       seq;        // running PBO counter for this setup TF
    int       pbo_dir;    // direction of the active PBO
-   datetime  pbo_time;   // bar_time of the active PBO
+   datetime  pbo_time;   // bar_time of the active PBO (when the break FIRED)
+   datetime  pbo_swing;  // swing_time of the active PBO's broken structure (CMP-freshness watermark).
+   // CMP rule (task PBO-newest): the PBO marks the SOURCE of the current leg nearest CMP.
+   // A reversal (opp dir / no live PBO) is always a fresh source. A SAME-direction break only
+   // supersedes if it breaks a NEWER swing (swt > pbo_swing); a same-dir reach-back to OLDER
+   // structure (e.g. a Jun-2026 break taking a Nov-2025 low) is stale context, NOT a new PBO.
    bool      vr_locked;  // has the (one-and-only) VR been found?
    datetime  vr_time;    // bar_time of the locked VR
    int       cf_count;   // CFs emitted SO FAR in the active cycle (1st-CF entry vs Nth-CF layering)

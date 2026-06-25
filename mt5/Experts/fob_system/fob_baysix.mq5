@@ -31,8 +31,9 @@
 #include <fob_system/fob_csv.mqh>
 #include <fob_system/fob_visual.mqh>      // InpVisualize master toggle (default on)
 
-input int InpSwingWindow = 3;      // close-based pivot window (odd, >=3; live BRC = 3)
-input int InpMaxAge      = 0;      // break age filter in bars (<=0 disables)
+input int  InpSwingWindow    = 3;     // close-based pivot window (odd, >=3; live BRC = 3)
+input int  InpMaxAge         = 0;     // break age filter in bars (<=0 disables)
+input bool InpPboNewestOnly  = true;  // PBO = freshest source near CMP (reject same-dir reach-backs)
 
 //--- the 9 TFs (index order MUST match FobTfName in fob_types.mqh)
 ENUM_TIMEFRAMES g_periods[FOB_N_TF] =
@@ -103,6 +104,7 @@ int OnInit()
       g_setup[i].vr_locked  = false;
       g_setup[i].cf_count   = 0;
       g_setup[i].last_conf_swing = 0;
+      g_setup[i].pbo_swing  = 0;
      }
 
    string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);
@@ -225,7 +227,7 @@ void OnTick()
    //--- classify each break in true chronological order
    for(int q = 0; q < np; q++)
       FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
-                       pend[q].level, pend[q].close, g_events);
+                       pend[q].level, pend[q].close, g_events, InpPboNewestOnly);
 
    //--- event-TF lens is a full PROJECTION of the log -> repaint it whole
    //--- (cross-chart pending flips + role merging only work on a replay)
