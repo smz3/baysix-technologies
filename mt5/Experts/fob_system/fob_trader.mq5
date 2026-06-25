@@ -26,7 +26,7 @@
 //|  eyeballed against the sequence. MT5 draws the trade arrows itself. |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.7.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.8.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -40,13 +40,23 @@ input int    InpSwingWindow   = 3;      // close-based pivot window (odd, >=3)
 input int    InpMaxAge        = 0;      // break age filter in bars (<=0 disables)
 input bool   InpPboNewestOnly = true;   // PBO = freshest source near CMP
 
+//--- risk-unit mode (T1b, task 169). CF_ZONE = SL at the CF level: median ~0.86pt on H1,
+//--- so spread is a huge fraction of risk -> win-rate is spread-survival, not CF direction
+//--- (result_id 11). ATR = symmetric bracket sized to volatility so risk-unit >> spread:
+//--- a consistent-R coin-flip the binomial test can actually read.
+enum FOB_RMODE { FOB_R_CFZONE = 0, FOB_R_ATR = 1 };
+
 //--- FOB-T1 trade atom
-input int    InpSetupTf       = 4;      // setup TF INDEX (M1=0..MN1=8); 4 = H1 -> CF on M30
-input int    InpCfIdxFilter   = 0;      // CF ordinal to trade (0 = ALL CFs; T2 sweeps 1/2/3)
-input double InpSlBufferK      = 0.0;   // SL beyond the CF level by k * penetration (0 = at the level)
-input double InpRMultTP        = 1.0;   // TP = RR * risk (1.0 = 1:1, the coin-flip null)
-input double InpFixedLot        = 0.01; // min lot at $50
-input ulong  InpMagic           = 3001; // FOB trader magic
+input int      InpSetupTf     = 4;            // setup TF INDEX (M1=0..MN1=8); 4 = H1 -> CF on M30
+input int      InpCfIdxFilter = 0;            // CF ordinal to trade (0 = ALL CFs; T2 sweeps 1/2/3)
+input FOB_RMODE InpRMode      = FOB_R_CFZONE; // CF_ZONE (pure T1) | ATR (T1b, spread-clean)
+input double   InpSlBufferK   = 0.0;          // [CF_ZONE] SL beyond the CF level by k*penetration (0 = at the level)
+input int      InpAtrTf       = -1;           // [ATR] ATR TF INDEX (-1 = the CF/event TF = setup_tf-1)
+input int      InpAtrPeriod   = 14;           // [ATR] ATR period (bars)
+input double   InpAtrMult     = 1.0;          // [ATR] risk = InpAtrMult * ATR
+input double   InpRMultTP      = 1.0;         // TP = RR * risk (1.0 = 1:1, the coin-flip null)
+input double   InpFixedLot      = 0.01;       // min lot at $50
+input ulong    InpMagic         = 3001;       // FOB trader magic
 
 //--- the 9 TFs (index order MUST match FobTfName in fob_types.mqh)
 ENUM_TIMEFRAMES g_periods[FOB_N_TF] =
@@ -81,6 +91,7 @@ FobEvent      g_events[];
 int           g_radius   = 1;
 int           g_seen     = 0;           // # events already acted on (watermark into g_events)
 int           g_ingest[];               // ONLY the TF indices we ingest = {setup_tf-1, setup_tf}
+int           g_atr_handle = INVALID_HANDLE;  // [ATR mode] iATR handle on the risk TF
 CFobVisual    g_vis;
 
 //--- one-position state
@@ -109,6 +120,16 @@ int OnInit()
    ArrayResize(g_ingest, 2);
    g_ingest[0] = InpSetupTf - 1;
    g_ingest[1] = InpSetupTf;
+
+   //--- ATR risk handle (T1b): default the risk TF to the CF/event TF (setup_tf-1) unless overridden.
+   if(g_atr_handle != INVALID_HANDLE) { IndicatorRelease(g_atr_handle); g_atr_handle = INVALID_HANDLE; }
+   if(InpRMode == FOB_R_ATR)
+     {
+      int atr_tf = (InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (InpSetupTf - 1);
+      g_atr_handle = iATR(_Symbol, g_periods[atr_tf], InpAtrPeriod);
+      if(g_atr_handle == INVALID_HANDLE)
+        { Print("[FOB TRADER] iATR handle creation FAILED"); return INIT_FAILED; }
+     }
 
    //--- FULL reset (HARD): MT5 reinits WITHOUT unloading -> globals survive.
    ArrayResize(g_events, 0);
@@ -140,10 +161,14 @@ int OnInit()
    g_vis.SyncChartTF();
    g_vis.ClearAll();
 
-   PrintFormat("[FOB TRADER] v%s init OK — setup_tf=%s -> CF on %s (ingest %s+%s) | cf_filter=%d | SLbuf=%.2f TP=%.2fR | lot=%.2f magic=%I64u",
+   string rdesc = (InpRMode == FOB_R_ATR)
+                  ? StringFormat("ATR(%d)x%.2f on %s", InpAtrPeriod, InpAtrMult,
+                                 FobTfName((InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (InpSetupTf - 1)))
+                  : StringFormat("CF_ZONE SLbuf=%.2f", InpSlBufferK);
+   PrintFormat("[FOB TRADER] v%s init OK — setup_tf=%s -> CF on %s (ingest %s+%s) | cf_filter=%d | R=%s TP=%.2fR | lot=%.2f magic=%I64u",
                FOB_VERSION, FobTfName(InpSetupTf), FobTfName(InpSetupTf - 1),
                FobTfName(g_ingest[0]), FobTfName(g_ingest[1]),
-               InpCfIdxFilter, InpSlBufferK, InpRMultTP, InpFixedLot, InpMagic);
+               InpCfIdxFilter, rdesc, InpRMultTP, InpFixedLot, InpMagic);
    return INIT_SUCCEEDED;
   }
 
@@ -204,6 +229,18 @@ ENUM_ORDER_TYPE_FILLING FobFilling()
   }
 
 //+------------------------------------------------------------------+
+//| ATR of the last CLOSED bar on the risk TF (shift 1, never the    |
+//| forming bar). 0 if the handle isn't ready -> caller skips entry. |
+//+------------------------------------------------------------------+
+double FobAtr()
+  {
+   if(g_atr_handle == INVALID_HANDLE) return 0.0;
+   double buf[];
+   if(CopyBuffer(g_atr_handle, 0, 1, 1, buf) != 1) return 0.0;
+   return buf[0];
+  }
+
+//+------------------------------------------------------------------+
 //| Market entry on a CF, anchored to the CF zone.                   |
 //|   entry = market (Ask/Bid)                                       |
 //|   SL    = CF level (the swing the CF broke) pushed BEYOND it by   |
@@ -217,10 +254,20 @@ long FobOpenMarket(const int dir, const double lot, const double cf_level, doubl
    bool   is_long = (dir == FOB_BULL);
    double entry   = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                             : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double pen     = MathAbs(entry - cf_level);          // breakout penetration
-   double buffer  = InpSlBufferK * pen;
-   double sl      = is_long ? cf_level - buffer : cf_level + buffer;
-   double risk    = MathAbs(entry - sl);
+   double sl, risk;
+   if(InpRMode == FOB_R_ATR)
+     {
+      double atr = FobAtr();
+      risk = InpAtrMult * atr;                            // volatility-scaled, spread-independent
+      sl   = is_long ? entry - risk : entry + risk;       // symmetric bracket off CMP (CF level unused)
+     }
+   else                                                   // FOB_R_CFZONE (pure T1)
+     {
+      double pen    = MathAbs(entry - cf_level);          // breakout penetration
+      double buffer = InpSlBufferK * pen;
+      sl   = is_long ? cf_level - buffer : cf_level + buffer;
+      risk = MathAbs(entry - sl);
+     }
    if(risk <= 0.0)
       return 0;
    double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
@@ -448,8 +495,9 @@ void WriteTradeLedger()
    string stamp = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
    StringReplace(stamp, ".", ""); StringReplace(stamp, ":", ""); StringReplace(stamp, " ", "_");
    string ver = FOB_VERSION; StringReplace(ver, ".", "");
-   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_cf%d_%s.csv",
-                               _Symbol, ver, FobTfName(InpSetupTf), InpCfIdxFilter, stamp);
+   string rmode = (InpRMode == FOB_R_ATR) ? "atr" : "cfz";   // keep ATR/CF_ZONE ledgers distinct
+   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_cf%d_%s.csv",
+                               _Symbol, ver, FobTfName(InpSetupTf), rmode, InpCfIdxFilter, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      { PrintFormat("[FOB TRADER] ledger FileOpen failed (%d) for %s", GetLastError(), fname); return; }
@@ -503,6 +551,7 @@ void WriteTradeLedger()
 void OnDeinit(const int reason)
   {
    WriteTradeLedger();
+   if(g_atr_handle != INVALID_HANDLE) { IndicatorRelease(g_atr_handle); g_atr_handle = INVALID_HANDLE; }
    g_vis.ClearAll();
   }
 //+------------------------------------------------------------------+
