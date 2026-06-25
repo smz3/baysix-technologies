@@ -186,34 +186,39 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
               { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; }
            }
 
-         if(pOwn >= 0)
+         //--- ACTIVE-CYCLE-ONLY gate (task 157): a superseded cycle is
+         //--- voided and vanishes. Own PBO shows only if it IS the active
+         //--- seq for E; a parent VR/CF shows only if it belongs to the
+         //--- active cycle of the TF above. (M1 has no own PBO — task 1,
+         //--- 2026-06-25 — so on the M1 chart only parent-role dots draw.)
+         bool anchorQual = (pOwn >= 0 && pOwn == curSeq[E]);
+         bool parentQual = hasPar && (parSeq == curSeq[E + 1]);
+
+         if(anchorQual || parentQual)
            {
-            //--- ACTIVE-CYCLE-ONLY gate (task 157): a superseded cycle is
-            //--- voided and vanishes. Own PBO shows only if it IS the active
-            //--- seq for E; a parent VR/CF shows only if it belongs to the
-            //--- active cycle of the TF above.
-            bool anchorQual = (pOwn == curSeq[E]);
-            bool parentQual = hasPar && (parSeq == curSeq[E + 1]);
+            //--- thesis dirs: own = break dir; parent = VR->OPP, CF->same
+            int parThesis = hasPar ? ((parLab == FOB_VR) ? OppDir(parDir) : parDir) : -1;
 
-            if(anchorQual || parentQual)
+            string txt = "";
+            if(pOwn >= 0)
               {
-               //--- thesis dirs: own = break dir; parent = VR->OPP, CF->same
-               int parThesis = hasPar ? ((parLab == FOB_VR) ? OppDir(parDir) : parDir) : -1;
-
-               string txt = StringFormat("  PBO %s #%d %s",
-                                         FobTfName(E), pOwn, FobDirName(ownDir));
+               txt = StringFormat("  PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
                if(anchorQual && !vrLocked[E] && E > 0)   // "still forming" badge
                   txt += StringFormat(" · pending %s VR", FobTfName(E - 1));
-               if(hasPar)
-                  txt += StringFormat("  |  %s %s #%d %s",
-                                      FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
-
-               color clr = hasPar ? FobLabelColor(parLab) : FobLabelColor(FOB_PBO);
-
-               string base = FOB_VIS_PREFIX + (string)swt + "_" + (string)ev[i].bar_time;
-               Bullet(base + "_b", swt, lvl, clr);
-               Label (base + "_t", swt, lvl, txt, clr);
               }
+            if(hasPar)
+              {
+               string par = StringFormat("%s %s #%d %s",
+                                         FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
+               txt += (pOwn >= 0) ? ("  |  " + par) : ("  " + par);
+              }
+            StringToLower(txt);   // small-caps display (task 3, 2026-06-25)
+
+            color clr = hasPar ? FobLabelColor(parLab) : FobLabelColor(FOB_PBO);
+
+            string base = FOB_VIS_PREFIX + (string)swt + "_" + (string)ev[i].bar_time;
+            Bullet(base + "_b", swt, lvl, clr);
+            Label (base + "_t", swt, lvl, txt, clr);
            }
         }
       i = j;

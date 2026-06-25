@@ -59,14 +59,20 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
   {
    int made = 0;
 
-   //--- ROLE 1: PBO for its own setup TF (supersede — always fires) --
-   st[etf].active    = true;
-   st[etf].seq      += 1;
-   st[etf].pbo_dir   = dir;
-   st[etf].pbo_time  = bt;
-   st[etf].vr_locked = false;
-   st[etf].vr_time   = 0;
-   made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
+   //--- ROLE 1: PBO for its own setup TF (supersede — always fires).
+   //--- SKIP the lowest TF (etf==0, M1): a PBO needs a TF below to ever
+   //--- supply its VR/CF, and there is none under M1, so an M1 PBO could
+   //--- never develop. M1 breaks still play ROLE 2 (VR/CF for M5) below.
+   if(etf > 0)
+     {
+      st[etf].active    = true;
+      st[etf].seq      += 1;
+      st[etf].pbo_dir   = dir;
+      st[etf].pbo_time  = bt;
+      st[etf].vr_locked = false;
+      st[etf].vr_time   = 0;
+      made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
+     }
 
    //--- ROLE 2: VR or CF for the setup TF one above (n = etf+1) ------
    int up1 = etf + 1;

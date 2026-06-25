@@ -31,7 +31,7 @@
 #include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_DIR (BRC_BULL/BRC_BEAR)
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "0.5.0"
+#define FOB_VERSION "0.6.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -117,7 +117,7 @@ color FobLabelColor(const int label)
    switch(label)
      {
       case FOB_PBO:  return clrDodgerBlue;    // blue  — the anchor
-      case FOB_VR:   return clrMediumPurple;  // purple — matches manual's purple zones
+      case FOB_VR:   return clrYellow;        // yellow (VR highlight, set 2026-06-25)
       case FOB_HRCF: return clrOrange;        // orange — high-risk caution
       case FOB_CF:   return clrLimeGreen;     // green  — go
      }
