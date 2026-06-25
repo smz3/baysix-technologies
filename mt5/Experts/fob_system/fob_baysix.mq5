@@ -79,9 +79,25 @@ int OnInit()
    if(g_radius < 0)
       return INIT_PARAMETERS_INCORRECT;
 
+   //--- FULL reset (HARD): MT5 calls OnDeinit+OnInit on every chart period
+   //--- switch / recompile / param change WITHOUT unloading the program, so
+   //--- the global arrays SURVIVE. If we only zero last_time+g_setup (the old
+   //--- bug), the next tick re-ingests all 64 bars into the already-populated
+   //--- buffers -> duplicate bars (corrupt pivots -> dots misplaced) and a
+   //--- restarted seq piled onto a stale g_events (seq dupes -> visual never
+   //--- locks the active cycle -> "pending" stuck). Clear EVERYTHING so each
+   //--- reinit rebuilds cleanly from the 64-bar window.
+   ArrayResize(g_events, 0);
    for(int i = 0; i < FOB_N_TF; i++)
      {
       g_tf[i].last_time     = 0;
+      ArrayResize(g_tf[i].bt,      0);
+      ArrayResize(g_tf[i].bh,      0);
+      ArrayResize(g_tf[i].bl,      0);
+      ArrayResize(g_tf[i].bc,      0);
+      ArrayResize(g_tf[i].swings,  0);
+      ArrayResize(g_tf[i].live_sw, 0);
+      ArrayResize(g_tf[i].breaks,  0);
       g_setup[i].active     = false;
       g_setup[i].seq        = 0;
       g_setup[i].vr_locked  = false;
