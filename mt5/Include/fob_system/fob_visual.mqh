@@ -45,6 +45,10 @@
 
 //--- master toggle (ACTIVE cycle only — no prior-cycle retention, task 157)
 input bool InpVisualize    = true;        // MASTER: draw chart objects
+//--- 3 independent layers under the master (task 158) — each gated alone
+input bool InpShowSequence = true;        // PBO/VR/CF classification dots
+input bool InpShowSwings   = true;        // FOB swing pivots (carets)
+input bool InpShowRawBreaks= true;        // FOB raw breakouts (dotted lines)
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
@@ -152,6 +156,8 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
    ClearAll();
    if(!InpVisualize || m_idx < 0)
       return;
+   if(!InpShowSequence)   // sequence layer off — ClearAll already wiped the dots
+      return;
 
    int E = m_idx;
 
@@ -246,7 +252,7 @@ void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
    if(m_idx < 0)
       return;
 
-   int ns = ArraySize(sw);
+   int ns = InpShowSwings ? ArraySize(sw) : 0;
    for(int i = 0; i < ns; i++)
      {
       string nm = FOB_VIS_PREFIX + "SW_" + (string)sw[i].time;
@@ -262,7 +268,7 @@ void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
       ObjectSetInteger(0, nm, OBJPROP_BACK, true);
      }
 
-   int nb = ArraySize(br);
+   int nb = InpShowRawBreaks ? ArraySize(br) : 0;
    for(int i = 0; i < nb; i++)
      {
       string nm = FOB_VIS_PREFIX + "RB_" + (string)br[i].swing_time + "_" + (string)br[i].bar_time;
