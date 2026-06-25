@@ -102,6 +102,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
            {
             st[up1].vr_locked = true;
             st[up1].vr_time   = bt;
+            st[up1].vr_level  = level;   // VR's broken-swing price = the trader's structural 1R ref
             //--- seed the confirming-chain watermark at the VR's own structure:
             //--- the first CF must break something NEWER than this (task 159).
             st[up1].last_conf_swing = swt;
