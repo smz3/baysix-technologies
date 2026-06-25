@@ -46,6 +46,12 @@
 //--- master toggle (ACTIVE cycle only — no prior-cycle retention, task 157)
 input bool InpVisualize    = true;        // MASTER: draw chart objects
 
+//--- DEBUG overlays (sanity-check FOB's OWN detection on the chart TF):
+//--- the raw STRUCT primitives BEFORE classification — swing pivots and
+//--- raw breakouts. Default off (clutter); flip on to verify detection.
+input bool InpShowSwings   = false;       // DEBUG: mark every swing pivot (chart TF)
+input bool InpShowRawBreaks= false;       // DEBUG: line each raw break (swing -> break bar)
+
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
 const int   InpFobLabelSize  = 9;
@@ -75,10 +81,16 @@ public:
             CFobVisual(void) { m_tf = ""; m_idx = -1; }
 
    void     SyncChartTF();
+   int      ChartIdx() const { return m_idx; }   // chart TF ladder index (-1 if unmapped)
    void     ClearAll() { ObjectsDeleteAll(0, FOB_VIS_PREFIX); }
 
    //--- full rebuild of the current chart's lens from the event log
    void     RedrawCurrentTF(const FobEvent &ev[], const int n);
+
+   //--- DEBUG: draw the chart TF's RAW detection (swings + raw breaks).
+   //--- Call AFTER RedrawCurrentTF (which ClearAll's first), with the
+   //--- chart-TF's own g_tf[ChartIdx()] swing/break arrays.
+   void     DrawRawLayer(const BrcSwing &sw[], const BrcBreak &br[]);
   };
 
 //+------------------------------------------------------------------+
@@ -225,6 +237,56 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
            }
         }
       i = j;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| DEBUG raw-detection overlay for the chart TF.                     |
+//|  Swings: a small caret at each pivot (close price), greyed if      |
+//|  already broken. Raw breaks: a dotted line from the broken swing   |
+//|  pivot to the breaking bar's close. Both are FOB_-prefixed so the  |
+//|  next RedrawCurrentTF()->ClearAll() wipes them (re-drawn each tick).|
+//+------------------------------------------------------------------+
+void CFobVisual::DrawRawLayer(const BrcSwing &sw[], const BrcBreak &br[])
+  {
+   if(m_idx < 0)
+      return;
+
+   if(InpShowSwings)
+     {
+      int n = ArraySize(sw);
+      for(int i = 0; i < n; i++)
+        {
+         string nm = FOB_VIS_PREFIX + "SW_" + (string)sw[i].time;
+         color  c  = sw[i].broken ? clrDimGray : clrSilver;
+         ObjectCreate(0, nm, OBJ_TEXT, 0, sw[i].time, sw[i].price);
+         ObjectSetString (0, nm, OBJPROP_TEXT, (sw[i].type == BRC_SWING_HIGH) ? "v" : "^");
+         ObjectSetString (0, nm, OBJPROP_FONT, FOB_VIS_FONT);
+         ObjectSetInteger(0, nm, OBJPROP_FONTSIZE, 7);
+         ObjectSetInteger(0, nm, OBJPROP_ANCHOR, ANCHOR_CENTER);
+         ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
+         ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+         ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+        }
+     }
+
+   if(InpShowRawBreaks)
+     {
+      int n = ArraySize(br);
+      for(int i = 0; i < n; i++)
+        {
+         string nm = FOB_VIS_PREFIX + "RB_" + (string)br[i].swing_time + "_" + (string)br[i].bar_time;
+         ObjectCreate(0, nm, OBJ_TREND, 0,
+                      br[i].swing_time, br[i].swing_price, br[i].bar_time, br[i].bar_close);
+         ObjectSetInteger(0, nm, OBJPROP_COLOR, (br[i].dir == BRC_BULL) ? clrSeaGreen : clrIndianRed);
+         ObjectSetInteger(0, nm, OBJPROP_STYLE, STYLE_DOT);
+         ObjectSetInteger(0, nm, OBJPROP_WIDTH, 1);
+         ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, false);
+         ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+         ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+        }
      }
   }
 

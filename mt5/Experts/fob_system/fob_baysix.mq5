@@ -228,7 +228,12 @@ void OnTick()
    //--- event-TF lens is a full PROJECTION of the log -> repaint it whole
    //--- (cross-chart pending flips + role merging only work on a replay)
    if(InpVisualize)
+     {
       g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
+      int ci = g_vis.ChartIdx();
+      if(ci >= 0)
+         g_vis.DrawRawLayer(g_tf[ci].swings, g_tf[ci].breaks);   // DEBUG overlay (toggles)
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -240,6 +245,9 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       return;
    g_vis.SyncChartTF();
    g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
+   int ci = g_vis.ChartIdx();
+   if(ci >= 0)
+      g_vis.DrawRawLayer(g_tf[ci].swings, g_tf[ci].breaks);   // DEBUG overlay (toggles)
   }
 
 //+------------------------------------------------------------------+
