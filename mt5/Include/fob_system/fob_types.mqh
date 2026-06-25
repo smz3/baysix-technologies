@@ -9,8 +9,8 @@
 //|  PBO / VR / HRCF / CF.                                             |
 //|                                                                    |
 //|  SOP : CMP -> BO(PBO) -> VR -> CF -> CONTI.                        |
-//|  Ladder (this file's TF order, index 0..7):                       |
-//|      M5 · M15 · M30 · H1 · H4 · D1 · W1 · MN1                      |
+//|  Ladder (this file's TF order, index 0..8):                       |
+//|      M1 · M5 · M15 · M30 · H1 · H4 · D1 · W1 · MN1                 |
 //|  For a setup TF n:  VR/CF = TF n-1 (adjacent below),              |
 //|                     HRCF  = TF n-2 (skip one below).              |
 //|                                                                    |
@@ -31,10 +31,10 @@
 #include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_DIR (BRC_BULL/BRC_BEAR)
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "0.1.0"
+#define FOB_VERSION "0.2.0"
 
-//--- the 8 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
-#define FOB_N_TF 8
+//--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
+#define FOB_N_TF 9
 
 //--- the four cross-TF roles a raw breakout can play
 enum FOB_LABEL
@@ -81,7 +81,7 @@ struct FobSetupState
 //--- TF index -> name (the FOB ladder; hardcoded to FOB_N_TF=8)
 string FobTfName(const int i)
   {
-   static string nm[FOB_N_TF] = { "M5","M15","M30","H1","H4","D1","W1","MN1" };
+   static string nm[FOB_N_TF] = { "M1","M5","M15","M30","H1","H4","D1","W1","MN1" };
    if(i < 0 || i >= FOB_N_TF)
       return "?";
    return nm[i];

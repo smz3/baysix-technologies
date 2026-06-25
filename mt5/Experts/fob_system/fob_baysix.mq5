@@ -2,7 +2,7 @@
 //|                                                     fob_baysix.mq5 |
 //|        FOB (First Opposite Breakout) classifier EMITTER.          |
 //|                                                                    |
-//|  ONE job: across 8 TFs (M5..MN1), detect raw breakouts (reusing    |
+//|  ONE job: across 9 TFs (M1..MN1), detect raw breakouts (reusing    |
 //|  the STRUCT-001 primitives from brc_system) and CLASSIFY each in   |
 //|  chronological order as PBO / VR / HRCF / CF, then (a) draw them   |
 //|  colour-coded and (b) emit a UTF-8 event ledger to CSV. NO orders, |
@@ -21,7 +21,7 @@
 //|    fob_types · fob_sequence · fob_csv · fob_visual                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "0.10"          // keep in lockstep with FOB_VERSION (fob_types.mqh)
+#property version   "0.20"          // keep in lockstep with FOB_VERSION (fob_types.mqh)
 #property strict
 
 #include <brc_system/brc_swings.mqh>      // STRUCT-001: BrcSwingRadius / BrcDetectSwingAt
@@ -34,9 +34,9 @@
 input int InpSwingWindow = 3;      // close-based pivot window (odd, >=3; live BRC = 3)
 input int InpMaxAge      = 0;      // break age filter in bars (<=0 disables)
 
-//--- the 8 TFs (index order MUST match FobTfName in fob_types.mqh)
+//--- the 9 TFs (index order MUST match FobTfName in fob_types.mqh)
 ENUM_TIMEFRAMES g_periods[FOB_N_TF] =
-  { PERIOD_M5, PERIOD_M15, PERIOD_M30, PERIOD_H1, PERIOD_H4, PERIOD_D1, PERIOD_W1, PERIOD_MN1 };
+  { PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_M30, PERIOD_H1, PERIOD_H4, PERIOD_D1, PERIOD_W1, PERIOD_MN1 };
 
 //+------------------------------------------------------------------+
 //| Per-TF detection state (own clock, own buffers). Lean vs BRC —    |
