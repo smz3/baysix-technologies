@@ -25,7 +25,8 @@
 //|  Label grammar (E = this TF, E-1 = below, E+1 = above). DIR =        |
 //|  thesis direction. A dot carries one or both of:                    |
 //|    PBO E #p DIR · pending {E-1} VR   (own PBO, no VR yet)            |
-//|    PBO E #p DIR                       (own PBO, VR locked)            |
+//|    PBO E #p DIR · pending {E-1} CF   (VR locked, no CF yet)          |
+//|    PBO E #p DIR · live {E-1} CFc     (c CFs developed; task 160)     |
 //|    VR  {E+1} #q DIR                   (serves the TF-above setup)     |
 //|    CF  {E+1} #q.c DIR                 (serves the TF-above setup)     |
 //|  Parent DIR is DERIVED: VR = OPP(break), CF = same-as(break).        |
@@ -176,16 +177,20 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
    //--- PASS 1 : reconstruct state -----------------------------------
    int  curSeq[FOB_N_TF];
    bool vrLocked[FOB_N_TF];
-   for(int i = 0; i < FOB_N_TF; i++) { curSeq[i] = -1; vrLocked[i] = false; }
+   int  cfCount[FOB_N_TF];   // CFs developed in the ACTIVE cycle (task 160 lifecycle)
+   for(int i = 0; i < FOB_N_TF; i++) { curSeq[i] = -1; vrLocked[i] = false; cfCount[i] = 0; }
 
    for(int i = 0; i < n; i++)
      {
       int s  = ev[i].setup_tf;
       int sq = ev[i].seq;
       if(ev[i].label == FOB_PBO)
-        { curSeq[s] = sq; vrLocked[s] = false; }
-      else if(ev[i].label == FOB_VR && sq == curSeq[s])
-         vrLocked[s] = true;
+        { curSeq[s] = sq; vrLocked[s] = false; cfCount[s] = 0; }
+      else if(sq == curSeq[s])
+        {
+         if(ev[i].label == FOB_VR)                              vrLocked[s] = true;
+         else if(ev[i].label == FOB_CF && ev[i].cf_idx > cfCount[s]) cfCount[s] = ev[i].cf_idx;
+        }
      }
 
    //--- PASS 2 : draw this TF's breaks -------------------------------
@@ -247,8 +252,18 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
             //--- trailing pad (not leading): this label anchors RIGHT, so it
             //--- renders to the LEFT of the bullet and the pad pushes it clear.
             ownTxt = StringFormat("PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
-            if(!vrLocked[E] && E > 0)   // "still forming" badge
-               ownTxt += StringFormat(" · pending %s VR", FobTfName(E - 1));
+            //--- lifecycle badge (task 160): the dot tells its cycle phase at a
+            //--- glance — pending VR -> pending CF (VR locked) -> live CF1/2/...
+            //--- advancing with cf_idx. {E-1} = the TF below that supplies VR/CF.
+            if(E > 0)
+              {
+               if(!vrLocked[E])
+                  ownTxt += StringFormat(" · pending %s VR", FobTfName(E - 1));
+               else if(cfCount[E] == 0)
+                  ownTxt += StringFormat(" · pending %s CF", FobTfName(E - 1));
+               else
+                  ownTxt += StringFormat(" · live %s CF%d", FobTfName(E - 1), cfCount[E]);
+              }
             ownTxt += "  ";
             ownClr = FobLabelColor(FOB_PBO);
            }
