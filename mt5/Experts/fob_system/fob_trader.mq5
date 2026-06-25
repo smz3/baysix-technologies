@@ -3,28 +3,27 @@
 //|        FOB TRADER — the strategy EA (sibling of the emitter).      |
 //|                                                                    |
 //|  Reuses the emitter's EXACT detection + classification pipeline    |
-//|  (fob_swings -> fob_breakouts -> fob_sequence across all 9 TFs, in |
-//|  chronological order) so the trade triggers on the SAME PBO/VR/CF  |
-//|  events the oracle emits. The emitter stays pristine (read-only);  |
-//|  this EA adds orders on top of an identical event stream.          |
+//|  (fob_swings -> fob_breakouts -> fob_sequence) so the trade        |
+//|  triggers on the SAME PBO/VR/CF events the oracle emits. The       |
+//|  emitter stays pristine (read-only); this EA adds orders.          |
 //|                                                                    |
 //|  FOB-T1 atom (the coin-flip GATE, task 163):                       |
-//|    • Trigger : a CF on the chosen setup TF (default H1 -> CF fires |
-//|                on M30, the n-1 confirmation TF).                    |
-//|    • Entry   : MARKET on CF close (E1), in the PBO/continuation dir.|
-//|    • Risk 1R : R = |entry - VR level| (stop back through the VR     |
-//|                origin = continuation invalidated).                 |
-//|    • Exit    : SYMMETRIC bracket — TP = entry +1R, SL = entry -1R.  |
-//|                A symmetric ±1R barrier is a COIN-FLIP by            |
-//|                construction (50% null). Win-rate >50% with a       |
-//|                binomial z = the CF carries directional content.    |
-//|    • One position at a time; native SL/TP do the exit.             |
+//|    • Trigger : a CF on InpSetupTf (default H1 -> CF fires on M30). |
+//|    • Entry   : MARKET on CF detection (E1), PBO/continuation dir.   |
+//|    • SL      : beyond the CF ZONE — the CF's broken swing level     |
+//|                (reclaim it = breakout failed) ± InpSlBufferK.       |
+//|    • TP      : 1:1 RR off that risk (InpRMultTP; raise later).      |
+//|    • One position at a time; native broker SL/TP do the exit.      |
 //|                                                                    |
-//|  Trust: the MT5 tester is the arbiter (CLAUDE.md MT5 Trust rule).  |
-//|  Run on the M5 chart. GROSS premise = "Open prices only" (fast,    |
-//|  deterministic bracket fills); NET tradeability re-runs real-ticks.|
-//|  The per-trade ledger (incl. setup_tf / event_tf / cf_idx / seq)   |
-//|  is auto-written on deinit -> feeds T2's cf_idx conditioning.      |
+//|  Per-TF iteration (task 163): ingest ONLY {setup_tf-1, setup_tf}   |
+//|  — byte-identical to the full classifier for this setup's events,  |
+//|  far faster on real ticks. Run once per setup TF (8 runs), each    |
+//|  writes its own ledger; combine later.                             |
+//|                                                                    |
+//|  Trust: the MT5 tester is the arbiter. Run on the M5 chart. Native |
+//|  trade-level bands are DISABLED (CHART_SHOW_TRADE_LEVELS off); the  |
+//|  fob_visual sequence dots (PBO/VR/CF) render so fills can be        |
+//|  eyeballed against the sequence. MT5 draws the trade arrows itself. |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
 #property version   "1.7.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump together
@@ -34,6 +33,7 @@
 #include <fob_system/fob_breakouts.mqh>
 #include <fob_system/fob_types.mqh>
 #include <fob_system/fob_sequence.mqh>
+#include <fob_system/fob_visual.mqh>     // sequence dots + InpVisualize master toggle
 
 //--- detection (MUST match the emitter so the event stream is identical)
 input int    InpSwingWindow   = 3;      // close-based pivot window (odd, >=3)
@@ -42,12 +42,11 @@ input bool   InpPboNewestOnly = true;   // PBO = freshest source near CMP
 
 //--- FOB-T1 trade atom
 input int    InpSetupTf       = 4;      // setup TF INDEX (M1=0..MN1=8); 4 = H1 -> CF on M30
-input int    InpCfIdxFilter   = 0;      // CF ordinal to trade (0 = ALL CFs; T2 will sweep 1/2/3)
-input double InpRMultTP       = 1.0;    // TP in R (1.0 = symmetric coin-flip; raise later)
-input double InpRMultSL       = 1.0;    // SL in R (1.0 = symmetric coin-flip)
-input double InpFixedLot      = 0.01;   // min lot at $50
-input ulong  InpMagic         = 3001;   // FOB trader magic
-input bool   InpShowTrades     = false; // draw entry/exit arrows (Visual Mode only)
+input int    InpCfIdxFilter   = 0;      // CF ordinal to trade (0 = ALL CFs; T2 sweeps 1/2/3)
+input double InpSlBufferK      = 0.0;   // SL beyond the CF level by k * penetration (0 = at the level)
+input double InpRMultTP        = 1.0;   // TP = RR * risk (1.0 = 1:1, the coin-flip null)
+input double InpFixedLot        = 0.01; // min lot at $50
+input ulong  InpMagic           = 3001; // FOB trader magic
 
 //--- the 9 TFs (index order MUST match FobTfName in fob_types.mqh)
 ENUM_TIMEFRAMES g_periods[FOB_N_TF] =
@@ -80,7 +79,9 @@ FobTfState    g_tf[FOB_N_TF];
 FobSetupState g_setup[FOB_N_TF];
 FobEvent      g_events[];
 int           g_radius   = 1;
-int           g_seen     = 0;        // # events already acted on (watermark into g_events)
+int           g_seen     = 0;           // # events already acted on (watermark into g_events)
+int           g_ingest[];               // ONLY the TF indices we ingest = {setup_tf-1, setup_tf}
+CFobVisual    g_vis;
 
 //--- one-position state
 enum TRADE_STATE { TS_FLAT = 0, TS_INPOS = 1 };
@@ -89,9 +90,6 @@ TRADE_STATE g_state = TS_FLAT;
 //--- per-trade stash: position_id -> trade context (for the ledger + T2 conditioning)
 long   g_pid[];      double g_rw[];
 int    g_setuptf[];  int    g_eventtf[];  int g_cfidx[];  int g_seq[];  int g_dir[];
-
-//--- trade-marker prefix (own namespace)
-#define FOB_TR_PREFIX "FOB_TR_"
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -104,6 +102,13 @@ int OnInit()
       Print("[FOB TRADER] InpSetupTf must be 1..", FOB_N_TF - 1, " (a PBO needs a TF below for its CF).");
       return INIT_PARAMETERS_INCORRECT;
      }
+
+   //--- ingest ONLY the setup TF and its n-1 (CF) TF: byte-identical to the full
+   //--- classifier for this setup's events (a break on TF t only sets PBO(t) and
+   //--- VR/CF(t+1)) — so {setup_tf-1, setup_tf} fully determines every setup_tf event.
+   ArrayResize(g_ingest, 2);
+   g_ingest[0] = InpSetupTf - 1;
+   g_ingest[1] = InpSetupTf;
 
    //--- FULL reset (HARD): MT5 reinits WITHOUT unloading -> globals survive.
    ArrayResize(g_events, 0);
@@ -123,11 +128,17 @@ int OnInit()
      }
    ArrayResize(g_pid, 0); ArrayResize(g_rw, 0); ArrayResize(g_setuptf, 0);
    ArrayResize(g_eventtf, 0); ArrayResize(g_cfidx, 0); ArrayResize(g_seq, 0); ArrayResize(g_dir, 0);
-   ObjectsDeleteAll(0, FOB_TR_PREFIX);
 
-   PrintFormat("[FOB TRADER] v%s init OK — setup_tf=%s -> CF on %s | cf_filter=%d | TP=%.2fR SL=%.2fR | lot=%.2f magic=%I64u",
+   //--- kill MT5's native trade-level bands (the red/gray shading) PERMANENTLY;
+   //--- the deal arrows MT5 draws on its own are enough. Our sequence dots stay.
+   ChartSetInteger(0, CHART_SHOW_TRADE_LEVELS, false);
+   g_vis.SyncChartTF();
+   g_vis.ClearAll();
+
+   PrintFormat("[FOB TRADER] v%s init OK — setup_tf=%s -> CF on %s (ingest %s+%s) | cf_filter=%d | SLbuf=%.2f TP=%.2fR | lot=%.2f magic=%I64u",
                FOB_VERSION, FobTfName(InpSetupTf), FobTfName(InpSetupTf - 1),
-               InpCfIdxFilter, InpRMultTP, InpRMultSL, InpFixedLot, InpMagic);
+               FobTfName(g_ingest[0]), FobTfName(g_ingest[1]),
+               InpCfIdxFilter, InpSlBufferK, InpRMultTP, InpFixedLot, InpMagic);
    return INIT_SUCCEEDED;
   }
 
@@ -188,18 +199,31 @@ ENUM_ORDER_TYPE_FILLING FobFilling()
   }
 
 //+------------------------------------------------------------------+
-//| Market entry in `dir` with a symmetric ±R bracket (SL/TP native).|
-//| Returns the new position identifier (0 on failure).              |
+//| Market entry on a CF, anchored to the CF zone.                   |
+//|   entry = market (Ask/Bid)                                       |
+//|   SL    = CF level (the swing the CF broke) pushed BEYOND it by   |
+//|           InpSlBufferK * penetration (reclaim = breakout failed)  |
+//|   TP    = entry ± risk * InpRMultTP   (1:1 by default)           |
+//| Returns the new position id (0 on failure); sets out_rw = risk.  |
 //+------------------------------------------------------------------+
-long FobOpenMarket(const int dir, const double lot, const double r_unit)
+long FobOpenMarket(const int dir, const double lot, const double cf_level, double &out_rw)
   {
+   out_rw = 0.0;
    bool   is_long = (dir == FOB_BULL);
    double entry   = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                             : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double tp_dist = r_unit * InpRMultTP;
-   double sl_dist = r_unit * InpRMultSL;
-   double sl = is_long ? entry - sl_dist : entry + sl_dist;
-   double tp = is_long ? entry + tp_dist : entry - tp_dist;
+   double pen     = MathAbs(entry - cf_level);          // breakout penetration
+   double buffer  = InpSlBufferK * pen;
+   double sl      = is_long ? cf_level - buffer : cf_level + buffer;
+   double risk    = MathAbs(entry - sl);
+   if(risk <= 0.0)
+      return 0;
+   double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
+                    * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   if(risk < minstop || risk * InpRMultTP < minstop)
+      return 0;                                          // bracket too tight for the broker
+
+   double tp = is_long ? entry + risk * InpRMultTP : entry - risk * InpRMultTP;
 
    MqlTradeRequest req;  MqlTradeResult res;
    ZeroMemory(req);  ZeroMemory(res);
@@ -218,7 +242,7 @@ long FobOpenMarket(const int dir, const double lot, const double r_unit)
    if(res.retcode != TRADE_RETCODE_DONE && res.retcode != TRADE_RETCODE_PLACED)
       return 0;
 
-   //--- resolve the position identifier (== ticket for a fresh market deal)
+   out_rw = risk;
    if(PositionSelect(_Symbol))
       return (long)PositionGetInteger(POSITION_IDENTIFIER);
    return (long)res.order;
@@ -254,18 +278,6 @@ void StashTrade(const long pid, const double rw, const FobEvent &e)
    g_cfidx[m] = e.cf_idx;      g_seq[m] = e.seq;   g_dir[m] = e.dir;
   }
 
-void DrawTrade(const FobEvent &e, const double entry, const double sl, const double tp)
-  {
-   if(!InpShowTrades) return;
-   bool is_long = (e.dir == FOB_BULL);
-   string an = FOB_TR_PREFIX + (string)e.bar_time + "_e";
-   if(ObjectFind(0, an) < 0) ObjectCreate(0, an, OBJ_ARROW, 0, e.bar_time, entry);
-   ObjectMove(0, an, 0, e.bar_time, entry);
-   ObjectSetInteger(0, an, OBJPROP_ARROWCODE, is_long ? 233 : 234);
-   ObjectSetInteger(0, an, OBJPROP_COLOR, is_long ? clrAqua : clrMagenta);
-   ObjectSetInteger(0, an, OBJPROP_HIDDEN, true);
-  }
-
 //+------------------------------------------------------------------+
 //| After classification: if FLAT, act on the FIRST unseen CF event  |
 //| matching the setup-TF (+ cf_idx) filter.                         |
@@ -282,33 +294,20 @@ void ActOnNewEvents()
       if(e.setup_tf != InpSetupTf)       continue;
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
 
-      double vr_level = g_setup[e.setup_tf].vr_level;
-      if(vr_level <= 0.0)                continue;   // no VR ref (shouldn't happen post-lock)
-
-      double entry_ref = (e.dir == FOB_BULL) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
-                                              : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      double r_unit = MathAbs(entry_ref - vr_level);
-      double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
-                       * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-      if(r_unit <= 0.0 || r_unit * MathMin(InpRMultTP, InpRMultSL) < minstop)
-         continue;                                 // R too tight for a valid bracket — skip
-
-      long pid = FobOpenMarket(e.dir, InpFixedLot, r_unit);
+      double rw = 0.0;
+      long pid = FobOpenMarket(e.dir, InpFixedLot, e.level, rw);   // SL anchored to the CF level
       if(pid > 0)
         {
-         StashTrade(pid, r_unit, e);
+         StashTrade(pid, rw, e);
          g_state = TS_INPOS;
-         if(InpShowTrades && PositionSelect(_Symbol))
-            DrawTrade(e, PositionGetDouble(POSITION_PRICE_OPEN),
-                      PositionGetDouble(POSITION_SL), PositionGetDouble(POSITION_TP));
         }
      }
    g_seen = n;   // every event up to n has now been considered
   }
 
 //+------------------------------------------------------------------+
-//| Per tick: ingest newly closed bars (all TFs), classify in order, |
-//| reconcile position state, then act on new CF events.             |
+//| Per tick: ingest newly closed bars (the 2 relevant TFs only),    |
+//| classify in order, reconcile position state, act on new CFs.     |
 //+------------------------------------------------------------------+
 void OnTick()
   {
@@ -316,8 +315,9 @@ void OnTick()
    ArraySetAsSeries(r, true);
    FobPending pend[];
 
-   for(int t = 0; t < FOB_N_TF; t++)
+   for(int gi = 0; gi < ArraySize(g_ingest); gi++)
      {
+      int t = g_ingest[gi];
       int got = CopyRates(_Symbol, g_periods[t], 1, 64, r);
       if(got <= 0) continue;
       int nb0 = ArraySize(g_tf[t].breaks);
@@ -341,7 +341,7 @@ void OnTick()
         }
      }
 
-   //--- reconcile position state BEFORE classifying new events (bracket may have closed it)
+   //--- reconcile position state BEFORE classifying (bracket may have closed it)
    if(g_state == TS_INPOS && !HasPosition())
       g_state = TS_FLAT;
 
@@ -355,6 +355,29 @@ void OnTick()
      }
 
    ActOnNewEvents();
+
+   //--- sequence dots (PBO/VR/CF) so fills can be eyeballed vs the sequence
+   if(InpVisualize && np > 0)
+     {
+      g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
+      int ci = g_vis.ChartIdx();
+      if(ci >= 0)
+         g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Live TF switch: rebuild the sequence-dot layer for the new TF.   |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+  {
+   if(!InpVisualize || id != CHARTEVENT_CHART_CHANGE)
+      return;
+   g_vis.SyncChartTF();
+   g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
+   int ci = g_vis.ChartIdx();
+   if(ci >= 0)
+      g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
   }
 
 //+------------------------------------------------------------------+
@@ -392,7 +415,7 @@ double CtxForPos(const long pid, int &setup_tf, int &event_tf, int &cf_idx, int 
 //| Per-trade ledger CSV from the tester's deal history. One row per |
 //| closed position with setup_tf / event_tf / cf_idx / seq + R-     |
 //| outcome — the input for T2 (cf_idx conditioning). Auto-written   |
-//| on deinit (no manual export). Lands in Common\Files\FOB.         |
+//| on deinit. Lands in Common\Files\FOB.                            |
 //+------------------------------------------------------------------+
 void WriteTradeLedger()
   {
@@ -475,6 +498,6 @@ void WriteTradeLedger()
 void OnDeinit(const int reason)
   {
    WriteTradeLedger();
-   if(InpShowTrades) ObjectsDeleteAll(0, FOB_TR_PREFIX);
+   g_vis.ClearAll();
   }
 //+------------------------------------------------------------------+
