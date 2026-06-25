@@ -102,6 +102,7 @@ int OnInit()
       g_setup[i].seq        = 0;
       g_setup[i].vr_locked  = false;
       g_setup[i].cf_count   = 0;
+      g_setup[i].last_conf_swing = 0;
      }
 
    string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);

@@ -12,19 +12,22 @@
 //|  TF projection). The #id is the cross-chart link: "vr h1 #1" on the  |
 //|  M30 chart <-> "pbo h1 #1" on the H1 chart.                         |
 //|                                                                    |
-//|  ONE JOB PER DOT (task 2, 2026-06-25): a break is a PBO for its own  |
-//|  TF and MAY also be a VR/CF for the TF above — but a dot shows ONLY  |
-//|  ONE role, by precedence: if it serves an ACTIVE parent VR/CF it is  |
-//|  drawn as THAT (the higher-TF setup is the live story); otherwise it |
-//|  is drawn as its own PBO. So a setup spans two charts — its pbo on   |
-//|  its own TF, its vr/cf on the TF below — joined by #id. No dual tag. |
+//|  DUAL-PURPOSE DOT (task 2 rev 2026-06-25): a break is a PBO for its  |
+//|  own TF and MAY ALSO be a VR/CF for the TF above. When BOTH roles     |
+//|  qualify, ONE bullet carries TWO fanned labels — own PBO anchored     |
+//|  RIGHT (renders LEFT of the dot), parent VR/CF anchored LEFT (renders |
+//|  RIGHT) — so they splay apart, never stack. Bullet colour = parent    |
+//|  role if present (the live higher-TF story), else own PBO. A setup    |
+//|  still spans two charts (its pbo on its own TF, its vr/cf on the TF   |
+//|  below) joined by #id; the dual tag only appears where one physical   |
+//|  bar serves both at once.                                            |
 //|                                                                    |
 //|  Label grammar (E = this TF, E-1 = below, E+1 = above). DIR =        |
-//|  thesis direction. A dot is exactly one of:                        |
+//|  thesis direction. A dot carries one or both of:                    |
 //|    PBO E #p DIR · pending {E-1} VR   (own PBO, no VR yet)            |
 //|    PBO E #p DIR                       (own PBO, VR locked)            |
 //|    VR  {E+1} #q DIR                   (serves the TF-above setup)     |
-//|    CF  {E+1} #q DIR                   (serves the TF-above setup)     |
+//|    CF  {E+1} #q.c DIR                 (serves the TF-above setup)     |
 //|  Parent DIR is DERIVED: VR = OPP(break), CF = same-as(break).        |
 //|  M1 has NO own PBO (task 1) — the M1 chart shows only vr/cf for M5.  |
 //|                                                                    |
@@ -210,16 +213,19 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
               { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; parCf = ev[k].cf_idx; }
            }
 
-         //--- ACTIVE-CYCLE-ONLY gate (task 157) + ONE-JOB-PER-DOT
-         //--- precedence (task 2, 2026-06-25): if this break serves an
-         //--- ACTIVE parent VR/CF, draw it as THAT role only; else draw it
-         //--- as its own active PBO. No dual labels. (M1 has no own PBO —
-         //--- task 1 — so the M1 chart shows only parent vr/cf dots.)
+         //--- ACTIVE-CYCLE-ONLY gate (task 157) + DUAL-PURPOSE DOT (task 2 rev
+         //--- 2026-06-25): a single break can be its OWN PBO *and* a VR/CF for
+         //--- the TF above. When BOTH qualify, draw ONE bullet with the two
+         //--- labels FANNED off it — own PBO to the LEFT (ANCHOR_RIGHT), parent
+         //--- VR/CF to the RIGHT (ANCHOR_LEFT) — so they splay instead of
+         //--- stacking. Bullet colour follows the parent (the live higher-TF
+         //--- story) when present, else the own PBO. (M1 has no own PBO — task
+         //--- 1 — so the M1 chart shows only the parent dot.)
          bool parentQual = hasPar && (parSeq == curSeq[E + 1]);
          bool anchorQual = (pOwn >= 0 && pOwn == curSeq[E]);
 
-         string txt = "";
-         color  clr = clrNONE;
+         string parTxt = "";  color parClr = clrNONE;
+         string ownTxt = "";  color ownClr = clrNONE;
 
          if(parentQual)
            {
@@ -228,27 +234,40 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
             //--- CF carries its per-cycle ordinal (#seq.cf): "cf h1 #1.2" = 2nd
             //--- CF of cycle 1 — the layering count the entry test keys on.
             if(parLab == FOB_CF)
-               txt = StringFormat("  %s %s #%d.%d %s",
-                                  FobLabelName(parLab), FobTfName(E + 1), parSeq, parCf, FobDirName(parThesis));
+               parTxt = StringFormat("  %s %s #%d.%d %s",
+                                     FobLabelName(parLab), FobTfName(E + 1), parSeq, parCf, FobDirName(parThesis));
             else
-               txt = StringFormat("  %s %s #%d %s",
-                                  FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
-            clr = FobLabelColor(parLab);
-           }
-         else if(anchorQual)
-           {
-            txt = StringFormat("  PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
-            if(!vrLocked[E] && E > 0)   // "still forming" badge
-               txt += StringFormat(" · pending %s VR", FobTfName(E - 1));
-            clr = FobLabelColor(FOB_PBO);
+               parTxt = StringFormat("  %s %s #%d %s",
+                                     FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
+            parClr = FobLabelColor(parLab);
            }
 
-         if(clr != clrNONE)
+         if(anchorQual)
            {
-            StringToLower(txt);   // small-caps display (task 3, 2026-06-25)
+            //--- trailing pad (not leading): this label anchors RIGHT, so it
+            //--- renders to the LEFT of the bullet and the pad pushes it clear.
+            ownTxt = StringFormat("PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
+            if(!vrLocked[E] && E > 0)   // "still forming" badge
+               ownTxt += StringFormat(" · pending %s VR", FobTfName(E - 1));
+            ownTxt += "  ";
+            ownClr = FobLabelColor(FOB_PBO);
+           }
+
+         if(parClr != clrNONE || ownClr != clrNONE)
+           {
+            color  bulletClr = (parClr != clrNONE) ? parClr : ownClr;
             string base = FOB_VIS_PREFIX + (string)swt + "_" + (string)ev[i].bar_time;
-            Bullet(base + "_b", swt, lvl, clr);
-            Label (base + "_t", swt, lvl, txt, clr);
+            Bullet(base + "_b", swt, lvl, bulletClr);
+            if(ownClr != clrNONE)   // own PBO label — fan LEFT
+              {
+               StringToLower(ownTxt);   // small-caps display (task 3, 2026-06-25)
+               Label(base + "_to", swt, lvl, ownTxt, ownClr, ANCHOR_RIGHT);
+              }
+            if(parClr != clrNONE)   // parent VR/CF label — fan RIGHT
+              {
+               StringToLower(parTxt);
+               Label(base + "_tp", swt, lvl, parTxt, parClr, ANCHOR_LEFT);
+              }
            }
         }
       i = j;

@@ -74,6 +74,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
       st[etf].vr_locked = false;
       st[etf].vr_time   = 0;
       st[etf].cf_count  = 0;   // new cycle -> CF ordinal restarts
+      st[etf].last_conf_swing = 0;   // new cycle -> confirming-chain watermark clears
       made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
      }
 
@@ -88,6 +89,9 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
            {
             st[up1].vr_locked = true;
             st[up1].vr_time   = bt;
+            //--- seed the confirming-chain watermark at the VR's own structure:
+            //--- the first CF must break something NEWER than this (task 159).
+            st[up1].last_conf_swing = swt;
             made += FobAppendEvent(ev, up1, st[up1].seq, FOB_VR, etf, dir, swt, bt, level, close);
            }
         }
@@ -98,9 +102,14 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
          //--- the cycle only ends when a fresh setup-TF break supersedes it.
          //--- cf_count++ stamps the per-cycle ordinal (1st CF, 2nd CF, ...)
          //--- so the entry test can separate 1st-CF vs Nth-CF accuracy.
-         if(dir == st[up1].pbo_dir && bt > st[up1].vr_time)
+         //--- task 159: the broken swing MUST be newer than the confirming-chain
+         //--- watermark (= VR swing for CF1, then prior CF swing). A same-dir break
+         //--- that reaches back to a pre-VR / already-confirmed OLD structure is NOT
+         //--- a continuation and is dropped (no event, ordinal not advanced).
+         if(dir == st[up1].pbo_dir && bt > st[up1].vr_time && swt > st[up1].last_conf_swing)
            {
             st[up1].cf_count += 1;
+            st[up1].last_conf_swing = swt;   // advance the watermark to this CF's structure
             made += FobAppendEvent(ev, up1, st[up1].seq, FOB_CF, etf, dir, swt, bt, level, close,
                                    st[up1].cf_count);
            }

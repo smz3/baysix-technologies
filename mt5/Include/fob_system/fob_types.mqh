@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.3.0"
+#define FOB_VERSION "1.4.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -107,9 +107,15 @@ struct FobSetupState
    bool      vr_locked;  // has the (one-and-only) VR been found?
    datetime  vr_time;    // bar_time of the locked VR
    int       cf_count;   // CFs emitted SO FAR in the active cycle (1st-CF entry vs Nth-CF layering)
+   datetime  last_conf_swing; // swing_time WATERMARK for the confirming chain (task 159).
    // NOTE: no cf_done — a cycle allows MULTIPLE CFs (2nd-CF layering, task 156).
    // Every same-dir continuation after the VR is a fresh CF until superseded.
    // cf_count is the ordinal counter: reset to 0 on each new PBO, +1 per CF emit.
+   // last_conf_swing (task 159): a CF must break a swing NEWER than the VR (for
+   // CF1) then newer than the prior CF (CF2+). Seeded = VR swing_time on VR lock;
+   // each accepted CF requires swt > last_conf_swing then advances it. Blocks a
+   // same-dir break that reaches BACK to a pre-VR / already-taken old structure
+   // from counting as a confirmation (the 05:45 reach-back bug).
   };
 
 //--- TF index -> name (the FOB ladder; hardcoded to FOB_N_TF=8)
