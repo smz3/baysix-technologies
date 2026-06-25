@@ -1,28 +1,37 @@
 //+------------------------------------------------------------------+
 //|                                                    fob_visual.mqh  |
-//|  FOB chart visualizer — eyeball layer for the classifier.         |
+//|  FOB chart visualizer — EVENT-TF LENS (rewritten 2026-06-25).      |
 //|                                                                    |
-//|  Pure drawing, ZERO detection: the EA owns break/label state;     |
-//|  this just renders it. Styling mirrors brc_visual:                 |
-//|     • every classified event -> "•" bullet at the BROKEN level     |
-//|       + a text tag, COLOURED BY ROLE:                              |
-//|          PBO = blue · VR = purple · HRCF = orange · CF = green.    |
-//|       (No arrows — same dot idiom as BRC/STRUCT.)                  |
+//|  Pure drawing, ZERO detection: the classifier owns all state; this |
+//|  is a replayable PROJECTION of the event log + a tiny view-state   |
+//|  it rebuilds ITSELF from that log (never reads live st[]). So the   |
+//|  picture can never drift from the detector.                        |
 //|                                                                    |
-//|  SETUP-TF LENS (locked 2026-06-25): every draw is gated on         |
-//|  e.setup_tf == ChartPeriod(), NOT the event TF. So a chart shows   |
-//|  the COMPLETE chains whose *setup* is that TF — the PBO (on this    |
-//|  TF) plus its VR/CF (one TF below) and HRCF (two below), which are  |
-//|  lower-TF breaks PROJECTED onto this chart by their absolute        |
-//|  bar_time + level. A thin connector links PBO->VR->CF->HRCF of one  |
-//|  (setup_tf, seq) so you can read one setup at a glance. Switch the  |
-//|  chart period and OnChartEvent rebuilds the lens for the new TF.    |
+//|  ONE CHART PER TIMEFRAME: a chart draws breaks that FIRED on its    |
+//|  own TF (event_tf == ChartPeriod), on their NATIVE bars (no cross-  |
+//|  TF projection). Every break is a PBO for its own TF and MAY also   |
+//|  be a VR/CF for the TF one above — both roles on one dot. The #id   |
+//|  is the cross-chart link: "VR H1 #1" on the M30 chart <-> "PBO H1   |
+//|  #1" on the H1 chart.                                              |
 //|                                                                    |
-//|  The label carries the EVENT tf (the TF the break fired on), e.g.  |
-//|  "VR H1 #3" on the H4 chart = an H1 break serving H4 setup #3.     |
+//|  Label grammar (E = this TF, E-1 = TF below = VR source, E+1 =      |
+//|  TF above = the setup this break serves). DIR = thesis direction:  |
+//|    A  PBO E #p DIR · pending {E-1} VR      (forming, no VR yet)      |
+//|    B  PBO E #p DIR                          (VR locked = confirmed)  |
+//|    C  PBO E #p DIRe  |  VR  {E+1} #q DIRp   (also parent retrace)    |
+//|    D  PBO E #p DIRe  |  CF  {E+1} #q DIRp   (also parent confirm)    |
+//|  DIR for a parent role is DERIVED from the break: VR = OPP(break),   |
+//|  CF = same-as(break) — no parent-state lookup needed.              |
 //|                                                                    |
-//|  Needs tester model = Visual Mode (NOT "Open prices only") to see  |
-//|  it paint live; otherwise objects appear on the chart at OnDeinit. |
+//|  Colour: PBO blue / VR purple / CF green. A dual dot is coloured by |
+//|  its PARENT role (the "interesting" one); PBO identity is in text.  |
+//|                                                                    |
+//|  Visibility: hide superseded bare PBOs. Show (1) the latest forming |
+//|  PBO of this TF, (2) the last InpFobMaxChains DEVELOPED setups of   |
+//|  this TF, (3) parent VR/CF dots within the last InpFobMaxChains     |
+//|  developed setups of the TF above.                                 |
+//|                                                                    |
+//|  Needs tester model = Visual Mode to paint live.                   |
 //+------------------------------------------------------------------+
 #ifndef FOB_VISUAL_MQH
 #define FOB_VISUAL_MQH
@@ -30,15 +39,13 @@
 
 #include "fob_types.mqh"
 
-//--- master toggle (draw chart objects; turn OFF for a long headless emit)
+//--- master toggle + rolling cap (developed setups kept per TF lens)
 input bool InpVisualize    = true;        // MASTER: draw chart objects
-input bool InpFobConnect   = true;        // draw the per-chain PBO->VR->CF->HRCF connector
-input int  InpFobMaxChains = 50;          // rolling cap: chains kept per setup-TF lens
+input int  InpFobMaxChains = 2;           // developed setups kept per TF (current + N-1 prior)
 
-//--- font sizes / connector colour (hidden from inputs — tweak in source)
+//--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
 const int   InpFobLabelSize  = 9;
-const color InpFobConnClr    = clrSlateGray;
 
 #define FOB_VIS_PREFIX "FOB_"
 #define FOB_VIS_FONT   "Calibri Light"
@@ -49,77 +56,71 @@ const color InpFobConnClr    = clrSlateGray;
 class CFobVisual
   {
 private:
-   string   m_tf;                    // chart's TF name ("M1".."MN1"); "" if unmapped
-   string   m_chains[];              // FIFO of chain prefixes drawn on the current lens
-   int      m_lastSeq[FOB_N_TF];     // per setup_tf: seq of the chain currently being extended
-   datetime m_lastT[FOB_N_TF];       // per setup_tf: last linked point (time)
-   double   m_lastP[FOB_N_TF];       // per setup_tf: last linked point (price)
+   string   m_tf;        // chart TF name ("M1".."MN1"); "" if unmapped
+   int      m_idx;       // chart TF ladder index; -1 if unmapped
 
-   string   PeriodName(const ENUM_TIMEFRAMES p) const;
-   bool     Active(const FobEvent &e) const
-              { return InpVisualize && m_tf != "" && FobTfName(e.setup_tf) == m_tf; }
+   int      LadderIndex(const ENUM_TIMEFRAMES p) const;
 
-   void     Bullet(const string name, const datetime t, const double p, const color clr, const int size);
+   void     Bullet(const string name, const datetime t, const double p, const color clr);
    void     Label (const string name, const datetime t, const double p, const string txt, const color clr);
-   void     Line  (const string name, const datetime t0, const double p0,
-                   const datetime t1, const double p1, const color clr);
 
-   //--- chain = one (setup_tf, seq); every object for it shares this prefix
-   string   ChainPrefix(const FobEvent &e) const
-              { return FOB_VIS_PREFIX + FobTfName(e.setup_tf) + "_s" + (string)e.seq + "_"; }
-   void     PruneChains();
-   void     ResetTracking();
-   void     RenderEvent(const FobEvent &e);
+   bool     SameBreak(const FobEvent &a, const FobEvent &b) const
+              { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
+   bool     SeqIn(const int &arr[], const int cnt, const int sq) const;
+   int      OppDir(const int d) const { return d == BRC_BULL ? BRC_BEAR : BRC_BULL; }
 
 public:
-            CFobVisual(void) { m_tf = ""; ResetTracking(); }
+            CFobVisual(void) { m_tf = ""; m_idx = -1; }
 
-   void     SyncChartTF() { m_tf = PeriodName((ENUM_TIMEFRAMES)ChartPeriod()); }
-   void     ClearAll()    { ObjectsDeleteAll(0, FOB_VIS_PREFIX); ArrayResize(m_chains, 0); ResetTracking(); }
+   void     SyncChartTF();
+   void     ClearAll() { ObjectsDeleteAll(0, FOB_VIS_PREFIX); }
 
-   //--- live hook: one classified event just fired
-   void     OnEvent(const FobEvent &e) { if(Active(e)) RenderEvent(e); }
-
-   //--- full rebuild for the current chart TF (CHARTEVENT_CHART_CHANGE)
+   //--- full rebuild of the current chart's lens from the event log
    void     RedrawCurrentTF(const FobEvent &ev[], const int n);
   };
 
 //+------------------------------------------------------------------+
-string CFobVisual::PeriodName(const ENUM_TIMEFRAMES p) const
+int CFobVisual::LadderIndex(const ENUM_TIMEFRAMES p) const
   {
    switch(p)
      {
-      case PERIOD_M1:  return "M1";
-      case PERIOD_M5:  return "M5";
-      case PERIOD_M15: return "M15";
-      case PERIOD_M30: return "M30";
-      case PERIOD_H1:  return "H1";
-      case PERIOD_H4:  return "H4";
-      case PERIOD_D1:  return "D1";
-      case PERIOD_W1:  return "W1";
-      case PERIOD_MN1: return "MN1";
+      case PERIOD_M1:  return 0;
+      case PERIOD_M5:  return 1;
+      case PERIOD_M15: return 2;
+      case PERIOD_M30: return 3;
+      case PERIOD_H1:  return 4;
+      case PERIOD_H4:  return 5;
+      case PERIOD_D1:  return 6;
+      case PERIOD_W1:  return 7;
+      case PERIOD_MN1: return 8;
      }
-   return "";   // chart on a TF FOB doesn't track -> draw nothing
+   return -1;   // chart on a TF FOB doesn't track -> draw nothing
+  }
+
+void CFobVisual::SyncChartTF()
+  {
+   m_idx = LadderIndex((ENUM_TIMEFRAMES)ChartPeriod());
+   m_tf  = (m_idx >= 0) ? FobTfName(m_idx) : "";
   }
 
 //+------------------------------------------------------------------+
-void CFobVisual::ResetTracking()
+bool CFobVisual::SeqIn(const int &arr[], const int cnt, const int sq) const
   {
-   for(int i = 0; i < FOB_N_TF; i++)
-     { m_lastSeq[i] = -1; m_lastT[i] = 0; m_lastP[i] = 0.0; }
+   for(int i = 0; i < cnt; i++)
+      if(arr[i] == sq)
+         return true;
+   return false;
   }
 
 //+------------------------------------------------------------------+
-//| Primitives — create-or-update so redraws never duplicate.        |
+//| Primitives                                                        |
 //+------------------------------------------------------------------+
-void CFobVisual::Bullet(const string name, const datetime t, const double p, const color clr, const int size)
+void CFobVisual::Bullet(const string name, const datetime t, const double p, const color clr)
   {
-   if(ObjectFind(0, name) < 0)
-      ObjectCreate(0, name, OBJ_TEXT, 0, t, p);
-   ObjectMove(0, name, 0, t, p);
+   ObjectCreate(0, name, OBJ_TEXT, 0, t, p);
    ObjectSetString (0, name, OBJPROP_TEXT, "•");
    ObjectSetString (0, name, OBJPROP_FONT, FOB_VIS_FONT);
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, size);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, InpFobBulletSize);
    ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_CENTER);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
@@ -129,9 +130,7 @@ void CFobVisual::Bullet(const string name, const datetime t, const double p, con
 
 void CFobVisual::Label(const string name, const datetime t, const double p, const string txt, const color clr)
   {
-   if(ObjectFind(0, name) < 0)
-      ObjectCreate(0, name, OBJ_TEXT, 0, t, p);
-   ObjectMove(0, name, 0, t, p);
+   ObjectCreate(0, name, OBJ_TEXT, 0, t, p);
    ObjectSetString (0, name, OBJPROP_TEXT, txt);
    ObjectSetString (0, name, OBJPROP_FONT, FOB_VIS_FONT);
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, InpFobLabelSize);
@@ -142,88 +141,106 @@ void CFobVisual::Label(const string name, const datetime t, const double p, cons
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
   }
 
-void CFobVisual::Line(const string name, const datetime t0, const double p0,
-                      const datetime t1, const double p1, const color clr)
-  {
-   if(ObjectFind(0, name) < 0)
-      ObjectCreate(0, name, OBJ_TREND, 0, t0, p0, t1, p1);
-   ObjectMove(0, name, 0, t0, p0);
-   ObjectMove(0, name, 1, t1, p1);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DOT);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
-   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
-   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
-   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
-   ObjectSetInteger(0, name, OBJPROP_BACK, true);
-  }
-
 //+------------------------------------------------------------------+
-//| Draw one event into its setup-TF chain: dot at the broken level + |
-//| role tag, plus the connector segment from the prior chain point.   |
-//| Tag = "<LABEL> <eventTF> #<seq>" (e.g. "VR H1 #3").              |
-//+------------------------------------------------------------------+
-void CFobVisual::RenderEvent(const FobEvent &e)
-  {
-   int    s    = e.setup_tf;
-   color  clr  = FobLabelColor(e.label);
-   string cp   = ChainPrefix(e);
-   string base = cp + FobTfName(e.event_tf) + "_" + (string)e.swing_time + "_" + (string)e.bar_time;
-
-   //--- PBO = chain start (supersede -> fresh seq): register for FIFO prune
-   if(e.label == FOB_PBO && e.seq != m_lastSeq[s])
-     {
-      int k = ArraySize(m_chains);
-      ArrayResize(m_chains, k + 1);
-      m_chains[k] = cp;
-      PruneChains();
-      m_lastSeq[s] = e.seq;
-      m_lastT[s]   = 0;          // anchor set at the end of this call
-     }
-
-   //--- connector: link from the previous swingpoint in THIS same chain
-   if(InpFobConnect && m_lastSeq[s] == e.seq && m_lastT[s] > 0)
-      Line(base + "_ln", m_lastT[s], m_lastP[s], e.swing_time, e.level, InpFobConnClr);
-
-   //--- the dot + role tag, drawn AT THE BROKEN SWINGPOINT (like BRC raw breakouts)
-   Bullet(base + "_b", e.swing_time, e.level, clr, InpFobBulletSize);
-   Label (base + "_t", e.swing_time, e.level,
-          StringFormat("  %s %s #%d", FobLabelName(e.label), FobTfName(e.event_tf), e.seq), clr);
-
-   //--- advance the chain anchor to this swingpoint
-   m_lastSeq[s] = e.seq;
-   m_lastT[s]   = e.swing_time;
-   m_lastP[s]   = e.level;
-  }
-
-//+------------------------------------------------------------------+
-//| Rolling FIFO: keep only the InpFobMaxChains most-recent chains.   |
-//+------------------------------------------------------------------+
-void CFobVisual::PruneChains()
-  {
-   int over = ArraySize(m_chains) - InpFobMaxChains;
-   if(over <= 0)
-      return;
-   for(int i = 0; i < over; i++)
-      ObjectsDeleteAll(0, m_chains[i]);            // drop every object of the oldest chains
-   for(int i = 0; i + over < ArraySize(m_chains); i++)
-      m_chains[i] = m_chains[i + over];
-   ArrayResize(m_chains, ArraySize(m_chains) - over);
-  }
-
-//+------------------------------------------------------------------+
-//| Full rebuild for the current chart TF (on period switch).         |
-//| Events arrive in append (= chronological) order, so replaying     |
-//| them through RenderEvent rebuilds the chains + connectors exactly. |
+//| Full rebuild for the current chart TF.                            |
+//|  PASS 1 (all events): reconstruct per-setup state from the log —   |
+//|    latest seq, whether its VR locked, and the list of DEVELOPED     |
+//|    (VR-reached) seqs for THIS TF (E) and the TF above (E+1).        |
+//|  PASS 2 (this-TF breaks only): merge each physical break's roles    |
+//|    into one labelled dot, apply visibility, draw.                   |
 //+------------------------------------------------------------------+
 void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
   {
    ClearAll();
-   if(!InpVisualize || m_tf == "")
+   if(!InpVisualize || m_idx < 0)
       return;
+
+   int E   = m_idx;
+   int cap = (InpFobMaxChains > 0) ? InpFobMaxChains : 1;
+
+   //--- PASS 1 : reconstruct state -----------------------------------
+   int  curSeq[FOB_N_TF];
+   bool vrLocked[FOB_N_TF];
+   for(int i = 0; i < FOB_N_TF; i++) { curSeq[i] = -1; vrLocked[i] = false; }
+
+   int devE[];  int devECnt = 0;     // developed seqs on this TF (E)
+   int devP[];  int devPCnt = 0;     // developed seqs on the TF above (E+1)
+
    for(int i = 0; i < n; i++)
-      if(Active(ev[i]))
-         RenderEvent(ev[i]);
+     {
+      int s  = ev[i].setup_tf;
+      int sq = ev[i].seq;
+      if(ev[i].label == FOB_PBO)
+        { curSeq[s] = sq; vrLocked[s] = false; }
+      else if(ev[i].label == FOB_VR)
+        {
+         if(sq == curSeq[s])
+            vrLocked[s] = true;
+         if(s == E)     { ArrayResize(devE, devECnt + 1); devE[devECnt++] = sq; }
+         if(s == E + 1) { ArrayResize(devP, devPCnt + 1); devP[devPCnt++] = sq; }
+        }
+     }
+
+   //--- rolling-cap thresholds (keep the last `cap` developed setups) -
+   int keepE = (devECnt > cap) ? devE[devECnt - cap] : (devECnt > 0 ? devE[0] : 2147483647);
+   int keepP = (devPCnt > cap) ? devP[devPCnt - cap] : (devPCnt > 0 ? devP[0] : 2147483647);
+
+   //--- PASS 2 : draw this TF's breaks -------------------------------
+   int i = 0;
+   while(i < n)
+     {
+      //--- gather one physical break (its adjacent role events)
+      int j = i + 1;
+      while(j < n && SameBreak(ev[j], ev[i]))
+         j++;
+
+      if(ev[i].event_tf == E)
+        {
+         //--- split the group into own-PBO + optional parent role
+         int    pOwn = -1, ownDir = -1;
+         datetime swt = ev[i].swing_time;
+         double   lvl = ev[i].level;
+         bool   hasPar = false; int parLab = -1, parSeq = -1, parDir = -1;
+
+         for(int k = i; k < j; k++)
+           {
+            if(ev[k].label == FOB_PBO && ev[k].setup_tf == E)
+              { pOwn = ev[k].seq; ownDir = ev[k].dir; }
+            else if((ev[k].label == FOB_VR || ev[k].label == FOB_CF) && ev[k].setup_tf == E + 1)
+              { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; }
+           }
+
+         if(pOwn >= 0)
+           {
+            bool ownDeveloped  = SeqIn(devE, devECnt, pOwn);
+            bool latestPending = (pOwn == curSeq[E] && !vrLocked[E]);
+
+            bool anchorQual = latestPending || (ownDeveloped && pOwn >= keepE);
+            bool parentQual = hasPar && SeqIn(devP, devPCnt, parSeq) && parSeq >= keepP;
+
+            if(anchorQual || parentQual)
+              {
+               //--- thesis dirs: own = break dir; parent = VR->OPP, CF->same
+               int parThesis = hasPar ? ((parLab == FOB_VR) ? OppDir(parDir) : parDir) : -1;
+
+               string txt = StringFormat("  PBO %s #%d %s",
+                                         FobTfName(E), pOwn, FobDirName(ownDir));
+               if(!ownDeveloped && E > 0)            // consistent "still forming" badge
+                  txt += StringFormat(" · pending %s VR", FobTfName(E - 1));
+               if(hasPar)
+                  txt += StringFormat("  |  %s %s #%d %s",
+                                      FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
+
+               color clr = hasPar ? FobLabelColor(parLab) : FobLabelColor(FOB_PBO);
+
+               string base = FOB_VIS_PREFIX + (string)swt + "_" + (string)ev[i].bar_time;
+               Bullet(base + "_b", swt, lvl, clr);
+               Label (base + "_t", swt, lvl, txt, clr);
+              }
+           }
+        }
+      i = j;
+     }
   }
 
 #endif // FOB_VISUAL_MQH

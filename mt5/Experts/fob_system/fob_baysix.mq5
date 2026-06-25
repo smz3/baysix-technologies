@@ -86,7 +86,6 @@ int OnInit()
       g_setup[i].seq        = 0;
       g_setup[i].vr_locked  = false;
       g_setup[i].cf_done    = false;
-      g_setup[i].hrcf_done  = false;
      }
 
    string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);
@@ -206,16 +205,15 @@ void OnTick()
 
    FobSortPending(pend);
 
-   //--- classify each break in true chronological order; draw new events
+   //--- classify each break in true chronological order
    for(int q = 0; q < np; q++)
-     {
-      int before = ArraySize(g_events);
       FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
                        pend[q].level, pend[q].close, g_events);
-      int after = ArraySize(g_events);
-      for(int e = before; e < after; e++)
-         g_vis.OnEvent(g_events[e]);
-     }
+
+   //--- event-TF lens is a full PROJECTION of the log -> repaint it whole
+   //--- (cross-chart pending flips + role merging only work on a replay)
+   if(InpVisualize)
+      g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
   }
 
 //+------------------------------------------------------------------+

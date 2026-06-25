@@ -31,7 +31,7 @@
 #include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_DIR (BRC_BULL/BRC_BEAR)
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "0.2.1"
+#define FOB_VERSION "0.4.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -41,7 +41,7 @@ enum FOB_LABEL
   {
    FOB_PBO  = 0,   // Primary BreakOut  (the CMP breakout, the setup anchor)
    FOB_VR   = 1,   // Valid Retracement (first OPPOSITE break, one TF below)
-   FOB_HRCF = 2,   // High-Risk Confirmation (continuation, TF n-2 = skip one)
+   FOB_HRCF = 2,   // High-Risk Confirmation (continuation, TF n-2) — PARKED 2026-06-25, classifier no longer emits it
    FOB_CF   = 3    // Confirmation       (continuation, TF n-1 = adjacent below)
   };
 
@@ -76,7 +76,6 @@ struct FobSetupState
    bool      vr_locked;  // has the (one-and-only) VR been found?
    datetime  vr_time;    // bar_time of the locked VR
    bool      cf_done;    // first CF already labeled?
-   bool      hrcf_done;  // first HRCF already labeled?
   };
 
 //--- TF index -> name (the FOB ladder; hardcoded to FOB_N_TF=8)
@@ -96,6 +95,17 @@ string FobLabelName(const int label)
       case FOB_VR:   return "VR";
       case FOB_HRCF: return "HRCF";
       case FOB_CF:   return "CF";
+     }
+   return "?";
+  }
+
+//--- thesis direction word (the PBO's direction, stamped on every role of a chain)
+string FobDirName(const int dir)
+  {
+   switch(dir)
+     {
+      case BRC_BULL: return "BUY";
+      case BRC_BEAR: return "SELL";
      }
    return "?";
   }

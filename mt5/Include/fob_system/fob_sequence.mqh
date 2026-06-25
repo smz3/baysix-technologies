@@ -12,8 +12,8 @@
 //|  ORB unsorted-tick lesson is that ordering IS the edge guard.      |
 //|                                                                    |
 //|  Supersede rule (locked 2026-06-25): a fresh break on setup-TF n   |
-//|  (any direction) becomes the new PBO for n and resets its VR/CF/   |
-//|  HRCF progress. So a PBO is the "current price" read on its TF.    |
+//|  (any direction) becomes the new PBO for n and resets its VR/CF    |
+//|  progress. So a PBO is the "current price" read on its TF.         |
 //+------------------------------------------------------------------+
 #ifndef FOB_SEQUENCE_MQH
 #define FOB_SEQUENCE_MQH
@@ -65,7 +65,6 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
    st[etf].vr_locked = false;
    st[etf].vr_time   = 0;
    st[etf].cf_done   = false;
-   st[etf].hrcf_done = false;
    made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
 
    //--- ROLE 2: VR or CF for the setup TF one above (n = etf+1) ------
@@ -93,17 +92,10 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
         }
      }
 
-   //--- ROLE 3: HRCF for the setup TF two above (n = etf+2, skip one) -
-   int up2 = etf + 2;
-   if(up2 < n_tf && st[up2].active && st[up2].vr_locked)
-     {
-      if(dir == st[up2].pbo_dir && !st[up2].hrcf_done && bt > st[up2].vr_time)
-        {
-         st[up2].hrcf_done = true;
-         made += FobAppendEvent(ev, up2, st[up2].seq, FOB_HRCF, etf, dir, swt, bt, level, close);
-        }
-     }
-
+   //--- HRCF (setup TF two above) REMOVED 2026-06-25: it labelled the
+   //--- faster n-2 TF independently of CF, so HRCF could print AFTER CF
+   //--- (backwards vs its "early confirmation" intent). Parked for a
+   //--- future overlay edge-test; core is now PBO -> VR -> CF (2-TF pair).
    return made;
   }
 
