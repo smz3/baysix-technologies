@@ -132,6 +132,11 @@ int OnInit()
    //--- kill MT5's native trade-level bands (the red/gray shading) PERMANENTLY;
    //--- the deal arrows MT5 draws on its own are enough. Our sequence dots stay.
    ChartSetInteger(0, CHART_SHOW_TRADE_LEVELS, false);
+   //--- the red/gray bands are the Ask (red, upper) + Bid (gray, lower) price
+   //--- lines, not trade levels — kill them too (and the OHLC band) for focus.
+   ChartSetInteger(0, CHART_SHOW_ASK_LINE, false);
+   ChartSetInteger(0, CHART_SHOW_BID_LINE, false);
+   ChartSetInteger(0, CHART_SHOW_OHLC, false);
    g_vis.SyncChartTF();
    g_vis.ClearAll();
 
