@@ -16,16 +16,17 @@
 //|  and fed to the classifier in true chronological order — the same  |
 //|  ordering guard that kills the ORB unsorted-tick look-ahead.       |
 //|                                                                    |
-//|  Modules (fob_system + reused brc_system STRUCT primitives):       |
-//|    brc_types · brc_swings · brc_breakouts   (STRUCT-001 reuse)     |
+//|  Modules (FOB owns its full detection; only STRUCT-001 data types  |
+//|  are shared from brc_types):                                        |
+//|    fob_swings · fob_breakouts   (FOB's OWN detection, copied logic) |
 //|    fob_types · fob_sequence · fob_csv · fob_visual                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
 #property version   "0.21"          // keep in lockstep with FOB_VERSION (fob_types.mqh)
 #property strict
 
-#include <brc_system/brc_swings.mqh>      // STRUCT-001: BrcSwingRadius / BrcDetectSwingAt
-#include <brc_system/brc_breakouts.mqh>   // STRUCT-001: BrcDetectBreaksOnBar
+#include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
+#include <fob_system/fob_breakouts.mqh>   // FOB's OWN: FobDetectBreaksOnBar
 #include <fob_system/fob_types.mqh>
 #include <fob_system/fob_sequence.mqh>
 #include <fob_system/fob_csv.mqh>
@@ -75,7 +76,7 @@ CFobVisual    g_vis;
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   g_radius = BrcSwingRadius(InpSwingWindow);
+   g_radius = FobSwingRadius(InpSwingWindow);
    if(g_radius < 0)
       return INIT_PARAMETERS_INCORRECT;
 
@@ -137,7 +138,7 @@ void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double
    if(p >= 0)
      {
       BrcSwing sw;
-      if(BrcDetectSwingAt(s.bt, s.bc, n, p, g_radius, sw))
+      if(FobDetectSwingAt(s.bt, s.bc, n, p, g_radius, sw))
         {
          int si = ArraySize(s.swings);
          ArrayResize(s.swings, si + 1, 512);
@@ -149,7 +150,7 @@ void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double
      }
 
    //--- raw breaks on this bar (mutates swing.broken, appends events, compacts live_sw)
-   BrcDetectBreaksOnBar(s.swings, s.live_sw, i, bt, cl, g_radius, InpMaxAge, s.breaks);
+   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, cl, g_radius, InpMaxAge, s.breaks);
   }
 
 //+------------------------------------------------------------------+

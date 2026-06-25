@@ -31,7 +31,7 @@
 #include <brc_system/brc_types.mqh>   // BrcSwing, BrcBreak, BRC_DIR (BRC_BULL/BRC_BEAR)
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "0.8.0"
+#define FOB_VERSION "0.9.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
