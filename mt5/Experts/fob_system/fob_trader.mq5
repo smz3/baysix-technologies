@@ -35,7 +35,7 @@
 //|  newer cycle supersedes it (task: visual retention).               |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.16.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.16.2"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>

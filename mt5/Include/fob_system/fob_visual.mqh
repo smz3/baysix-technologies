@@ -426,7 +426,7 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
      {
       int parThesis = (parLab == FOB_VR) ? OppDir(parDir) : parDir;   // VR=opp, CF=same
       if(parLab == FOB_CF)
-         priId = StringFormat("%s %s #%d.%d %s", FobLabelName(parLab), FobTfName(E + 1), parSeq, parCf, FobDirName(parThesis));
+         priId = StringFormat("%s%d %s #%d %s", FobLabelName(parLab), parCf, FobTfName(E + 1), parSeq, FobDirName(parThesis));
       else
          priId = StringFormat("%s %s #%d %s",    FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
       priClr = FobLabelColor(parLab);
