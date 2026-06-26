@@ -26,7 +26,7 @@
 //|  eyeballed against the sequence. MT5 draws the trade arrows itself. |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.9.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.10.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -57,6 +57,15 @@ input double   InpAtrMult     = 1.0;          // [ATR] risk = InpAtrMult * ATR
 input double   InpRMultTP      = 1.0;         // TP = RR * risk (1.0 = 1:1, the coin-flip null)
 input double   InpFixedLot      = 0.01;       // min lot at $50
 input ulong    InpMagic         = 3001;       // FOB trader magic
+
+//--- forward-excursion STUDY mode (T-170). NO orders: per CF on InpSetupTf, anchor at the
+//--- market-on-CF fill (Ask long / Bid short, identical to FobOpenMarket) and track running
+//--- MFE/MAE/terminal on REAL TICKS until the NEXT CF on the setup TF (any cf_idx) — or a cap.
+//--- Excursion is measured in TRADEABLE terms (exit-side price: long->Bid, short->Ask) so
+//--- "did MAE reach 1*ATR before MFE" maps 1:1 onto result_id 12's ±1ATR barrier. ATR unit =
+//--- the SAME risk TF the ATR mode uses (default setup_tf-1 = M30). Decomposes direction vs timing.
+input bool     InpStudyMode    = false;       // [study] forward-excursion measurement (no trades)
+input int      InpStudyCapBars = 48;          // [study] force-close window after this many setup-TF bars
 
 //--- the 9 TFs (index order MUST match FobTfName in fob_types.mqh)
 ENUM_TIMEFRAMES g_periods[FOB_N_TF] =
@@ -102,6 +111,28 @@ TRADE_STATE g_state = TS_FLAT;
 long   g_pid[];      double g_rw[];
 int    g_setuptf[];  int    g_eventtf[];  int g_cfidx[];  int g_seq[];  int g_dir[];
 
+//--- STUDY mode (T-170): one open forward-excursion window at a time.
+bool     g_sw_open      = false;        // is a window currently being measured?
+datetime g_sw_cf_time   = 0;            // anchor CF bar_time
+datetime g_sw_open_ts   = 0;            // server time at anchor (cap clock)
+int      g_sw_dir       = 0;            // FOB_BULL | FOB_BEAR (continuation dir)
+int      g_sw_cfidx     = 0;            // anchor CF ordinal
+int      g_sw_seq       = 0;            // anchor PBO sequence
+double   g_sw_entry     = 0.0;          // entry-side fill (Ask long / Bid short) at anchor
+double   g_sw_atr       = 0.0;          // ATR (risk unit) at anchor, in price pts
+double   g_sw_mfe       = 0.0;          // running max favorable excursion (pts, exit-side)
+double   g_sw_mae       = 0.0;          // running max adverse  excursion (pts, exit-side)
+double   g_sw_term      = 0.0;          // last favorable excursion (-> terminal at close)
+datetime g_sw_mfe1_ts   = 0;            // first tick MFE reached 1*ATR (0 = not yet)
+datetime g_sw_mae1_ts   = 0;            // first tick MAE reached 1*ATR (0 = not yet)
+
+//--- study ledger rows (flushed on deinit)
+datetime sr_time[];  int sr_dir[];  int sr_cfidx[];  int sr_seq[];
+double   sr_entry[]; double sr_atr[]; double sr_mfe[]; double sr_mae[]; double sr_term[];
+int      sr_first[];   // 1 = MFE hit 1ATR first, 0 = MAE first, -1 = neither hit 1ATR
+double   sr_winbars[]; int sr_nextdir[];   // window length (setup-TF bars) + next CF dir (-1 = capped)
+int      g_sw_skipped = 0;             // CFs skipped because ATR not ready
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
@@ -123,7 +154,7 @@ int OnInit()
 
    //--- ATR risk handle (T1b): default the risk TF to the CF/event TF (setup_tf-1) unless overridden.
    if(g_atr_handle != INVALID_HANDLE) { IndicatorRelease(g_atr_handle); g_atr_handle = INVALID_HANDLE; }
-   if(InpRMode == FOB_R_ATR)
+   if(InpRMode == FOB_R_ATR || InpStudyMode)   // study mode always needs ATR as the risk unit
      {
       int atr_tf = (InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (InpSetupTf - 1);
       g_atr_handle = iATR(_Symbol, g_periods[atr_tf], InpAtrPeriod);
@@ -151,6 +182,15 @@ int OnInit()
    ArrayResize(g_pid, 0); ArrayResize(g_rw, 0); ArrayResize(g_setuptf, 0);
    ArrayResize(g_eventtf, 0); ArrayResize(g_cfidx, 0); ArrayResize(g_seq, 0); ArrayResize(g_dir, 0);
 
+   //--- study-mode state (HARD reset — globals survive reinit)
+   g_sw_open = false; g_sw_cf_time = 0; g_sw_open_ts = 0; g_sw_dir = 0;
+   g_sw_cfidx = 0; g_sw_seq = 0; g_sw_entry = 0.0; g_sw_atr = 0.0;
+   g_sw_mfe = 0.0; g_sw_mae = 0.0; g_sw_term = 0.0; g_sw_mfe1_ts = 0; g_sw_mae1_ts = 0;
+   g_sw_skipped = 0;
+   ArrayResize(sr_time, 0); ArrayResize(sr_dir, 0); ArrayResize(sr_cfidx, 0); ArrayResize(sr_seq, 0);
+   ArrayResize(sr_entry, 0); ArrayResize(sr_atr, 0); ArrayResize(sr_mfe, 0); ArrayResize(sr_mae, 0);
+   ArrayResize(sr_term, 0); ArrayResize(sr_first, 0); ArrayResize(sr_winbars, 0); ArrayResize(sr_nextdir, 0);
+
    //--- kill MT5's native trade-level bands (the red/gray shading) PERMANENTLY;
    //--- the deal arrows MT5 draws on its own are enough. Our sequence dots stay.
    ChartSetInteger(0, CHART_SHOW_TRADE_LEVELS, false);
@@ -170,6 +210,10 @@ int OnInit()
                FOB_VERSION, FobTfName(InpSetupTf), FobTfName(InpSetupTf - 1),
                FobTfName(g_ingest[0]), FobTfName(g_ingest[1]),
                InpCfIdxFilter, rdesc, InpRMultTP, InpFixedLot, InpMagic);
+   if(InpStudyMode)
+      PrintFormat("[FOB TRADER] *** STUDY MODE (T-170) *** NO ORDERS — per CF: MFE/MAE/terminal until next CF, cap=%d %s bars, ATR=%s",
+                  InpStudyCapBars, FobTfName(InpSetupTf),
+                  FobTfName((InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (InpSetupTf - 1)));
    return INIT_SUCCEEDED;
   }
 
@@ -358,6 +402,131 @@ void ActOnNewEvents()
    g_seen = n;   // every event up to n has now been considered
   }
 
+//==================================================================//
+//  STUDY MODE (T-170) — forward-excursion measurement, no orders.  //
+//==================================================================//
+
+//--- Append the just-closed window to the study ledger arrays.
+//--- next_dir: FOB_BULL/FOB_BEAR of the CF that ended it, or -1 if capped.
+void CloseStudyWindow(const int next_dir)
+  {
+   if(!g_sw_open) return;
+   int first;
+   if(g_sw_mfe1_ts > 0 && (g_sw_mae1_ts == 0 || g_sw_mfe1_ts <= g_sw_mae1_ts)) first = 1;  // MFE hit 1ATR first
+   else if(g_sw_mae1_ts > 0)                                                   first = 0;  // MAE hit 1ATR first
+   else                                                                        first = -1; // neither reached 1ATR
+   int bars = (int)((TimeCurrent() - g_sw_open_ts) / PeriodSeconds(g_periods[InpSetupTf]));
+
+   int m = ArraySize(sr_time);
+   ArrayResize(sr_time, m+1);   ArrayResize(sr_dir, m+1);    ArrayResize(sr_cfidx, m+1);
+   ArrayResize(sr_seq, m+1);    ArrayResize(sr_entry, m+1);  ArrayResize(sr_atr, m+1);
+   ArrayResize(sr_mfe, m+1);    ArrayResize(sr_mae, m+1);    ArrayResize(sr_term, m+1);
+   ArrayResize(sr_first, m+1);  ArrayResize(sr_winbars, m+1);ArrayResize(sr_nextdir, m+1);
+   sr_time[m]   = g_sw_cf_time; sr_dir[m]    = g_sw_dir;     sr_cfidx[m] = g_sw_cfidx;
+   sr_seq[m]    = g_sw_seq;     sr_entry[m]  = g_sw_entry;   sr_atr[m]   = g_sw_atr;
+   sr_mfe[m]    = g_sw_mfe;     sr_mae[m]    = g_sw_mae;     sr_term[m]  = g_sw_term;
+   sr_first[m]  = first;        sr_winbars[m]= bars;         sr_nextdir[m] = next_dir;
+
+   g_sw_open = false;
+  }
+
+//--- Update the open window with the CURRENT tick (real-ticks model). Captures
+//--- intrabar MFE/MAE in TRADEABLE terms (exit-side price) + first-touch of 1*ATR.
+void UpdateStudyWindow()
+  {
+   if(!g_sw_open) return;
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double exit_px = (g_sw_dir == FOB_BULL) ? bid : ask;            // exit a long at Bid, a short at Ask
+   double fav     = (g_sw_dir == FOB_BULL) ? (exit_px - g_sw_entry) : (g_sw_entry - exit_px);
+   if(fav  > g_sw_mfe) g_sw_mfe = fav;
+   if(-fav > g_sw_mae) g_sw_mae = -fav;
+   g_sw_term = fav;                                               // last seen -> terminal at close
+   if(g_sw_mfe1_ts == 0 && g_sw_mfe >= g_sw_atr) g_sw_mfe1_ts = TimeCurrent();
+   if(g_sw_mae1_ts == 0 && g_sw_mae >= g_sw_atr) g_sw_mae1_ts = TimeCurrent();
+   //--- cap: force-close after InpStudyCapBars setup-TF bars with no follow-up CF
+   if((long)(TimeCurrent() - g_sw_open_ts) >= (long)InpStudyCapBars * PeriodSeconds(g_periods[InpSetupTf]))
+      CloseStudyWindow(-1);
+  }
+
+//--- Open a fresh window anchored at this CF (market-on-CF fill, same side as FobOpenMarket).
+void OpenStudyWindow(const FobEvent &e)
+  {
+   double atr = FobAtr();
+   if(atr <= 0.0) { g_sw_skipped++; return; }                     // ATR not ready -> can't normalize, skip
+   g_sw_open    = true;
+   g_sw_cf_time = e.bar_time;
+   g_sw_open_ts = TimeCurrent();
+   g_sw_dir     = e.dir;
+   g_sw_cfidx   = e.cf_idx;
+   g_sw_seq     = e.seq;
+   g_sw_entry   = (e.dir == FOB_BULL) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
+                                      : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   g_sw_atr     = atr;
+   g_sw_mfe = 0.0; g_sw_mae = 0.0; g_sw_term = 0.0;
+   g_sw_mfe1_ts = 0; g_sw_mae1_ts = 0;
+   UpdateStudyWindow();                                           // seed t=0 (opening spread shows as initial MAE)
+  }
+
+//--- After classification: chain windows. Each new CF on the setup TF closes the
+//--- prior window (ended BY that CF) and opens its own ("until next CF").
+void StudyOnNewEvents()
+  {
+   int n = ArraySize(g_events);
+   for(int k = g_seen; k < n; k++)
+     {
+      FobEvent e = g_events[k];
+      if(e.label != FOB_CF)              continue;
+      if(e.setup_tf != InpSetupTf)       continue;
+      if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
+      if(g_sw_open) CloseStudyWindow(e.dir);   // prior window ends at this CF
+      OpenStudyWindow(e);
+     }
+   g_seen = n;
+  }
+
+//--- Flush the study ledger (CSV) — one row per measured CF window.
+void WriteStudyLedger()
+  {
+   if(g_sw_open) CloseStudyWindow(-1);          // close the final open window (capped at end-of-data)
+   int rows = ArraySize(sr_time);
+
+   string stamp = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
+   StringReplace(stamp, ".", ""); StringReplace(stamp, ":", ""); StringReplace(stamp, " ", "_");
+   string ver = FOB_VERSION; StringReplace(ver, ".", "");
+   string fname = StringFormat("FOB\\fob_excursion_%s_v%s_%s_cf%d_%s.csv",
+                               _Symbol, ver, FobTfName(InpSetupTf), InpCfIdxFilter, stamp);
+   int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
+   if(h == INVALID_HANDLE)
+     { PrintFormat("[FOB STUDY] ledger FileOpen failed (%d) for %s", GetLastError(), fname); return; }
+   FileWrite(h, "cf_time","direction","cf_idx","seq","entry_px","atr_pts",
+             "mfe_pts","mae_pts","terminal_pts","mfe_atr","mae_atr","terminal_atr",
+             "first_1atr","bars_to_next_cf","next_cf_dir");
+
+   int mfe_first = 0, mae_first = 0, neither = 0;
+   for(int i = 0; i < rows; i++)
+     {
+      double a = sr_atr[i];
+      string first_s = (sr_first[i] == 1) ? "MFE" : (sr_first[i] == 0) ? "MAE" : "NEITHER";
+      if(sr_first[i] == 1) mfe_first++; else if(sr_first[i] == 0) mae_first++; else neither++;
+      string nd_s = (sr_nextdir[i] == FOB_BULL) ? "BUY" : (sr_nextdir[i] == FOB_BEAR) ? "SELL" : "CAP";
+      FileWrite(h,
+                TimeToString(sr_time[i], TIME_DATE|TIME_SECONDS),
+                (sr_dir[i] == FOB_BULL ? "BUY" : "SELL"),
+                (string)sr_cfidx[i], (string)sr_seq[i],
+                DoubleToString(sr_entry[i], _Digits), DoubleToString(a, _Digits),
+                DoubleToString(sr_mfe[i], _Digits), DoubleToString(sr_mae[i], _Digits),
+                DoubleToString(sr_term[i], _Digits),
+                DoubleToString(a > 0.0 ? sr_mfe[i]/a  : 0.0, 4),
+                DoubleToString(a > 0.0 ? sr_mae[i]/a  : 0.0, 4),
+                DoubleToString(a > 0.0 ? sr_term[i]/a : 0.0, 4),
+                first_s, (string)sr_winbars[i], nd_s);
+     }
+   FileClose(h);
+   PrintFormat("[FOB STUDY] v%s ledger: %d windows (MFE-first %d / MAE-first %d / neither %d), %d skipped (ATR cold) -> Common\\Files\\%s",
+               FOB_VERSION, rows, mfe_first, mae_first, neither, g_sw_skipped, fname);
+  }
+
 //+------------------------------------------------------------------+
 //| Per tick: ingest newly closed bars (the 2 relevant TFs only),    |
 //| classify in order, reconcile position state, act on new CFs.     |
@@ -394,8 +563,8 @@ void OnTick()
         }
      }
 
-   //--- reconcile position state BEFORE classifying (bracket may have closed it)
-   if(g_state == TS_INPOS && !HasPosition())
+   //--- reconcile position state BEFORE classifying (bracket may have closed it) — trade mode only
+   if(!InpStudyMode && g_state == TS_INPOS && !HasPosition())
       g_state = TS_FLAT;
 
    int np = ArraySize(pend);
@@ -407,7 +576,13 @@ void OnTick()
                           pend[q].level, pend[q].close, g_events, InpPboNewestOnly);
      }
 
-   ActOnNewEvents();
+   if(InpStudyMode)
+     {
+      if(g_sw_open) UpdateStudyWindow();   // measure THIS tick before a new CF can replace the window
+      StudyOnNewEvents();                  // chain windows on any new setup-TF CF
+     }
+   else
+      ActOnNewEvents();
 
    //--- sequence dots (PBO/VR/CF) so fills can be eyeballed vs the sequence
    if(InpVisualize && np > 0)
@@ -551,7 +726,8 @@ void WriteTradeLedger()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   WriteTradeLedger();
+   if(InpStudyMode) WriteStudyLedger();
+   else             WriteTradeLedger();
    if(g_atr_handle != INVALID_HANDLE) { IndicatorRelease(g_atr_handle); g_atr_handle = INVALID_HANDLE; }
    g_vis.ClearAll();
   }
