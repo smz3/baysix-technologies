@@ -30,6 +30,9 @@ void FobComputeBreakZone(const FobSwing &swings[], const double &closes[], const
    b.zone.valid   = false;
    b.zone.p1_time = 0; b.zone.p1_price = 0;
    b.zone.p3_time = 0; b.zone.p3_price = 0; b.zone.l2 = 0.0;
+   //--- lifecycle defaults (recomputed at draw by FobReplayZoneLife)
+   b.zone.mid = 0.0; b.zone.alive = true; b.zone.invalidation_time = 0;
+   b.zone.t1_time = 0; b.zone.t2_time = 0; b.zone.t3_time = 0;
 
    bool     bull     = (b.dir == FOB_BULL);
    int      opp_type = bull ? FOB_SWING_LOW : FOB_SWING_HIGH;  // P1/P3 type (opposite the broken swing)
@@ -67,6 +70,7 @@ void FobComputeBreakZone(const FobSwing &swings[], const double &closes[], const
    b.zone.p1_time = swings[ip1].time; b.zone.p1_price = p1;
    b.zone.p3_time = swings[ip3].time; b.zone.p3_price = p3;
    b.zone.l2      = l2;
+   b.zone.mid     = (b.swing_price + l2) * 0.5;   // L1 = broken swing price
    b.zone.valid   = true;
   }
 

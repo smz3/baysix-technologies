@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.14.0"
+#define FOB_VERSION "1.14.2"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -73,6 +73,17 @@ struct FobZone
    datetime  p3_time;   double p3_price;   // pullback pivot (after it, before break)
    double    l2;                           // extreme(P1,P3) — far/invalidation edge
    bool      valid;                        // P1+P3 found AND freshness+gap-val pass
+   //--- LIFECYCLE (v1.14.1, task 178) — BRC-parity retest ladder + invalidation,
+   //--- recomputed STATELESSLY at draw time by FobReplayZoneLife (fob_lifecycle.mqh)
+   //--- walking the event-TF bars after the break. L1 (= owning event's `level`)
+   //--- and L2 frame the band; mid = (L1+L2)/2. T1=L1, T2=mid, T3=L2 first-touch
+   //--- (wick); invalidation = first CLOSE beyond L2 in the anti-break direction.
+   double    mid;                          // (L1+L2)/2 — 50% line + T2 retest level
+   datetime  t1_time;                      // first wick touch of L1 (0 = untouched)
+   datetime  t2_time;                      // first wick touch of mid
+   datetime  t3_time;                      // first wick touch of L2
+   bool      alive;                        // false once a close breaks beyond L2
+   datetime  invalidation_time;            // bar that killed the zone (0 if alive)
   };
 
 //--- one raw breakout (a close crossing an unbroken swing)

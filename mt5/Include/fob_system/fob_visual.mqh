@@ -46,14 +46,17 @@
 #property strict
 
 #include "fob_types.mqh"
+#include "fob_lifecycle.mqh"   // FobReplayZoneLife — BRC-parity T-touch + invalidation
 
 //--- master toggle (ACTIVE cycle only — no prior-cycle retention, task 157)
 input bool InpVisualize    = true;        // MASTER: draw chart objects
-//--- 3 independent layers under the master (task 158) — each gated alone
-input bool InpShowSequence = true;        // PBO/VR/CF classification dots
+//--- independent layers under the master (task 158/178) — each gated alone
+input bool InpShowSequence = true;        // PBO/VR/CF classification role dots
 input bool InpShowSwings   = false;        // FOB swing pivots (carets)
 input bool InpShowRawBreaks= false;        // FOB raw breakouts (dotted lines)
-input bool InpShowZones    = true;         // 4-pointer L1/L2 band + P1/P3 dots (v1.14.0 sanity-check)
+input bool InpShowZones    = true;         // L1/L2 band + mid + [Tn] labels (BRC-style, task 178)
+input bool InpShowPoints   = false;        // P1/P3 skeleton dots (split out of the zone, task 178)
+input bool InpShowRetests  = true;         // T1/T2/T3 retest touch dots (BRC-style, task 178)
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
@@ -65,6 +68,12 @@ const color InpFobClrSwingLow  = clrDodgerBlue;
 const color InpFobClrSwingDead = clrDimGray;
 const color InpFobClrBreakBull = clrLimeGreen;
 const color InpFobClrBreakBear = clrOrangeRed;
+//--- zone-layer colours (role colour from FobLabelColor stays the live hue;
+//--- these are the shared mid/retest/point accents). Dead zones are DROPPED,
+//--- not greyed — no dead colour (task: delete gray zones, 2026-06-26).
+const color InpFobClrMid       = clrGoldenrod;   // 50% line
+const color InpFobClrRetest    = clrWhite;       // T1/T2/T3 touch dots
+const color InpFobClrPoint     = clrSilver;      // P1/P3 skeleton dots
 
 #define FOB_VIS_PREFIX "FOB_"
 #define FOB_VIS_FONT   "Calibri Light"
@@ -83,6 +92,12 @@ private:
    void     Bullet(const string name, const datetime t, const double p, const color clr);
    void     Label (const string name, const datetime t, const double p, const string txt, const color clr,
                    const ENUM_ANCHOR_POINT anchor = ANCHOR_LEFT);
+   void     Line  (const string name, const datetime t0, const double p0, const datetime t1,
+                   const double p1, const color clr, const ENUM_LINE_STYLE st,
+                   const bool ray, const int width = 1);
+   //--- deepest retest reached, for the L2 label tag (mirror BRC TouchTag)
+   string   TouchTag(const FobZone &z) const
+              { return z.t3_time>0 ? "T3" : (z.t2_time>0 ? "T2" : (z.t1_time>0 ? "T1" : "T0")); }
 
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
@@ -112,9 +127,22 @@ public:
    //--- with the chart-TF's own g_tf[ChartIdx()] swing/break arrays.
    void     DrawStructure(const FobSwing &sw[], const FobBreak &br[]);
 
-   //--- draw the 4-pointer zone (L1/L2 band + P1/P3 markers) for every event
-   //--- that FIRED on this chart TF. Sanity-check layer (v1.14.0). Call AFTER
-   //--- RedrawCurrentTF (it ClearAll's first). Only valid zones are drawn.
+   //--- STAMP the retest ladder + alive/invalidation onto every event whose
+   //--- break fired on THIS chart TF, recomputed STATELESSLY from the chart-TF
+   //--- OHLC buffer (bt/bh/bl/bc, index 0 = OLDEST, length nb). Mutates `ev`
+   //--- (touch fields only; recomputed every redraw). Call BEFORE RedrawCurrentTF
+   //--- so the dot labels can carry the [Tn] tag, and before DrawZones so the
+   //--- geometry knows which zones are still alive.
+   void     UpdateZoneLifecycles(FobEvent &ev[], const int n,
+                                 const datetime &bt[], const double &bh[],
+                                 const double &bl[], const double &bc[], const int nb);
+
+   //--- draw zone GEOMETRY only (L1/L2 dashed lines + mid dotted + left vertical
+   //--- connector + optional P1/P3 + retest dots) for every active-cycle, ALIVE,
+   //--- valid zone that fired on this chart TF. NO text labels — the role text +
+   //--- [Tn] live on the sequence dot (RedrawCurrentTF). Touches must already be
+   //--- stamped (UpdateZoneLifecycles). Dual-purpose breaks share one band (label-
+   //--- less stem -> idempotent). Call AFTER RedrawCurrentTF (it ClearAll's first).
    void     DrawZones(const FobEvent &ev[], const int n);
   };
 
@@ -170,6 +198,24 @@ void CFobVisual::Label(const string name, const datetime t, const double p, cons
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
+  }
+
+//--- trend-line segment (zone L1/L2/mid + vertical connector); BACK so it sits
+//--- behind candles. ray => extends right (alive zones); else a fixed segment.
+void CFobVisual::Line(const string name, const datetime t0, const double p0, const datetime t1,
+                      const double p1, const color clr, const ENUM_LINE_STYLE st,
+                      const bool ray, const int width)
+  {
+   ObjectCreate(0, name, OBJ_TREND, 0, t0, p0, t1, p1);
+   ObjectMove(0, name, 0, t0, p0);
+   ObjectMove(0, name, 1, t1, p1);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, st);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, ray);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, name, OBJPROP_BACK, true);
   }
 
 //+------------------------------------------------------------------+
@@ -248,6 +294,12 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n,
          bool ownActive  = (pOwn >= 0 && pOwn == curSeq[E]);
          bool anchorQual = (pOwn >= 0 && (ownActive || IsLiveCycle(E, pOwn, liveTf, liveSeq, nLive)));
 
+         //--- retest tag for THIS physical break's zone (stamped by
+         //--- UpdateZoneLifecycles). Shared by both fanned roles — one break =
+         //--- one zone = one touch ladder. Shown on EVERY role so each FOB
+         //--- sequence step carries its own [Tn] (entry-strategy data, 2026-06-26).
+         string tnTag = ev[i].zone.valid ? (" [" + TouchTag(ev[i].zone) + "]") : "";
+
          string parTxt = "";  color parClr = clrNONE;
          string ownTxt = "";  color ownClr = clrNONE;
 
@@ -263,6 +315,7 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n,
             else
                parTxt = StringFormat("  %s %s #%d %s",
                                      FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
+            parTxt += tnTag;
             parClr = FobLabelColor(parLab);
            }
 
@@ -287,6 +340,7 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n,
               }
             else if(E > 0)
                ownTxt += " · held (open trade)";
+            ownTxt += tnTag;
             ownTxt += "  ";
             ownClr = FobLabelColor(FOB_PBO);
            }
@@ -357,14 +411,40 @@ void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
   }
 
 //+------------------------------------------------------------------+
-//| 4-POINTER ZONE layer (v1.14.0) — sanity-check picture.            |
-//|  For every event that fired on THIS chart TF with a valid zone:   |
-//|    • a dotted L1..L2 rectangle from P2 (the broken swing) to the   |
-//|      break bar — the structural band the stop would sit beyond.    |
-//|    • P1 (origin) and P3 (pullback) pivot markers, labelled.        |
-//|    • an "L2" tag at the far/invalidation edge.                     |
-//|  Colour follows the event role (PBO blue / VR yellow / CF green).  |
-//|  Invalid zones are NOT drawn (foolproof: no zone -> no trade).     |
+//| Stamp the retest ladder + alive/invalidation onto every event      |
+//| whose break fired on THIS chart TF (data only, no drawing). Run    |
+//| BEFORE RedrawCurrentTF (so dot labels carry [Tn]) and DrawZones.   |
+//| Dual-purpose breaks emit two events with identical geometry — both  |
+//| get stamped (cheap), keeping label + geometry consistent.          |
+//+------------------------------------------------------------------+
+void CFobVisual::UpdateZoneLifecycles(FobEvent &ev[], const int n,
+                                      const datetime &bt[], const double &bh[],
+                                      const double &bl[], const double &bc[], const int nb)
+  {
+   if(m_idx < 0)
+      return;
+   int E = m_idx;
+   for(int i = 0; i < n; i++)
+      if(ev[i].event_tf == E)
+         FobReplayZoneLife(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, bc, nb);
+  }
+
+//+------------------------------------------------------------------+
+//| ZONE GEOMETRY layer (task 178) — lines only, NO text (the role     |
+//| label + [Tn] live on the sequence dot, RedrawCurrentTF). For every |
+//| active-cycle, ALIVE, valid zone fired on this chart TF:            |
+//|   • L1 + L2 dashed lines from P2 (the broken swing) running right   |
+//|     as a RAY (alive zones only — dead zones are DROPPED, not greyed)|
+//|   • mid dotted 50% line + a left vertical connector L1<->L2.        |
+//|   • InpShowPoints  -> P1 / P3 skeleton dots.                       |
+//|   • InpShowRetests -> T1@L1 / T2@mid / T3@L2 touch dots.           |
+//| Colour follows the event role (PBO blue / VR yellow / CF green).   |
+//| DUAL-PURPOSE: the two events of one physical break carry identical  |
+//| geometry; the object stem omits the role -> they collapse to ONE    |
+//| idempotent band (last write wins, = the parent role, matching the   |
+//| dot's bullet colour). Touches must be pre-stamped                  |
+//| (UpdateZoneLifecycles). Invalid zones are NEVER drawn (no zone ->   |
+//| no trade).                                                         |
 //+------------------------------------------------------------------+
 void CFobVisual::DrawZones(const FobEvent &ev[], const int n)
   {
@@ -380,38 +460,48 @@ void CFobVisual::DrawZones(const FobEvent &ev[], const int n)
       if(ev[z].label == FOB_PBO)
          curSeq[ev[z].setup_tf] = ev[z].seq;
 
+   datetime tR0 = TimeCurrent() + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) * 50;
+
    for(int i = 0; i < n; i++)
      {
       if(ev[i].event_tf != E)                  continue;
       if(!ev[i].zone.valid)                    continue;
+      if(!ev[i].zone.alive)                    continue;   // dead -> dropped (no gray)
       if(ev[i].seq != curSeq[ev[i].setup_tf])  continue;   // active cycle only
 
       color  c    = FobLabelColor(ev[i].label);
-      double l1   = ev[i].level;        // P2 price = entry/trigger edge
+      double l1   = ev[i].level;        // P2 price = trigger/entry edge
       double l2   = ev[i].zone.l2;      // extreme(P1,P3) = far/invalidation edge
-      string stem = FOB_VIS_PREFIX + "Z_" + (string)ev[i].swing_time + "_" +
-                    (string)ev[i].bar_time + "_" + FobLabelName(ev[i].label);
+      double mid  = ev[i].zone.mid;
+      //--- label-LESS stem -> dual-purpose roles collapse to one shared band.
+      string stem = FOB_VIS_PREFIX + "Z_" + (string)ev[i].swing_time + "_" + (string)ev[i].bar_time;
 
-      //--- L1..L2 band (dotted outline, behind candles)
-      string box = stem + "_box";
-      ObjectCreate(0, box, OBJ_RECTANGLE, 0, ev[i].swing_time, l1, ev[i].bar_time, l2);
-      ObjectSetInteger(0, box, OBJPROP_COLOR, c);
-      ObjectSetInteger(0, box, OBJPROP_STYLE, STYLE_DOT);
-      ObjectSetInteger(0, box, OBJPROP_WIDTH, 1);
-      ObjectSetInteger(0, box, OBJPROP_FILL, false);
-      ObjectSetInteger(0, box, OBJPROP_BACK, true);
-      ObjectSetInteger(0, box, OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, box, OBJPROP_HIDDEN, true);
+      datetime t0 = ev[i].swing_time;   // L1 origin (P2), band runs right as a ray
+      datetime tR = tR0;
+      if(tR <= t0) tR = t0 + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod());
 
-      //--- P1 / P3 pivot markers
-      Bullet(stem + "_p1", ev[i].zone.p1_time, ev[i].zone.p1_price, c);
-      Label (stem + "_p1t", ev[i].zone.p1_time, ev[i].zone.p1_price, "p1  ", c, ANCHOR_RIGHT);
-      Bullet(stem + "_p3", ev[i].zone.p3_time, ev[i].zone.p3_price, c);
-      Label (stem + "_p3t", ev[i].zone.p3_time, ev[i].zone.p3_price, "p3  ", c, ANCHOR_RIGHT);
+      //--- L1 / L2 dashed lines + mid dotted + left vertical connector
+      Line(stem + "_L1",  t0, l1,  tR, l1,  c, STYLE_DASH, true, 2);
+      Line(stem + "_L2",  t0, l2,  tR, l2,  c, STYLE_DASH, true, 2);
+      Line(stem + "_mid", t0, mid, tR, mid, InpFobClrMid, STYLE_DOT, true, 1);
+      Line(stem + "_LV",  t0, l1,  t0, l2,  c, STYLE_SOLID, false, 1);
 
-      //--- L2 tag at the invalidation edge
-      Label (stem + "_l2t", ev[i].bar_time, l2,
-             "  L2 " + DoubleToString(l2, _Digits), c, ANCHOR_LEFT);
+      //--- P1 / P3 skeleton dots (own toggle)
+      if(InpShowPoints)
+        {
+         Bullet(stem + "_p1", ev[i].zone.p1_time, ev[i].zone.p1_price, InpFobClrPoint);
+         Label (stem + "_p1t", ev[i].zone.p1_time, ev[i].zone.p1_price, "p1  ", InpFobClrPoint, ANCHOR_RIGHT);
+         Bullet(stem + "_p3", ev[i].zone.p3_time, ev[i].zone.p3_price, InpFobClrPoint);
+         Label (stem + "_p3t", ev[i].zone.p3_time, ev[i].zone.p3_price, "p3  ", InpFobClrPoint, ANCHOR_RIGHT);
+        }
+
+      //--- retest touch dots (timing the label can't show): T1@L1, T2@mid, T3@L2
+      if(InpShowRetests)
+        {
+         if(ev[i].zone.t1_time > 0) Bullet(stem + "_t1", ev[i].zone.t1_time, l1,  InpFobClrRetest);
+         if(ev[i].zone.t2_time > 0) Bullet(stem + "_t2", ev[i].zone.t2_time, mid, InpFobClrRetest);
+         if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  InpFobClrRetest);
+        }
      }
   }
 

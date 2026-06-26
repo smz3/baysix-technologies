@@ -239,11 +239,16 @@ void OnTick()
    //--- (cross-chart pending flips + role merging only work on a replay)
    if(InpVisualize)
      {
-      g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
       int ci = g_vis.ChartIdx();
+      if(ci >= 0)                                                  // stamp T-touches FIRST (dot [Tn] + zone alive)
+         g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
+                                    g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
+      g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));        // bullets + role labels w/ [Tn]
       if(ci >= 0)
+        {
          g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks
-      g_vis.DrawZones(g_events, ArraySize(g_events));             // 4-pointer L1/L2 bands
+         g_vis.DrawZones(g_events, ArraySize(g_events));          // zone geometry (lines/connector/dots)
+        }
      }
   }
 
@@ -255,11 +260,16 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    if(!InpVisualize || id != CHARTEVENT_CHART_CHANGE)
       return;
    g_vis.SyncChartTF();
-   g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));
    int ci = g_vis.ChartIdx();
+   if(ci >= 0)                                                  // stamp T-touches FIRST (dot [Tn] + zone alive)
+      g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
+                                 g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
+   g_vis.RedrawCurrentTF(g_events, ArraySize(g_events));        // bullets + role labels w/ [Tn]
    if(ci >= 0)
+     {
       g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks
-   g_vis.DrawZones(g_events, ArraySize(g_events));             // 4-pointer L1/L2 bands
+      g_vis.DrawZones(g_events, ArraySize(g_events));          // zone geometry (lines/connector/dots)
+     }
   }
 
 //+------------------------------------------------------------------+
