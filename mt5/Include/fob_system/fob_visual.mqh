@@ -66,7 +66,7 @@ const color InpFobClrBreakBull = clrLimeGreen;
 const color InpFobClrBreakBear = clrOrangeRed;
 //--- zone accents (the band/label hue is the ROLE colour from FobLabelColor;
 //--- these are the shared mid/retest/point accents). Dead zones are DROPPED.
-const color InpFobClrMid       = clrGoldenrod;   // 50% line
+const color InpFobClrMid       = clrDimGray;   // 50% line
 const color InpFobClrRetest    = clrWhite;       // T1/T2/T3 touch dots
 const color InpFobClrPoint     = clrSilver;      // P1/P3 skeleton dots
 
@@ -154,6 +154,13 @@ public:
    void     UpdateZoneLifecycles(FobEvent &ev[], const int n,
                                  const datetime &bt[], const double &bh[],
                                  const double &bl[], const double &bc[], const int nb);
+
+   //--- LIVE intrabar touch: stamp T1/T2/T3 off the chart-TF FORMING bar so the
+   //--- [Tn] label flips the instant a wick crosses, not only at bar close.
+   //--- Touch-only (invalidation stays close-only). Call AFTER UpdateZoneLifecycles
+   //--- and BEFORE DrawZones. Live-chart nicety — caller MUST tester-guard it.
+   void     LiveTouchForming(FobEvent &ev[], const int n,
+                             const datetime fbt, const double fbh, const double fbl);
 
    //--- UNIFIED zone layer: ClearAll + draw every active-cycle, ALIVE, VALID band
    //--- (lines + edge labels + optional P1/P3 + retest dots) for the chart TF.
@@ -297,6 +304,23 @@ void CFobVisual::UpdateZoneLifecycles(FobEvent &ev[], const int n,
    for(int i = 0; i < n; i++)
       if(ev[i].event_tf == E)
          FobReplayZoneLife(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, bc, nb);
+  }
+
+//+------------------------------------------------------------------+
+//| LIVE intrabar touch pass — stamp T1/T2/T3 off the chart-TF FORMING |
+//| bar (mirror of BRC's OnTick forming-bar pass). Runs AFTER the      |
+//| closed-bar UpdateZoneLifecycles (which resets the ladder), so it    |
+//| only fills a still-empty Tn from the live wick. Touch-only.        |
+//+------------------------------------------------------------------+
+void CFobVisual::LiveTouchForming(FobEvent &ev[], const int n,
+                                  const datetime fbt, const double fbh, const double fbl)
+  {
+   if(m_idx < 0)
+      return;
+   int E = m_idx;
+   for(int i = 0; i < n; i++)
+      if(ev[i].event_tf == E)
+         FobLiveTouch(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, fbt, fbh, fbl);
   }
 
 //+------------------------------------------------------------------+

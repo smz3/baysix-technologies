@@ -21,7 +21,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.15.2"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.16.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
@@ -224,25 +224,36 @@ void OnTick()
         }
      }
 
-   int np = ArraySize(pend);
-   if(np == 0)
-      return;
+   int  np   = ArraySize(pend);
+   bool live = !MQLInfoInteger(MQL_TESTER);
+   if(np == 0 && !live)
+      return;                       // tester: no new event -> skip the repaint (fast)
 
-   FobSortPending(pend);
+   if(np > 0)
+     {
+      FobSortPending(pend);
+      //--- classify each break in true chronological order
+      for(int q = 0; q < np; q++)
+         FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
+                          pend[q].level, pend[q].close, pend[q].zone, g_events, InpPboNewestOnly);
+     }
 
-   //--- classify each break in true chronological order
-   for(int q = 0; q < np; q++)
-      FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
-                       pend[q].level, pend[q].close, pend[q].zone, g_events, InpPboNewestOnly);
-
-   //--- event-TF lens is a full PROJECTION of the log -> repaint it whole
-   //--- (cross-chart pending flips + role merging only work on a replay)
+   //--- event-TF lens is a full PROJECTION of the log -> repaint it whole (cross-chart
+   //--- pending flips + role merging only work on a replay). LIVE: every tick so the
+   //--- forming-bar touch shows; TESTER: only on a new event (np>0), no forming pass.
    if(InpVisualize)
      {
       int ci = g_vis.ChartIdx();
       if(ci >= 0)                                                  // stamp T-touches FIRST (zone [Tn] + alive)
+        {
          g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
                                     g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
+         //--- LIVE intrabar touch off the FORMING bar so [Tn] flips on the wick, not
+         //--- only at close. Touch-only; SKIP in tester (per-tick quadratic blow-up).
+         MqlRates f[];
+         if(live && CopyRates(_Symbol, g_periods[ci], 0, 1, f) == 1)
+            g_vis.LiveTouchForming(g_events, ArraySize(g_events), f[0].time, f[0].high, f[0].low);
+        }
       g_vis.DrawZones(g_events, ArraySize(g_events));              // ClearAll + zone bands + edge labels
       if(ci >= 0)
          g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks on top

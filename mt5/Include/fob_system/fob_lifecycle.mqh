@@ -72,4 +72,33 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
      }
   }
 
+//+------------------------------------------------------------------+
+//| LIVE intrabar touch off the still-FORMING bar (mirror of           |
+//| BrcLiveTouch). Stamps the FIRST wick cross of each ladder level so  |
+//| the [Tn] label flips the instant price touches, not only at bar     |
+//| close. TOUCH-ONLY — invalidation stays close-only on CLOSED bars    |
+//| (don't let a forming-bar close kill a zone mid-bar). Idempotent:    |
+//| only fills a still-empty Tn, on a bar STRICTLY AFTER the break.     |
+//| Live-chart nicety; the CALLER must tester-guard it (per-tick        |
+//| quadratic blow-up under a real-ticks model).                       |
+//+------------------------------------------------------------------+
+bool FobLiveTouch(FobZone &z, const int dir, const double l1, const datetime brk,
+                  const datetime bt, const double h, const double l)
+  {
+   if(!z.valid || !z.alive || bt <= brk)
+      return false;
+
+   bool   bull  = (dir == FOB_BULL);
+   double probe = bull ? l : h;                   // bull retests DOWN (low), bear UP (high)
+   double mid   = z.mid;
+   double l2    = z.l2;
+   bool   hit   = false;
+
+   if(z.t1_time == 0 && (bull ? (probe <= l1)  : (probe >= l1)))  { z.t1_time = bt; hit = true; }
+   if(z.t2_time == 0 && (bull ? (probe <= mid) : (probe >= mid))) { z.t2_time = bt; hit = true; }
+   if(z.t3_time == 0 && (bull ? (probe <= l2)  : (probe >= l2)))  { z.t3_time = bt; hit = true; }
+
+   return hit;
+  }
+
 #endif // FOB_LIFECYCLE_MQH

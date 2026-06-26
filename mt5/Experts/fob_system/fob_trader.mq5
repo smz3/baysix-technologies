@@ -35,7 +35,7 @@
 //|  newer cycle supersedes it (task: visual retention).               |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.15.2"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.16.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -544,13 +544,22 @@ void OnTick()
    //--- unified zone layer (PBO/VR/CF bands + edge labels) so fills can be
    //--- eyeballed vs the sequence. Live cycles (open positions) are retained
    //--- even after supersession.
-   if(InpVisualize && np > 0)
+   //--- LIVE: repaint EVERY tick so the forming-bar touch shows the instant a wick
+   //--- crosses. TESTER: only when a new event classified (np>0) — keeps the
+   //--- visual-mode replay fast and the forming-bar pass off (per-tick quadratic).
+   bool live = !MQLInfoInteger(MQL_TESTER);
+   if(InpVisualize && (np > 0 || live))
      {
       CollectLiveCycles();
       int ci = g_vis.ChartIdx();
       if(ci >= 0)                                          // stamp T-touches FIRST (zone [Tn] + alive)
+        {
          g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
                                     g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
+         MqlRates f[];
+         if(live && CopyRates(_Symbol, g_periods[ci], 0, 1, f) == 1)
+            g_vis.LiveTouchForming(g_events, ArraySize(g_events), f[0].time, f[0].high, f[0].low);
+        }
       g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf));
       if(ci >= 0)
          g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
