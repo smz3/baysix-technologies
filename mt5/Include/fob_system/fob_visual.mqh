@@ -411,7 +411,7 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    Label(stem + "_L1p", t0, l1, l1Txt, priClr, aL1);
    Label(stem + "_L2p", t0, l2, l2Txt, priClr, aL2);
 
-   //--- SECONDARY (own PBO local view): lowercase, demoted, only when a parent is
+   //--- SECONDARY (own PBO local view): CAPS, demoted, only when a parent is
    //--- primary AND the own PBO is itself active/held. Kept in its OWN blue object so
    //--- the role colour survives; STACKED one row OUTSIDE the L1 primary (above for a
    //--- bull top-edge, below for a bear bottom-edge), same x. Both PBO bits — the id
@@ -419,10 +419,10 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    if(parentQual && anchorQual)
      {
       color  subClr = FobLabelColor(FOB_PBO);
-      string sub    = "·  pbo " + FobTfName(E) + " #" + (string)pOwn;
+      string sub    = "pbo " + FobTfName(E) + " #" + (string)pOwn;
       string badge  = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);  // already " · ..."
-      if(StringLen(badge) > 0) sub += " " + badge;
-      StringToLower(sub);
+      if(StringLen(badge) > 0) sub += badge;
+      StringToUpper(sub);
       double l1sP = l1 + (l1Top ? 1.0 : -1.0) * VertOffset(1);
       Label(stem + "_L1s", t0, l1sP, sub, subClr, aL1);
      }
