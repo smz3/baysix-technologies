@@ -50,6 +50,12 @@
           },
           {
             "type": "command",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/prune_handover_archive.py\" --days 2 --apply",
+            "timeout": 5000,
+            "once": true
+          },
+          {
+            "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/session_brief.py\"",
             "timeout": 5000,
             "once": true
