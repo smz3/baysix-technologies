@@ -86,6 +86,9 @@ private:
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
    int      OppDir(const int d) const { return d == FOB_BULL ? FOB_BEAR : FOB_BULL; }
+   //--- (setup_tf, seq) cycle has a LIVE open position -> keep its dots past supersession
+   bool     IsLiveCycle(const int tf, const int seq, const int &ltf[], const int &lseq[], const int nl) const
+              { for(int i = 0; i < nl; i++) if(ltf[i] == tf && lseq[i] == seq) return true; return false; }
 
 public:
             CFobVisual(void) { m_tf = ""; m_idx = -1; }
@@ -94,8 +97,14 @@ public:
    int      ChartIdx() const { return m_idx; }   // chart TF ladder index (-1 if unmapped)
    void     ClearAll() { ObjectsDeleteAll(0, FOB_VIS_PREFIX); }
 
-   //--- full rebuild of the current chart's lens from the event log
-   void     RedrawCurrentTF(const FobEvent &ev[], const int n);
+   //--- full rebuild of the current chart's lens from the event log.
+   //--- liveTf/liveSeq = (setup_tf, seq) cycles with an OPEN position: drawn
+   //--- even when superseded, so a live trade keeps its sequence dots.
+   void     RedrawCurrentTF(const FobEvent &ev[], const int n,
+                            const int &liveTf[], const int &liveSeq[], const int nLive);
+   //--- 2-arg overload for the emitter (read-only, no positions -> no live cycles)
+   void     RedrawCurrentTF(const FobEvent &ev[], const int n)
+              { int empty[]; RedrawCurrentTF(ev, n, empty, empty, 0); }
 
    //--- draw the chart TF's OWN detected structure (swing pivots + raw
    //--- breakouts). Call AFTER RedrawCurrentTF (which ClearAll's first),
@@ -164,7 +173,8 @@ void CFobVisual::Label(const string name, const datetime t, const double p, cons
 //|  PASS 2 (this-TF breaks only): merge each physical break's roles    |
 //|    into one labelled dot, keep only the ACTIVE cycle, draw.         |
 //+------------------------------------------------------------------+
-void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
+void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n,
+                                 const int &liveTf[], const int &liveSeq[], const int nLive)
   {
    ClearAll();
    if(!InpVisualize || m_idx < 0)
@@ -226,8 +236,11 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
          //--- stacking. Bullet colour follows the parent (the live higher-TF
          //--- story) when present, else the own PBO. (M1 has no own PBO — task
          //--- 1 — so the M1 chart shows only the parent dot.)
-         bool parentQual = hasPar && (parSeq == curSeq[E + 1]);
-         bool anchorQual = (pOwn >= 0 && pOwn == curSeq[E]);
+         //--- active cycle OR a superseded cycle that still has a LIVE position
+         //--- (task: visual retention — don't wipe a cycle whose trade is open).
+         bool parentQual = hasPar && (parSeq == curSeq[E + 1] || IsLiveCycle(E + 1, parSeq, liveTf, liveSeq, nLive));
+         bool ownActive  = (pOwn >= 0 && pOwn == curSeq[E]);
+         bool anchorQual = (pOwn >= 0 && (ownActive || IsLiveCycle(E, pOwn, liveTf, liveSeq, nLive)));
 
          string parTxt = "";  color parClr = clrNONE;
          string ownTxt = "";  color ownClr = clrNONE;
@@ -255,7 +268,9 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
             //--- lifecycle badge (task 160): the dot tells its cycle phase at a
             //--- glance — pending VR -> pending CF (VR locked) -> live CF1/2/...
             //--- advancing with cf_idx. {E-1} = the TF below that supplies VR/CF.
-            if(E > 0)
+            //--- ONLY valid for the ACTIVE cycle (vrLocked/cfCount track it); a
+            //--- retained-but-superseded live cycle gets a frozen "held" badge.
+            if(E > 0 && ownActive)
               {
                if(!vrLocked[E])
                   ownTxt += StringFormat(" · pending %s VR", FobTfName(E - 1));
@@ -264,6 +279,8 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n)
                else
                   ownTxt += StringFormat(" · live %s CF%d", FobTfName(E - 1), cfCount[E]);
               }
+            else if(E > 0)
+               ownTxt += " · held (open trade)";
             ownTxt += "  ";
             ownClr = FobLabelColor(FOB_PBO);
            }
