@@ -108,6 +108,20 @@ private:
               { return fanLeft ? (edgeTop ? ANCHOR_RIGHT_LOWER : ANCHOR_RIGHT_UPPER)
                                : (edgeTop ? ANCHOR_LEFT_LOWER  : ANCHOR_LEFT_UPPER); }
 
+   //--- time delta that visually equals `txt`'s rendered width, so a trailing
+   //--- label starts where `txt` ends (all text fans RIGHT). Zoom-stable: recomputed
+   //--- every redraw from the chart's px<->bar scale (OnChartEvent repaints).
+   datetime RightOffset(const string txt) const
+     {
+      long   wpx = ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+      long   vis = ChartGetInteger(0, CHART_VISIBLE_BARS);
+      int    sec = (int)PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod());
+      double px  = (double)StringLen(txt) * (double)InpFobLabelSize * 0.62;  // Calibri avg glyph
+      if(wpx <= 0 || vis <= 0)
+         return (datetime)(StringLen(txt) * (sec / 2));                      // fallback
+      return (datetime)(px * ((double)(vis * sec) / (double)wpx));
+     }
+
    //--- own-PBO lifecycle phase badge ("" for M1 / no own PBO).
    string   LifecycleBadge(const int E, const bool ownActive,
                            const bool vrLocked, const int cfCount) const;
@@ -385,22 +399,26 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    Line(stem + "_mid", t0, mid, tR, mid, InpFobClrMid, STYLE_DOT, true, 1);
    Line(stem + "_LV",  t0, l1,  t0, l2,  priClr, STYLE_SOLID, false, 1);
 
-   //--- PRIMARY edge labels (CAPS), fanned LEFT of the origin into chart history
-   Label(stem + "_L1p", t0, l1, "L1  " + priId + "  " + DoubleToString(l1, _Digits),
-         priClr, EdgeAnchor(l1Top, true));
-   Label(stem + "_L2p", t0, l2, "L2  " + priId + l2extra + tn + "  " + DoubleToString(l2, _Digits),
-         priClr, EdgeAnchor(l2Top, true));
+   //--- PRIMARY edge labels (CAPS), anchored LEFT -> render RIGHT into the empty
+   //--- ray area (off the candles). Anchor reused by the trailing secondary.
+   ENUM_ANCHOR_POINT aL1 = EdgeAnchor(l1Top, false);
+   ENUM_ANCHOR_POINT aL2 = EdgeAnchor(l2Top, false);
+   string l1Txt = "L1  " + priId + "  " + DoubleToString(l1, _Digits);
+   string l2Txt = "L2  " + priId + l2extra + tn + "  " + DoubleToString(l2, _Digits);
+   Label(stem + "_L1p", t0, l1, l1Txt, priClr, aL1);
+   Label(stem + "_L2p", t0, l2, l2Txt, priClr, aL2);
 
    //--- SECONDARY fan: own PBO local view (lowercase, demoted), only when a parent
-   //--- is primary AND the own PBO is itself active/held. Fans RIGHT of the origin.
+   //--- is primary AND the own PBO is itself active/held. Trails the primary on the
+   //--- SAME row, starting where it ends (RightOffset) so both flow RIGHT, 2 colours.
    if(parentQual && anchorQual)
      {
       color  subClr = FobLabelColor(FOB_PBO);
-      string sub1   = "pbo " + FobTfName(E) + " #" + (string)pOwn;  StringToLower(sub1);
-      Label(stem + "_L1s", t0, l1, "  " + sub1, subClr, EdgeAnchor(l1Top, false));
+      string sub1   = "  ·  pbo " + FobTfName(E) + " #" + (string)pOwn;  StringToLower(sub1);
+      Label(stem + "_L1s", t0 + RightOffset(l1Txt), l1, sub1, subClr, aL1);
       string sub2 = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);
       if(StringLen(sub2) > 0)
-        { StringToLower(sub2); Label(stem + "_L2s", t0, l2, " " + sub2, subClr, EdgeAnchor(l2Top, false)); }
+        { sub2 = "  " + sub2; StringToLower(sub2); Label(stem + "_L2s", t0 + RightOffset(l2Txt), l2, sub2, subClr, aL2); }
      }
 
    //--- P1 / P3 skeleton dots (own toggle)
