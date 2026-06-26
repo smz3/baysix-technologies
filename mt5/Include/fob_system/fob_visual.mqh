@@ -116,9 +116,9 @@ private:
       long   wpx = ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
       long   vis = ChartGetInteger(0, CHART_VISIBLE_BARS);
       int    sec = (int)PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod());
-      double px  = (double)StringLen(txt) * (double)InpFobLabelSize * 0.62;  // Calibri avg glyph
+      double px  = (double)(StringLen(txt) + 2) * (double)InpFobLabelSize * 0.85; // glyph est + pad (overshoot ok)
       if(wpx <= 0 || vis <= 0)
-         return (datetime)(StringLen(txt) * (sec / 2));                      // fallback
+         return (datetime)((StringLen(txt) + 2) * sec);                      // fallback
       return (datetime)(px * ((double)(vis * sec) / (double)wpx));
      }
 
