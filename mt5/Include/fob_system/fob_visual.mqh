@@ -372,10 +372,19 @@ void CFobVisual::DrawZones(const FobEvent &ev[], const int n)
       return;
    int E = m_idx;
 
+   //--- ACTIVE-CYCLE-ONLY (mirror RedrawCurrentTF PASS 1): only the latest seq
+   //--- per setup TF is live; a superseded cycle's zones must NOT linger.
+   int curSeq[FOB_N_TF];
+   for(int z = 0; z < FOB_N_TF; z++) curSeq[z] = -1;
+   for(int z = 0; z < n; z++)
+      if(ev[z].label == FOB_PBO)
+         curSeq[ev[z].setup_tf] = ev[z].seq;
+
    for(int i = 0; i < n; i++)
      {
-      if(ev[i].event_tf != E)   continue;
-      if(!ev[i].zone.valid)     continue;
+      if(ev[i].event_tf != E)                  continue;
+      if(!ev[i].zone.valid)                    continue;
+      if(ev[i].seq != curSeq[ev[i].setup_tf])  continue;   // active cycle only
 
       color  c    = FobLabelColor(ev[i].label);
       double l1   = ev[i].level;        // P2 price = entry/trigger edge
