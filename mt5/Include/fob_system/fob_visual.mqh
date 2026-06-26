@@ -1,43 +1,40 @@
 //+------------------------------------------------------------------+
 //|                                                    fob_visual.mqh  |
-//|  FOB chart visualizer — EVENT-TF LENS (rewritten 2026-06-25).      |
+//|  FOB chart visualizer — ZONE-PRIMARY LENS (rewritten 2026-06-26).  |
 //|                                                                    |
 //|  Pure drawing, ZERO detection: the classifier owns all state; this |
-//|  is a replayable PROJECTION of the event log + a tiny view-state   |
-//|  it rebuilds ITSELF from that log (never reads live st[]). So the   |
-//|  picture can never drift from the detector.                        |
+//|  is a replayable PROJECTION of the event log. The picture can never |
+//|  drift from the detector.                                          |
 //|                                                                    |
 //|  ONE CHART PER TIMEFRAME: a chart draws breaks that FIRED on its    |
-//|  own TF (event_tf == ChartPeriod), on their NATIVE bars (no cross-  |
-//|  TF projection). The #id is the cross-chart link: "vr h1 #1" on the  |
-//|  M30 chart <-> "pbo h1 #1" on the H1 chart.                         |
+//|  own TF (event_tf == ChartPeriod), on their NATIVE bars.           |
 //|                                                                    |
-//|  DUAL-PURPOSE DOT (task 2 rev 2026-06-25): a break is a PBO for its  |
-//|  own TF and MAY ALSO be a VR/CF for the TF above. When BOTH roles     |
-//|  qualify, ONE bullet carries TWO fanned labels — own PBO anchored     |
-//|  RIGHT (renders LEFT of the dot), parent VR/CF anchored LEFT (renders |
-//|  RIGHT) — so they splay apart, never stack. Bullet colour = parent    |
-//|  role if present (the live higher-TF story), else own PBO. A setup    |
-//|  still spans two charts (its pbo on its own TF, its vr/cf on the TF   |
-//|  below) joined by #id; the dual tag only appears where one physical   |
-//|  bar serves both at once.                                            |
+//|  ONE UNIFIED ZONE LAYER (InpShowZones) — the old split of           |
+//|  InpShowSequence (dots) vs InpShowZones (geometry) is GONE. Every   |
+//|  active-cycle, ALIVE, VALID break is now drawn as a BRC-style band  |
+//|  with all text OUTSIDE the box, on the L1/L2 edges:                 |
 //|                                                                    |
-//|  Label grammar (E = this TF, E-1 = below, E+1 = above). DIR =        |
-//|  thesis direction. A dot carries one or both of:                    |
-//|    PBO E #p DIR · pending {E-1} VR   (own PBO, no VR yet)            |
-//|    PBO E #p DIR · pending {E-1} CF   (VR locked, no CF yet)          |
-//|    PBO E #p DIR · live {E-1} CFc     (c CFs developed; task 160)     |
-//|    VR  {E+1} #q DIR                   (serves the TF-above setup)     |
-//|    CF  {E+1} #q.c DIR                 (serves the TF-above setup)     |
-//|  Parent DIR is DERIVED: VR = OPP(break), CF = same-as(break).        |
-//|  M1 has NO own PBO (task 1) — the M1 chart shows only vr/cf for M5.  |
+//|    L1  <ROLE> <TF> #<id> <DIR>  <l1price>     ← above/below L1 line  |
+//|   ┌ ── L1 ── ►                                                      |
+//|   │ ·· mid ·· ►                                                     |
+//|   └ ── L2 ── ►                                                      |
+//|    L2  <ROLE> <TF> #<id> <DIR> [Tn] <l2price> ← below/above L2 line  |
 //|                                                                    |
-//|  Colour follows the shown role: PBO blue / VR yellow / CF green.    |
+//|  PARENT-PRIMARY (task 2026-06-26): one physical break can be its    |
+//|  OWN PBO (setup_tf E) and ALSO a VR/CF for the TF above (setup_tf    |
+//|  E+1) — ONE shared band. When a parent role exists it is the        |
+//|  PURPOSE, so the band lines + edge labels take the PARENT identity   |
+//|  and colour (CF green / VR yellow, VR flips DIR). The own PBO is     |
+//|  DEMOTED to a lowercase secondary fan pinned to the SAME L1/L2       |
+//|  origin, rendering to the RIGHT (the primary fans LEFT) — two        |
+//|  colours on one visual row, stable under zoom (MT5 caps one colour  |
+//|  per text object, so a two-colour line = two objects pinned to one  |
+//|  point). PBO-only breaks are all-blue, no fan; the lifecycle badge   |
+//|  (pending/live {E-1} VR/CF) rides their L2 label.                   |
 //|                                                                    |
-//|  Visibility (ACTIVE CYCLE ONLY, task 157): a superseded cycle is    |
-//|  VOIDED and must vanish. The own PBO shows only if it is the active  |
-//|  (latest) seq for E; a parent VR/CF shows only if it belongs to the  |
-//|  active cycle of the TF above (parSeq == its current seq).          |
+//|  Visibility: ACTIVE CYCLE ONLY — a superseded cycle VOIDS and        |
+//|  vanishes, unless it still has a LIVE open position (liveTf/liveSeq).|
+//|  Dead/invalid zones are DROPPED (no band -> no trade -> no draw).   |
 //|                                                                    |
 //|  Needs tester model = Visual Mode to paint live.                   |
 //+------------------------------------------------------------------+
@@ -48,15 +45,14 @@
 #include "fob_types.mqh"
 #include "fob_lifecycle.mqh"   // FobReplayZoneLife — BRC-parity T-touch + invalidation
 
-//--- master toggle (ACTIVE cycle only — no prior-cycle retention, task 157)
+//--- master toggle (ACTIVE cycle only — no prior-cycle retention)
 input bool InpVisualize    = true;        // MASTER: draw chart objects
-//--- independent layers under the master (task 158/178) — each gated alone
-input bool InpShowSequence = true;        // PBO/VR/CF classification role dots
-input bool InpShowSwings   = false;        // FOB swing pivots (carets)
-input bool InpShowRawBreaks= false;        // FOB raw breakouts (dotted lines)
-input bool InpShowZones    = true;         // L1/L2 band + mid + [Tn] labels (BRC-style, task 178)
-input bool InpShowPoints   = false;        // P1/P3 skeleton dots (split out of the zone, task 178)
-input bool InpShowRetests  = true;         // T1/T2/T3 retest touch dots (BRC-style, task 178)
+//--- ONE unified zone layer (sequence + geometry merged, 2026-06-26)
+input bool InpShowZones    = true;        // L1/L2 band + mid + edge labels (role text + [Tn])
+input bool InpShowSwings   = false;       // FOB swing pivots (carets)
+input bool InpShowRawBreaks= false;       // FOB raw breakouts
+input bool InpShowPoints   = false;       // P1/P3 skeleton dots
+input bool InpShowRetests  = true;        // T1/T2/T3 retest touch dots
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
@@ -68,9 +64,8 @@ const color InpFobClrSwingLow  = clrDodgerBlue;
 const color InpFobClrSwingDead = clrDimGray;
 const color InpFobClrBreakBull = clrLimeGreen;
 const color InpFobClrBreakBear = clrOrangeRed;
-//--- zone-layer colours (role colour from FobLabelColor stays the live hue;
-//--- these are the shared mid/retest/point accents). Dead zones are DROPPED,
-//--- not greyed — no dead colour (task: delete gray zones, 2026-06-26).
+//--- zone accents (the band/label hue is the ROLE colour from FobLabelColor;
+//--- these are the shared mid/retest/point accents). Dead zones are DROPPED.
 const color InpFobClrMid       = clrGoldenrod;   // 50% line
 const color InpFobClrRetest    = clrWhite;       // T1/T2/T3 touch dots
 const color InpFobClrPoint     = clrSilver;      // P1/P3 skeleton dots
@@ -95,16 +90,37 @@ private:
    void     Line  (const string name, const datetime t0, const double p0, const datetime t1,
                    const double p1, const color clr, const ENUM_LINE_STYLE st,
                    const bool ray, const int width = 1);
+
    //--- deepest retest reached, for the L2 label tag (mirror BRC TouchTag)
    string   TouchTag(const FobZone &z) const
               { return z.t3_time>0 ? "T3" : (z.t2_time>0 ? "T2" : (z.t1_time>0 ? "T1" : "T0")); }
-
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
    int      OppDir(const int d) const { return d == FOB_BULL ? FOB_BEAR : FOB_BULL; }
-   //--- (setup_tf, seq) cycle has a LIVE open position -> keep its dots past supersession
+   //--- (setup_tf, seq) cycle has a LIVE open position -> keep its band past supersession
    bool     IsLiveCycle(const int tf, const int seq, const int &ltf[], const int &lseq[], const int nl) const
               { for(int i = 0; i < nl; i++) if(ltf[i] == tf && lseq[i] == seq) return true; return false; }
+
+   //--- outside-the-box anchor for an edge label.
+   //---   edgeTop = is this edge the geometric TOP of the band? (bull L1 / bear L2)
+   //---   fanLeft = render to the LEFT of the origin (primary) vs RIGHT (secondary)
+   ENUM_ANCHOR_POINT EdgeAnchor(const bool edgeTop, const bool fanLeft) const
+              { return fanLeft ? (edgeTop ? ANCHOR_RIGHT_LOWER : ANCHOR_RIGHT_UPPER)
+                               : (edgeTop ? ANCHOR_LEFT_LOWER  : ANCHOR_LEFT_UPPER); }
+
+   //--- own-PBO lifecycle phase badge ("" for M1 / no own PBO).
+   string   LifecycleBadge(const int E, const bool ownActive,
+                           const bool vrLocked, const int cfCount) const;
+
+   //--- PASS 1: reconstruct per-setup-TF state from the whole event log.
+   void     ReconstructState(const FobEvent &ev[], const int n,
+                             int &curSeq[], bool &vrLocked[], int &cfCount[]) const;
+   //--- PASS 2 worker: resolve one physical break's roles, gate on active cycle,
+   //--- draw its band + edge labels (parent-primary). [i,j) = the break's events.
+   void     DrawZoneForBreak(const FobEvent &ev[], const int i, const int j, const int E,
+                             const int &curSeq[], const bool &vrLocked[], const int &cfCount[],
+                             const int &liveTf[], const int &liveSeq[], const int nLive,
+                             const datetime tR0);
 
 public:
             CFobVisual(void) { m_tf = ""; m_idx = -1; }
@@ -113,37 +129,30 @@ public:
    int      ChartIdx() const { return m_idx; }   // chart TF ladder index (-1 if unmapped)
    void     ClearAll() { ObjectsDeleteAll(0, FOB_VIS_PREFIX); }
 
-   //--- full rebuild of the current chart's lens from the event log.
-   //--- liveTf/liveSeq = (setup_tf, seq) cycles with an OPEN position: drawn
-   //--- even when superseded, so a live trade keeps its sequence dots.
-   void     RedrawCurrentTF(const FobEvent &ev[], const int n,
-                            const int &liveTf[], const int &liveSeq[], const int nLive);
-   //--- 2-arg overload for the emitter (read-only, no positions -> no live cycles)
-   void     RedrawCurrentTF(const FobEvent &ev[], const int n)
-              { int empty[]; RedrawCurrentTF(ev, n, empty, empty, 0); }
-
-   //--- draw the chart TF's OWN detected structure (swing pivots + raw
-   //--- breakouts). Call AFTER RedrawCurrentTF (which ClearAll's first),
-   //--- with the chart-TF's own g_tf[ChartIdx()] swing/break arrays.
-   void     DrawStructure(const FobSwing &sw[], const FobBreak &br[]);
-
-   //--- STAMP the retest ladder + alive/invalidation onto every event whose
-   //--- break fired on THIS chart TF, recomputed STATELESSLY from the chart-TF
-   //--- OHLC buffer (bt/bh/bl/bc, index 0 = OLDEST, length nb). Mutates `ev`
-   //--- (touch fields only; recomputed every redraw). Call BEFORE RedrawCurrentTF
-   //--- so the dot labels can carry the [Tn] tag, and before DrawZones so the
+   //--- STAMP the retest ladder + alive/invalidation onto every event whose break
+   //--- fired on THIS chart TF, recomputed STATELESSLY from the chart-TF OHLC
+   //--- buffer (bt/bh/bl/bc, index 0 = OLDEST, length nb). Mutates `ev` (touch
+   //--- fields only). MUST run BEFORE DrawZones so the labels carry [Tn] and the
    //--- geometry knows which zones are still alive.
    void     UpdateZoneLifecycles(FobEvent &ev[], const int n,
                                  const datetime &bt[], const double &bh[],
                                  const double &bl[], const double &bc[], const int nb);
 
-   //--- draw zone GEOMETRY only (L1/L2 dashed lines + mid dotted + left vertical
-   //--- connector + optional P1/P3 + retest dots) for every active-cycle, ALIVE,
-   //--- valid zone that fired on this chart TF. NO text labels — the role text +
-   //--- [Tn] live on the sequence dot (RedrawCurrentTF). Touches must already be
-   //--- stamped (UpdateZoneLifecycles). Dual-purpose breaks share one band (label-
-   //--- less stem -> idempotent). Call AFTER RedrawCurrentTF (it ClearAll's first).
-   void     DrawZones(const FobEvent &ev[], const int n);
+   //--- UNIFIED zone layer: ClearAll + draw every active-cycle, ALIVE, VALID band
+   //--- (lines + edge labels + optional P1/P3 + retest dots) for the chart TF.
+   //--- liveTf/liveSeq = (setup_tf, seq) cycles with an OPEN position: drawn even
+   //--- when superseded, so a live trade keeps its band. Touches must already be
+   //--- stamped (UpdateZoneLifecycles). Call BEFORE DrawStructure (it ClearAll's).
+   void     DrawZones(const FobEvent &ev[], const int n,
+                      const int &liveTf[], const int &liveSeq[], const int nLive);
+   //--- 2-arg overload for the emitter (read-only, no positions -> no live cycles)
+   void     DrawZones(const FobEvent &ev[], const int n)
+              { int empty[]; DrawZones(ev, n, empty, empty, 0); }
+
+   //--- draw the chart TF's OWN detected structure (swing pivots + raw breakouts).
+   //--- Call AFTER DrawZones (which ClearAll's first), with the chart-TF's own
+   //--- g_tf[ChartIdx()] swing/break arrays.
+   void     DrawStructure(const FobSwing &sw[], const FobBreak &br[]);
   };
 
 //+------------------------------------------------------------------+
@@ -219,29 +228,30 @@ void CFobVisual::Line(const string name, const datetime t0, const double p0, con
   }
 
 //+------------------------------------------------------------------+
-//| Full rebuild for the current chart TF.                            |
-//|  PASS 1 (all events): reconstruct per-setup state from the log —   |
-//|    the ACTIVE (latest) seq per TF and whether its VR is locked.     |
-//|  PASS 2 (this-TF breaks only): merge each physical break's roles    |
-//|    into one labelled dot, keep only the ACTIVE cycle, draw.         |
+//| Own-PBO lifecycle badge (mirror of the old dot badge).            |
+//|  ACTIVE cycle: pending {E-1} VR -> pending {E-1} CF -> live {E-1}  |
+//|  CFc, advancing with cf_count. A retained-but-superseded live      |
+//|  cycle gets a frozen "held" badge. M1 (E==0) has no own PBO -> "". |
 //+------------------------------------------------------------------+
-void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n,
-                                 const int &liveTf[], const int &liveSeq[], const int nLive)
+string CFobVisual::LifecycleBadge(const int E, const bool ownActive,
+                                  const bool vrLocked, const int cfCount) const
   {
-   ClearAll();
-   if(!InpVisualize || m_idx < 0)
-      return;
-   if(!InpShowSequence)   // sequence layer off — ClearAll already wiped the dots
-      return;
+   if(E <= 0)        return "";                                     // M1 — no own PBO
+   if(!ownActive)    return " · held (open trade)";                 // retained live cycle
+   if(!vrLocked)     return " · pending " + FobTfName(E - 1) + " VR";
+   if(cfCount == 0)  return " · pending " + FobTfName(E - 1) + " CF";
+   return " · live " + FobTfName(E - 1) + " CF" + (string)cfCount;
+  }
 
-   int E = m_idx;
-
-   //--- PASS 1 : reconstruct state -----------------------------------
-   int  curSeq[FOB_N_TF];
-   bool vrLocked[FOB_N_TF];
-   int  cfCount[FOB_N_TF];   // CFs developed in the ACTIVE cycle (task 160 lifecycle)
+//+------------------------------------------------------------------+
+//| PASS 1 — reconstruct each setup TF's ACTIVE (latest) seq, whether  |
+//| its VR is locked, and how many CFs it has developed. A PBO resets   |
+//| the cycle; VR/CF only advance the cycle they belong to.            |
+//+------------------------------------------------------------------+
+void CFobVisual::ReconstructState(const FobEvent &ev[], const int n,
+                                  int &curSeq[], bool &vrLocked[], int &cfCount[]) const
+  {
    for(int i = 0; i < FOB_N_TF; i++) { curSeq[i] = -1; vrLocked[i] = false; cfCount[i] = 0; }
-
    for(int i = 0; i < n; i++)
      {
       int s  = ev[i].setup_tf;
@@ -250,132 +260,174 @@ void CFobVisual::RedrawCurrentTF(const FobEvent &ev[], const int n,
         { curSeq[s] = sq; vrLocked[s] = false; cfCount[s] = 0; }
       else if(sq == curSeq[s])
         {
-         if(ev[i].label == FOB_VR)                              vrLocked[s] = true;
+         if(ev[i].label == FOB_VR)                                   vrLocked[s] = true;
          else if(ev[i].label == FOB_CF && ev[i].cf_idx > cfCount[s]) cfCount[s] = ev[i].cf_idx;
         }
      }
+  }
 
-   //--- PASS 2 : draw this TF's breaks -------------------------------
+//+------------------------------------------------------------------+
+//| Stamp the retest ladder + alive/invalidation onto every event      |
+//| whose break fired on THIS chart TF (data only, no drawing).        |
+//+------------------------------------------------------------------+
+void CFobVisual::UpdateZoneLifecycles(FobEvent &ev[], const int n,
+                                      const datetime &bt[], const double &bh[],
+                                      const double &bl[], const double &bc[], const int nb)
+  {
+   if(m_idx < 0)
+      return;
+   int E = m_idx;
+   for(int i = 0; i < n; i++)
+      if(ev[i].event_tf == E)
+         FobReplayZoneLife(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, bc, nb);
+  }
+
+//+------------------------------------------------------------------+
+//| UNIFIED zone layer (one toggle, one path). ClearAll + reconstruct  |
+//| state + draw one band per physical break that fired on this TF.    |
+//+------------------------------------------------------------------+
+void CFobVisual::DrawZones(const FobEvent &ev[], const int n,
+                           const int &liveTf[], const int &liveSeq[], const int nLive)
+  {
+   ClearAll();
+   if(!InpVisualize || m_idx < 0 || !InpShowZones)
+      return;
+   int E = m_idx;
+
+   int  curSeq[FOB_N_TF]; bool vrLocked[FOB_N_TF]; int cfCount[FOB_N_TF];
+   ReconstructState(ev, n, curSeq, vrLocked, cfCount);
+
+   datetime tR0 = TimeCurrent() + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) * 50;
+
    int i = 0;
    while(i < n)
      {
-      //--- gather one physical break (its adjacent role events)
       int j = i + 1;
       while(j < n && SameBreak(ev[j], ev[i]))
          j++;
-
       if(ev[i].event_tf == E)
-        {
-         //--- split the group into own-PBO + optional parent role
-         int    pOwn = -1, ownDir = -1;
-         datetime swt = ev[i].swing_time;
-         double   lvl = ev[i].level;
-         bool   hasPar = false; int parLab = -1, parSeq = -1, parDir = -1, parCf = 0;
-
-         for(int k = i; k < j; k++)
-           {
-            if(ev[k].label == FOB_PBO && ev[k].setup_tf == E)
-              { pOwn = ev[k].seq; ownDir = ev[k].dir; }
-            else if((ev[k].label == FOB_VR || ev[k].label == FOB_CF) && ev[k].setup_tf == E + 1)
-              { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; parCf = ev[k].cf_idx; }
-           }
-
-         //--- ACTIVE-CYCLE-ONLY gate (task 157) + DUAL-PURPOSE DOT (task 2 rev
-         //--- 2026-06-25): a single break can be its OWN PBO *and* a VR/CF for
-         //--- the TF above. When BOTH qualify, draw ONE bullet with the two
-         //--- labels FANNED off it — own PBO to the LEFT (ANCHOR_RIGHT), parent
-         //--- VR/CF to the RIGHT (ANCHOR_LEFT) — so they splay instead of
-         //--- stacking. Bullet colour follows the parent (the live higher-TF
-         //--- story) when present, else the own PBO. (M1 has no own PBO — task
-         //--- 1 — so the M1 chart shows only the parent dot.)
-         //--- active cycle OR a superseded cycle that still has a LIVE position
-         //--- (task: visual retention — don't wipe a cycle whose trade is open).
-         bool parentQual = hasPar && (parSeq == curSeq[E + 1] || IsLiveCycle(E + 1, parSeq, liveTf, liveSeq, nLive));
-         bool ownActive  = (pOwn >= 0 && pOwn == curSeq[E]);
-         bool anchorQual = (pOwn >= 0 && (ownActive || IsLiveCycle(E, pOwn, liveTf, liveSeq, nLive)));
-
-         //--- retest tag for THIS physical break's zone (stamped by
-         //--- UpdateZoneLifecycles). Shared by both fanned roles — one break =
-         //--- one zone = one touch ladder. Shown on EVERY role so each FOB
-         //--- sequence step carries its own [Tn] (entry-strategy data, 2026-06-26).
-         string tnTag = ev[i].zone.valid ? (" [" + TouchTag(ev[i].zone) + "]") : "";
-
-         string parTxt = "";  color parClr = clrNONE;
-         string ownTxt = "";  color ownClr = clrNONE;
-
-         if(parentQual)
-           {
-            //--- thesis dir: VR = OPP(break), CF = same-as(break)
-            int parThesis = (parLab == FOB_VR) ? OppDir(parDir) : parDir;
-            //--- CF carries its per-cycle ordinal (#seq.cf): "cf h1 #1.2" = 2nd
-            //--- CF of cycle 1 — the layering count the entry test keys on.
-            if(parLab == FOB_CF)
-               parTxt = StringFormat("  %s %s #%d.%d %s",
-                                     FobLabelName(parLab), FobTfName(E + 1), parSeq, parCf, FobDirName(parThesis));
-            else
-               parTxt = StringFormat("  %s %s #%d %s",
-                                     FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
-            parTxt += tnTag;
-            parClr = FobLabelColor(parLab);
-           }
-
-         if(anchorQual)
-           {
-            //--- trailing pad (not leading): this label anchors RIGHT, so it
-            //--- renders to the LEFT of the bullet and the pad pushes it clear.
-            ownTxt = StringFormat("PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
-            //--- lifecycle badge (task 160): the dot tells its cycle phase at a
-            //--- glance — pending VR -> pending CF (VR locked) -> live CF1/2/...
-            //--- advancing with cf_idx. {E-1} = the TF below that supplies VR/CF.
-            //--- ONLY valid for the ACTIVE cycle (vrLocked/cfCount track it); a
-            //--- retained-but-superseded live cycle gets a frozen "held" badge.
-            if(E > 0 && ownActive)
-              {
-               if(!vrLocked[E])
-                  ownTxt += StringFormat(" · pending %s VR", FobTfName(E - 1));
-               else if(cfCount[E] == 0)
-                  ownTxt += StringFormat(" · pending %s CF", FobTfName(E - 1));
-               else
-                  ownTxt += StringFormat(" · live %s CF%d", FobTfName(E - 1), cfCount[E]);
-              }
-            else if(E > 0)
-               ownTxt += " · held (open trade)";
-            ownTxt += tnTag;
-            ownTxt += "  ";
-            ownClr = FobLabelColor(FOB_PBO);
-           }
-
-         if(parClr != clrNONE || ownClr != clrNONE)
-           {
-            color  bulletClr = (parClr != clrNONE) ? parClr : ownClr;
-            string base = FOB_VIS_PREFIX + (string)swt + "_" + (string)ev[i].bar_time;
-            Bullet(base + "_b", swt, lvl, bulletClr);
-            if(ownClr != clrNONE)   // own PBO label — fan LEFT
-              {
-               StringToLower(ownTxt);   // small-caps display (task 3, 2026-06-25)
-               Label(base + "_to", swt, lvl, ownTxt, ownClr, ANCHOR_RIGHT);
-              }
-            if(parClr != clrNONE)   // parent VR/CF label — fan RIGHT
-              {
-               StringToLower(parTxt);
-               Label(base + "_tp", swt, lvl, parTxt, parClr, ANCHOR_LEFT);
-              }
-           }
-        }
+         DrawZoneForBreak(ev, i, j, E, curSeq, vrLocked, cfCount, liveTf, liveSeq, nLive, tR0);
       i = j;
      }
   }
 
 //+------------------------------------------------------------------+
+//| PASS 2 worker — one physical break: split into own PBO + optional  |
+//| parent VR/CF, gate on the active cycle, then (if the band is VALID  |
+//| and ALIVE) draw the lines + parent-primary edge labels.            |
+//+------------------------------------------------------------------+
+void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j, const int E,
+                                  const int &curSeq[], const bool &vrLocked[], const int &cfCount[],
+                                  const int &liveTf[], const int &liveSeq[], const int nLive,
+                                  const datetime tR0)
+  {
+   //--- split the group into own PBO (setup_tf E) + optional parent (setup_tf E+1)
+   int  pOwn = -1, ownDir = -1;
+   bool hasPar = false; int parLab = -1, parSeq = -1, parDir = -1, parCf = 0;
+   for(int k = i; k < j; k++)
+     {
+      if(ev[k].label == FOB_PBO && ev[k].setup_tf == E)
+        { pOwn = ev[k].seq; ownDir = ev[k].dir; }
+      else if((ev[k].label == FOB_VR || ev[k].label == FOB_CF) && ev[k].setup_tf == E + 1)
+        { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; parCf = ev[k].cf_idx; }
+     }
+
+   //--- ACTIVE-CYCLE-ONLY gate (per role): active cycle OR a superseded cycle
+   //--- that still has a LIVE open position (don't wipe a cycle whose trade is on).
+   bool parentQual = hasPar && (parSeq == curSeq[E + 1] || IsLiveCycle(E + 1, parSeq, liveTf, liveSeq, nLive));
+   bool ownActive  = (pOwn >= 0 && pOwn == curSeq[E]);
+   bool anchorQual = (pOwn >= 0 && (ownActive || IsLiveCycle(E, pOwn, liveTf, liveSeq, nLive)));
+   if(!parentQual && !anchorQual)
+      return;                                       // superseded -> vanish
+
+   //--- no live band -> no trade -> nothing to draw (dead/invalid dropped, not greyed)
+   if(!ev[i].zone.valid || !ev[i].zone.alive)
+      return;
+
+   //--- geometry (shared by every role of this physical break)
+   int      bdir = ev[i].dir;                       // physical break dir -> anchoring/colours
+   double   l1   = ev[i].level;                     // P2 = trigger/entry edge
+   double   l2   = ev[i].zone.l2;                   // extreme(P1,P3) = far/invalidation edge
+   double   mid  = ev[i].zone.mid;
+   bool     l1Top = (bdir == FOB_BULL);             // bull: L1 is the TOP edge; bear: bottom
+   bool     l2Top = (bdir == FOB_BEAR);
+   string   tn   = " [" + TouchTag(ev[i].zone) + "]";
+
+   datetime t0 = ev[i].swing_time;                  // L1 origin (P2); band runs right as a ray
+   datetime tR = (tR0 <= t0) ? t0 + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) : tR0;
+
+   //--- PRIMARY role = parent (the PURPOSE) when present, else own PBO. The band
+   //--- lines + edge labels take its identity + colour.
+   color  priClr;
+   string priId;                                    // role identity, reused on L1 + L2
+   string l2extra = "";                             // PBO-only lifecycle badge rides L2
+   if(parentQual)
+     {
+      int parThesis = (parLab == FOB_VR) ? OppDir(parDir) : parDir;   // VR=opp, CF=same
+      if(parLab == FOB_CF)
+         priId = StringFormat("%s %s #%d.%d %s", FobLabelName(parLab), FobTfName(E + 1), parSeq, parCf, FobDirName(parThesis));
+      else
+         priId = StringFormat("%s %s #%d %s",    FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
+      priClr = FobLabelColor(parLab);
+     }
+   else
+     {
+      priId   = StringFormat("PBO %s #%d %s", FobTfName(E), pOwn, FobDirName(ownDir));
+      l2extra = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);
+      priClr  = FobLabelColor(FOB_PBO);
+     }
+
+   string stem = FOB_VIS_PREFIX + "Z_" + (string)ev[i].swing_time + "_" + (string)ev[i].bar_time;
+
+   //--- L1/L2 dashed rays + mid dotted + left vertical connector
+   Line(stem + "_L1",  t0, l1,  tR, l1,  priClr, STYLE_DASH, true, 2);
+   Line(stem + "_L2",  t0, l2,  tR, l2,  priClr, STYLE_DASH, true, 2);
+   Line(stem + "_mid", t0, mid, tR, mid, InpFobClrMid, STYLE_DOT, true, 1);
+   Line(stem + "_LV",  t0, l1,  t0, l2,  priClr, STYLE_SOLID, false, 1);
+
+   //--- PRIMARY edge labels (CAPS), fanned LEFT of the origin into chart history
+   Label(stem + "_L1p", t0, l1, "L1  " + priId + "  " + DoubleToString(l1, _Digits),
+         priClr, EdgeAnchor(l1Top, true));
+   Label(stem + "_L2p", t0, l2, "L2  " + priId + l2extra + tn + "  " + DoubleToString(l2, _Digits),
+         priClr, EdgeAnchor(l2Top, true));
+
+   //--- SECONDARY fan: own PBO local view (lowercase, demoted), only when a parent
+   //--- is primary AND the own PBO is itself active/held. Fans RIGHT of the origin.
+   if(parentQual && anchorQual)
+     {
+      color  subClr = FobLabelColor(FOB_PBO);
+      string sub1   = "pbo " + FobTfName(E) + " #" + (string)pOwn;  StringToLower(sub1);
+      Label(stem + "_L1s", t0, l1, "  " + sub1, subClr, EdgeAnchor(l1Top, false));
+      string sub2 = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);
+      if(StringLen(sub2) > 0)
+        { StringToLower(sub2); Label(stem + "_L2s", t0, l2, " " + sub2, subClr, EdgeAnchor(l2Top, false)); }
+     }
+
+   //--- P1 / P3 skeleton dots (own toggle)
+   if(InpShowPoints)
+     {
+      Bullet(stem + "_p1", ev[i].zone.p1_time, ev[i].zone.p1_price, InpFobClrPoint);
+      Label (stem + "_p1t", ev[i].zone.p1_time, ev[i].zone.p1_price, "p1  ", InpFobClrPoint, ANCHOR_RIGHT);
+      Bullet(stem + "_p3", ev[i].zone.p3_time, ev[i].zone.p3_price, InpFobClrPoint);
+      Label (stem + "_p3t", ev[i].zone.p3_time, ev[i].zone.p3_price, "p3  ", InpFobClrPoint, ANCHOR_RIGHT);
+     }
+
+   //--- retest touch dots (timing the label can't show): T1@L1, T2@mid, T3@L2
+   if(InpShowRetests)
+     {
+      if(ev[i].zone.t1_time > 0) Bullet(stem + "_t1", ev[i].zone.t1_time, l1,  InpFobClrRetest);
+      if(ev[i].zone.t2_time > 0) Bullet(stem + "_t2", ev[i].zone.t2_time, mid, InpFobClrRetest);
+      if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  InpFobClrRetest);
+     }
+  }
+
+//+------------------------------------------------------------------+
 //| Draw the chart TF's OWN detected structure (FOB detection output). |
-//|  Faithful mirror of BRC's swing/break visuals (brc_visual.mqh):    |
-//|    • SWING  -> "•" bullet at the pivot + "High/Low <price>" label   |
-//|               (high=Tomato, low=DodgerBlue, dimmed once broken).    |
-//|    • BREAK  -> "•" bullet at the BROKEN swing + "Bob/Bos <swing>    |
-//|               (<close>)" label (bull=LimeGreen, bear=OrangeRed),    |
-//|               anchored RIGHT. Keyed on broken-swing + break-bar so  |
-//|               one bar breaking several swings keeps every dot.      |
-//|  FOB_-prefixed so RedrawCurrentTF()->ClearAll() wipes + repaints.   |
+//|  Faithful mirror of BRC's swing/break visuals:                     |
+//|    • SWING -> "•" bullet at the pivot + "High/Low <price>" label.   |
+//|    • BREAK -> "•" bullet at the BROKEN swing + "Bob/Bos <swing>     |
+//|              (<close>)" label, anchored RIGHT.                      |
+//|  FOB_-prefixed so DrawZones()->ClearAll() wipes + repaints.        |
 //+------------------------------------------------------------------+
 void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
   {
@@ -407,101 +459,6 @@ void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
              StringFormat("  %s %s (%s)", tag, DoubleToString(br[i].swing_price, _Digits),
                           DoubleToString(br[i].bar_close, _Digits)),
              c, ANCHOR_RIGHT);
-     }
-  }
-
-//+------------------------------------------------------------------+
-//| Stamp the retest ladder + alive/invalidation onto every event      |
-//| whose break fired on THIS chart TF (data only, no drawing). Run    |
-//| BEFORE RedrawCurrentTF (so dot labels carry [Tn]) and DrawZones.   |
-//| Dual-purpose breaks emit two events with identical geometry — both  |
-//| get stamped (cheap), keeping label + geometry consistent.          |
-//+------------------------------------------------------------------+
-void CFobVisual::UpdateZoneLifecycles(FobEvent &ev[], const int n,
-                                      const datetime &bt[], const double &bh[],
-                                      const double &bl[], const double &bc[], const int nb)
-  {
-   if(m_idx < 0)
-      return;
-   int E = m_idx;
-   for(int i = 0; i < n; i++)
-      if(ev[i].event_tf == E)
-         FobReplayZoneLife(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, bc, nb);
-  }
-
-//+------------------------------------------------------------------+
-//| ZONE GEOMETRY layer (task 178) — lines only, NO text (the role     |
-//| label + [Tn] live on the sequence dot, RedrawCurrentTF). For every |
-//| active-cycle, ALIVE, valid zone fired on this chart TF:            |
-//|   • L1 + L2 dashed lines from P2 (the broken swing) running right   |
-//|     as a RAY (alive zones only — dead zones are DROPPED, not greyed)|
-//|   • mid dotted 50% line + a left vertical connector L1<->L2.        |
-//|   • InpShowPoints  -> P1 / P3 skeleton dots.                       |
-//|   • InpShowRetests -> T1@L1 / T2@mid / T3@L2 touch dots.           |
-//| Colour follows the event role (PBO blue / VR yellow / CF green).   |
-//| DUAL-PURPOSE: the two events of one physical break carry identical  |
-//| geometry; the object stem omits the role -> they collapse to ONE    |
-//| idempotent band (last write wins, = the parent role, matching the   |
-//| dot's bullet colour). Touches must be pre-stamped                  |
-//| (UpdateZoneLifecycles). Invalid zones are NEVER drawn (no zone ->   |
-//| no trade).                                                         |
-//+------------------------------------------------------------------+
-void CFobVisual::DrawZones(const FobEvent &ev[], const int n)
-  {
-   if(m_idx < 0 || !InpVisualize || !InpShowZones)
-      return;
-   int E = m_idx;
-
-   //--- ACTIVE-CYCLE-ONLY (mirror RedrawCurrentTF PASS 1): only the latest seq
-   //--- per setup TF is live; a superseded cycle's zones must NOT linger.
-   int curSeq[FOB_N_TF];
-   for(int z = 0; z < FOB_N_TF; z++) curSeq[z] = -1;
-   for(int z = 0; z < n; z++)
-      if(ev[z].label == FOB_PBO)
-         curSeq[ev[z].setup_tf] = ev[z].seq;
-
-   datetime tR0 = TimeCurrent() + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) * 50;
-
-   for(int i = 0; i < n; i++)
-     {
-      if(ev[i].event_tf != E)                  continue;
-      if(!ev[i].zone.valid)                    continue;
-      if(!ev[i].zone.alive)                    continue;   // dead -> dropped (no gray)
-      if(ev[i].seq != curSeq[ev[i].setup_tf])  continue;   // active cycle only
-
-      color  c    = FobLabelColor(ev[i].label);
-      double l1   = ev[i].level;        // P2 price = trigger/entry edge
-      double l2   = ev[i].zone.l2;      // extreme(P1,P3) = far/invalidation edge
-      double mid  = ev[i].zone.mid;
-      //--- label-LESS stem -> dual-purpose roles collapse to one shared band.
-      string stem = FOB_VIS_PREFIX + "Z_" + (string)ev[i].swing_time + "_" + (string)ev[i].bar_time;
-
-      datetime t0 = ev[i].swing_time;   // L1 origin (P2), band runs right as a ray
-      datetime tR = tR0;
-      if(tR <= t0) tR = t0 + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod());
-
-      //--- L1 / L2 dashed lines + mid dotted + left vertical connector
-      Line(stem + "_L1",  t0, l1,  tR, l1,  c, STYLE_DASH, true, 2);
-      Line(stem + "_L2",  t0, l2,  tR, l2,  c, STYLE_DASH, true, 2);
-      Line(stem + "_mid", t0, mid, tR, mid, InpFobClrMid, STYLE_DOT, true, 1);
-      Line(stem + "_LV",  t0, l1,  t0, l2,  c, STYLE_SOLID, false, 1);
-
-      //--- P1 / P3 skeleton dots (own toggle)
-      if(InpShowPoints)
-        {
-         Bullet(stem + "_p1", ev[i].zone.p1_time, ev[i].zone.p1_price, InpFobClrPoint);
-         Label (stem + "_p1t", ev[i].zone.p1_time, ev[i].zone.p1_price, "p1  ", InpFobClrPoint, ANCHOR_RIGHT);
-         Bullet(stem + "_p3", ev[i].zone.p3_time, ev[i].zone.p3_price, InpFobClrPoint);
-         Label (stem + "_p3t", ev[i].zone.p3_time, ev[i].zone.p3_price, "p3  ", InpFobClrPoint, ANCHOR_RIGHT);
-        }
-
-      //--- retest touch dots (timing the label can't show): T1@L1, T2@mid, T3@L2
-      if(InpShowRetests)
-        {
-         if(ev[i].zone.t1_time > 0) Bullet(stem + "_t1", ev[i].zone.t1_time, l1,  InpFobClrRetest);
-         if(ev[i].zone.t2_time > 0) Bullet(stem + "_t2", ev[i].zone.t2_time, mid, InpFobClrRetest);
-         if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  InpFobClrRetest);
-        }
      }
   }
 

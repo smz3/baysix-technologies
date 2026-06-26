@@ -35,7 +35,7 @@
 //|  newer cycle supersedes it (task: visual retention).               |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.14.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.15.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -541,21 +541,19 @@ void OnTick()
    else
       ActOnNewEvents();
 
-   //--- sequence dots (PBO/VR/CF) so fills can be eyeballed vs the sequence.
-   //--- live cycles (open positions) are retained even after supersession.
+   //--- unified zone layer (PBO/VR/CF bands + edge labels) so fills can be
+   //--- eyeballed vs the sequence. Live cycles (open positions) are retained
+   //--- even after supersession.
    if(InpVisualize && np > 0)
      {
       CollectLiveCycles();
       int ci = g_vis.ChartIdx();
-      if(ci >= 0)                                          // stamp T-touches FIRST (dot [Tn] + zone alive)
+      if(ci >= 0)                                          // stamp T-touches FIRST (zone [Tn] + alive)
          g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
                                     g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
-      g_vis.RedrawCurrentTF(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf));
+      g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf));
       if(ci >= 0)
-        {
          g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
-         g_vis.DrawZones(g_events, ArraySize(g_events));   // zone geometry (lines/connector/dots)
-        }
      }
   }
 
@@ -569,15 +567,12 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    g_vis.SyncChartTF();
    CollectLiveCycles();
    int ci = g_vis.ChartIdx();
-   if(ci >= 0)                                          // stamp T-touches FIRST (dot [Tn] + zone alive)
+   if(ci >= 0)                                          // stamp T-touches FIRST (zone [Tn] + alive)
       g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
                                  g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
-   g_vis.RedrawCurrentTF(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf));
+   g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf));
    if(ci >= 0)
-     {
       g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
-      g_vis.DrawZones(g_events, ArraySize(g_events));   // zone geometry (lines/connector/dots)
-     }
   }
 
 //+------------------------------------------------------------------+
