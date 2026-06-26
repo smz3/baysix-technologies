@@ -26,7 +26,7 @@
 //|  eyeballed against the sequence. MT5 draws the trade arrows itself. |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.10.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.10.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -59,11 +59,10 @@ input double   InpFixedLot      = 0.01;       // min lot at $50
 input ulong    InpMagic         = 3001;       // FOB trader magic
 
 //--- forward-excursion STUDY mode (T-170). NO orders: per CF on InpSetupTf, anchor at the
-//--- market-on-CF fill (Ask long / Bid short, identical to FobOpenMarket) and track running
-//--- MFE/MAE/terminal on REAL TICKS until the NEXT CF on the setup TF (any cf_idx) — or a cap.
-//--- Excursion is measured in TRADEABLE terms (exit-side price: long->Bid, short->Ask) so
-//--- "did MAE reach 1*ATR before MFE" maps 1:1 onto result_id 12's ±1ATR barrier. ATR unit =
-//--- the SAME risk TF the ATR mode uses (default setup_tf-1 = M30). Decomposes direction vs timing.
+//--- CF mid price and track running MFE/MAE/terminal on REAL TICKS until the NEXT CF on the
+//--- setup TF (any cf_idx) — or a cap. COST-FREE: measured on MID (zero spread) — this is
+//--- DISCOVERY, pure direction geometry; cost enters at G2, NEVER here. ATR unit = the risk
+//--- TF (default setup_tf-1 = M30). Decomposes DIRECTION vs ENTRY-TIMING.
 input bool     InpStudyMode    = false;       // [study] forward-excursion measurement (no trades)
 input int      InpStudyCapBars = 48;          // [study] force-close window after this many setup-TF bars
 
@@ -435,10 +434,10 @@ void CloseStudyWindow(const int next_dir)
 void UpdateStudyWindow()
   {
    if(!g_sw_open) return;
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double exit_px = (g_sw_dir == FOB_BULL) ? bid : ask;            // exit a long at Bid, a short at Ask
-   double fav     = (g_sw_dir == FOB_BULL) ? (exit_px - g_sw_entry) : (g_sw_entry - exit_px);
+   //--- COST-FREE measurement: mid price, NO spread. T-170 is DISCOVERY, not a G2 net ledger —
+   //--- excursion is pure direction geometry; cost enters later at G2, never here.
+   double mid = 0.5 * (SymbolInfoDouble(_Symbol, SYMBOL_ASK) + SymbolInfoDouble(_Symbol, SYMBOL_BID));
+   double fav = (g_sw_dir == FOB_BULL) ? (mid - g_sw_entry) : (g_sw_entry - mid);
    if(fav  > g_sw_mfe) g_sw_mfe = fav;
    if(-fav > g_sw_mae) g_sw_mae = -fav;
    g_sw_term = fav;                                               // last seen -> terminal at close
@@ -460,8 +459,7 @@ void OpenStudyWindow(const FobEvent &e)
    g_sw_dir     = e.dir;
    g_sw_cfidx   = e.cf_idx;
    g_sw_seq     = e.seq;
-   g_sw_entry   = (e.dir == FOB_BULL) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
-                                      : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   g_sw_entry   = 0.5 * (SymbolInfoDouble(_Symbol, SYMBOL_ASK) + SymbolInfoDouble(_Symbol, SYMBOL_BID)); // mid, cost-free
    g_sw_atr     = atr;
    g_sw_mfe = 0.0; g_sw_mae = 0.0; g_sw_term = 0.0;
    g_sw_mfe1_ts = 0; g_sw_mae1_ts = 0;
