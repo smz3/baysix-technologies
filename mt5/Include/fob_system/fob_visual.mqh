@@ -34,7 +34,11 @@
 //|                                                                    |
 //|  Visibility: ACTIVE CYCLE ONLY — a superseded cycle VOIDS and        |
 //|  vanishes, unless it still has a LIVE open position (liveTf/liveSeq).|
-//|  Dead/invalid zones are DROPPED (no band -> no trade -> no draw).   |
+//|  INVALIDATION (v1.17.0): a dead parent VR/CF is NOT dropped — it is   |
+//|  RETAINED as a FADED role-colour "failed zone" (CF green / VR yellow),|
+//|  band terminated at its invalidation bar, until the cycle supersedes  |
+//|  (then wiped). A dead PBO-only band still drops; valid=false (no      |
+//|  geometry) always drops.                                             |
 //|                                                                    |
 //|  Needs tester model = Visual Mode to paint live.                   |
 //+------------------------------------------------------------------+
@@ -97,6 +101,14 @@ private:
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
    int      OppDir(const int d) const { return d == FOB_BULL ? FOB_BEAR : FOB_BULL; }
+   //--- fade a colour toward black by factor f (0=black .. 1=unchanged) — the
+   //--- "dimmed/failed zone" look: SAME role hue (CF green / VR yellow), lower
+   //--- intensity. MQL5 packs colour as 0x00BBGGRR (low byte = R).
+   color    DimColor(const color c, const double f) const
+              { int r=(int)((double)( c        & 0xFF)*f);
+                int g=(int)((double)((c >>  8) & 0xFF)*f);
+                int b=(int)((double)((c >> 16) & 0xFF)*f);
+                return (color)(r | (g << 8) | (b << 16)); }
    //--- (setup_tf, seq) cycle has a LIVE open position -> keep its band past supersession
    bool     IsLiveCycle(const int tf, const int seq, const int &ltf[], const int &lseq[], const int nl) const
               { for(int i = 0; i < nl; i++) if(ltf[i] == tf && lseq[i] == seq) return true; return false; }
@@ -399,11 +411,22 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    bool ownActive  = (pOwn >= 0 && pOwn == curSeq[E]);
    bool anchorQual = (pOwn >= 0 && (ownActive || IsLiveCycle(E, pOwn, liveTf, liveSeq, nLive)));
    if(!parentQual && !anchorQual)
-      return;                                       // superseded -> vanish
+      return;                                       // superseded -> vanish (clears dimmed corpses too)
 
-   //--- no live band -> no trade -> nothing to draw (dead/invalid dropped, not greyed)
-   if(!ev[i].zone.valid || !ev[i].zone.alive)
+   //--- valid=false => no zone geometry at all -> nothing to draw.
+   if(!ev[i].zone.valid)
       return;
+
+   //--- DIMMED-FAILURE retention (v1.17.0): an INVALIDATED VR/CF no longer
+   //--- vanishes — it stays drawn in a FADED role colour (CF green / VR yellow),
+   //--- terminated at its death bar. This is the "failed zone" record a future
+   //--- break-of-VR/CF strategy reads off. SCOPE = parent VR/CF only; a dead
+   //--- PBO-only band still drops (a PBO's death begins a fresh cycle). Cleanup
+   //--- is automatic: when the cycle supersedes, the gate above wipes the corpse.
+   bool dimmed      = !ev[i].zone.alive;
+   bool dimEligible = parentQual && (parLab == FOB_VR || parLab == FOB_CF);
+   if(dimmed && !dimEligible)
+      return;                                       // PBO-only / non-parent death -> wipe
 
    //--- geometry (shared by every role of this physical break)
    int      bdir = ev[i].dir;                       // physical break dir -> anchoring/colours
@@ -437,14 +460,19 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
       l2extra = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);
       priClr  = FobLabelColor(FOB_PBO);
      }
+   if(dimmed) priClr = DimColor(priClr, 0.45);      // failed VR/CF -> faded role hue
 
    string stem = FOB_VIS_PREFIX + "Z_" + (string)ev[i].swing_time + "_" + (string)ev[i].bar_time;
 
-   //--- L1/L2 dashed rays + mid dotted + left vertical connector
-   Line(stem + "_L1",  t0, l1,  tR, l1,  priClr, STYLE_DASH, true, 2);
-   Line(stem + "_L2",  t0, l2,  tR, l2,  priClr, STYLE_DASH, true, 2);
-   Line(stem + "_mid", t0, mid, tR, mid, InpFobClrMid, STYLE_DOT, true, 1);
-   Line(stem + "_LV",  t0, l1,  t0, l2,  priClr, STYLE_SOLID, false, 1);
+   //--- L1/L2 dashed lines + mid dotted + left vertical connector. ALIVE zones ray
+   //--- right (still active); a DIMMED dead zone STOPS at its invalidation bar.
+   datetime tEnd   = (dimmed && ev[i].zone.invalidation_time > t0) ? ev[i].zone.invalidation_time : tR;
+   bool     isRay  = !dimmed;
+   color    midClr = dimmed ? DimColor(InpFobClrMid, 0.45) : InpFobClrMid;
+   Line(stem + "_L1",  t0, l1,  tEnd, l1,  priClr, STYLE_DASH, isRay, 2);
+   Line(stem + "_L2",  t0, l2,  tEnd, l2,  priClr, STYLE_DASH, isRay, 2);
+   Line(stem + "_mid", t0, mid, tEnd, mid, midClr, STYLE_DOT, isRay, 1);
+   Line(stem + "_LV",  t0, l1,  t0,   l2,  priClr, STYLE_SOLID, false, 1);
 
    //--- PRIMARY edge labels (CAPS), anchored LEFT -> render RIGHT into the empty
    //--- ray area (off the candles). Anchor reused by the trailing secondary.
@@ -462,7 +490,7 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    //--- and the lifecycle badge — share this single blue row; L2 carries no secondary.
    if(parentQual && anchorQual)
      {
-      color  subClr = FobLabelColor(FOB_PBO);
+      color  subClr = dimmed ? DimColor(FobLabelColor(FOB_PBO), 0.45) : FobLabelColor(FOB_PBO);
       string sub    = "pbo " + FobTfName(E) + " #" + (string)pOwn;
       string badge  = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);  // already " · ..."
       if(StringLen(badge) > 0) sub += badge;
@@ -474,18 +502,20 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    //--- P1 / P3 skeleton dots (own toggle)
    if(InpShowPoints)
      {
-      Bullet(stem + "_p1", ev[i].zone.p1_time, ev[i].zone.p1_price, InpFobClrPoint);
-      Label (stem + "_p1t", ev[i].zone.p1_time, ev[i].zone.p1_price, "p1  ", InpFobClrPoint, ANCHOR_RIGHT);
-      Bullet(stem + "_p3", ev[i].zone.p3_time, ev[i].zone.p3_price, InpFobClrPoint);
-      Label (stem + "_p3t", ev[i].zone.p3_time, ev[i].zone.p3_price, "p3  ", InpFobClrPoint, ANCHOR_RIGHT);
+      color ptClr = dimmed ? DimColor(InpFobClrPoint, 0.55) : InpFobClrPoint;
+      Bullet(stem + "_p1", ev[i].zone.p1_time, ev[i].zone.p1_price, ptClr);
+      Label (stem + "_p1t", ev[i].zone.p1_time, ev[i].zone.p1_price, "p1  ", ptClr, ANCHOR_RIGHT);
+      Bullet(stem + "_p3", ev[i].zone.p3_time, ev[i].zone.p3_price, ptClr);
+      Label (stem + "_p3t", ev[i].zone.p3_time, ev[i].zone.p3_price, "p3  ", ptClr, ANCHOR_RIGHT);
      }
 
    //--- retest touch dots (timing the label can't show): T1@L1, T2@mid, T3@L2
    if(InpShowRetests)
      {
-      if(ev[i].zone.t1_time > 0) Bullet(stem + "_t1", ev[i].zone.t1_time, l1,  InpFobClrRetest);
-      if(ev[i].zone.t2_time > 0) Bullet(stem + "_t2", ev[i].zone.t2_time, mid, InpFobClrRetest);
-      if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  InpFobClrRetest);
+      color rtClr = dimmed ? DimColor(InpFobClrRetest, 0.55) : InpFobClrRetest;
+      if(ev[i].zone.t1_time > 0) Bullet(stem + "_t1", ev[i].zone.t1_time, l1,  rtClr);
+      if(ev[i].zone.t2_time > 0) Bullet(stem + "_t2", ev[i].zone.t2_time, mid, rtClr);
+      if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  rtClr);
      }
   }
 
