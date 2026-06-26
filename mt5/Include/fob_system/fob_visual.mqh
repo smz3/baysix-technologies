@@ -36,9 +36,9 @@
 //|  vanishes, unless it still has a LIVE open position (liveTf/liveSeq).|
 //|  INVALIDATION (v1.17.0): a dead parent VR/CF is NOT dropped — it is   |
 //|  RETAINED as a FADED role-colour "failed zone" (CF green / VR yellow),|
-//|  band terminated at its invalidation bar, until the cycle supersedes  |
-//|  (then wiped). A dead PBO-only band still drops; valid=false (no      |
-//|  geometry) always drops.                                             |
+//|  drawn with the SAME full geometry as a live band (only the colour    |
+//|  fades), until the cycle supersedes (then wiped). A dead PBO-only band |
+//|  still drops; valid=false (no geometry) always drops.                |
 //|                                                                    |
 //|  Needs tester model = Visual Mode to paint live.                   |
 //+------------------------------------------------------------------+
@@ -464,15 +464,14 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
 
    string stem = FOB_VIS_PREFIX + "Z_" + (string)ev[i].swing_time + "_" + (string)ev[i].bar_time;
 
-   //--- L1/L2 dashed lines + mid dotted + left vertical connector. ALIVE zones ray
-   //--- right (still active); a DIMMED dead zone STOPS at its invalidation bar.
-   datetime tEnd   = (dimmed && ev[i].zone.invalidation_time > t0) ? ev[i].zone.invalidation_time : tR;
-   bool     isRay  = !dimmed;
-   color    midClr = dimmed ? DimColor(InpFobClrMid, 0.45) : InpFobClrMid;
-   Line(stem + "_L1",  t0, l1,  tEnd, l1,  priClr, STYLE_DASH, isRay, 2);
-   Line(stem + "_L2",  t0, l2,  tEnd, l2,  priClr, STYLE_DASH, isRay, 2);
-   Line(stem + "_mid", t0, mid, tEnd, mid, midClr, STYLE_DOT, isRay, 1);
-   Line(stem + "_LV",  t0, l1,  t0,   l2,  priClr, STYLE_SOLID, false, 1);
+   //--- L1/L2 dashed rays + mid dotted + left vertical connector. A DIMMED dead
+   //--- zone draws the SAME full-width geometry as a live one (ray right) — only
+   //--- the colour fades, so it never looks half-drawn next to live zones.
+   color midClr = dimmed ? DimColor(InpFobClrMid, 0.45) : InpFobClrMid;
+   Line(stem + "_L1",  t0, l1,  tR, l1,  priClr, STYLE_DASH, true, 2);
+   Line(stem + "_L2",  t0, l2,  tR, l2,  priClr, STYLE_DASH, true, 2);
+   Line(stem + "_mid", t0, mid, tR, mid, midClr, STYLE_DOT, true, 1);
+   Line(stem + "_LV",  t0, l1,  t0, l2,  priClr, STYLE_SOLID, false, 1);
 
    //--- PRIMARY edge labels (CAPS), anchored LEFT -> render RIGHT into the empty
    //--- ray area (off the candles). Anchor reused by the trailing secondary.
