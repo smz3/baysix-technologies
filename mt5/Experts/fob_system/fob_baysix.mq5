@@ -21,7 +21,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.7.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.9.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
@@ -103,6 +103,8 @@ int OnInit()
       g_setup[i].seq        = 0;
       g_setup[i].vr_locked  = false;
       g_setup[i].vr_level   = 0.0;
+      g_setup[i].vr_swing   = 0;
+      g_setup[i].vr_ev_idx  = -1;
       g_setup[i].cf_count   = 0;
       g_setup[i].last_conf_swing = 0;
       g_setup[i].pbo_swing  = 0;

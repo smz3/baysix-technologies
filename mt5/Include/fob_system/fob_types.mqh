@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.8.0"
+#define FOB_VERSION "1.9.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -111,6 +111,14 @@ struct FobSetupState
    // structure (e.g. a Jun-2026 break taking a Nov-2025 low) is stale context, NOT a new PBO.
    bool      vr_locked;  // has the (one-and-only) VR been found?
    datetime  vr_time;    // bar_time of the locked VR
+   datetime  vr_swing;   // swing_time of the locked VR's broken structure (NEWEST-swing watermark).
+   // SAME-BAR VR pick (mirror of PBO freshness): a single bar can break SEVERAL opposite swings at
+   // once. The first one fed is the OLDEST (furthest) swing; the structurally-correct VR is the
+   // NEWEST (nearest the turn). On the VR's own bar, a fresher opposite break (swt > vr_swing)
+   // REPLACES the VR in place — same dot, no second event (fob_sequence). Cross-bar opposite breaks
+   // are NOT the VR (the first bar to retrace owns the VR timing); only same-bar (bt == vr_time) ties.
+   int       vr_ev_idx;  // index of the emitted VR event in ev[] (-1 if none) — lets the same-bar
+   // upgrade rewrite that one row instead of emitting a duplicate VR. Stable: events never removed.
    double    vr_level;   // broken-swing PRICE of the locked VR (the retracement structure).
    // Set once on VR lock (fob_sequence). The EMITTER never reads it (CSV byte-identical);
    // the TRADER uses it as the structural 1R reference: R = |CF entry - vr_level| (stop back

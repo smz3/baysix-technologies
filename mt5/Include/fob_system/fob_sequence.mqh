@@ -85,6 +85,8 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
          st[etf].pbo_swing = swt;
          st[etf].vr_locked = false;
          st[etf].vr_time   = 0;
+         st[etf].vr_swing  = 0;   // new cycle -> clear the same-bar VR watermark
+         st[etf].vr_ev_idx = -1;  // new cycle -> no live VR row to rewrite
          st[etf].cf_count  = 0;   // new cycle -> CF ordinal restarts
          st[etf].last_conf_swing = 0;   // new cycle -> confirming-chain watermark clears
          made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
@@ -102,12 +104,31 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
            {
             st[up1].vr_locked = true;
             st[up1].vr_time   = bt;
+            st[up1].vr_swing  = swt;      // remember VR structure for the same-bar newest-swing pick
             st[up1].vr_level  = level;   // VR's broken-swing price = the trader's structural 1R ref
             //--- seed the confirming-chain watermark at the VR's own structure:
             //--- the first CF must break something NEWER than this (task 159).
             st[up1].last_conf_swing = swt;
+            st[up1].vr_ev_idx = ArraySize(ev);   // the row we may rewrite on a same-bar fresher tie
             made += FobAppendEvent(ev, up1, st[up1].seq, FOB_VR, etf, dir, swt, bt, level, close);
            }
+        }
+      //--- SAME-BAR VR upgrade (newest-swing wins, mirrors PBO freshness): one bar
+      //--- can break SEVERAL opposite swings at once; the VR must sit on the NEWEST
+      //--- (nearest the turn), not the first (oldest) one fed. A later opposite break
+      //--- on the SAME bar with a fresher swing REWRITES the VR row in place — same
+      //--- dot, no duplicate event. Cross-bar opposite breaks are NOT the VR (the
+      //--- first bar to retrace owns the timing), so this is gated to bt == vr_time.
+      else if(dir != st[up1].pbo_dir && bt == st[up1].vr_time
+              && swt > st[up1].vr_swing && st[up1].vr_ev_idx >= 0)
+        {
+         st[up1].vr_swing        = swt;
+         st[up1].vr_level        = level;
+         st[up1].last_conf_swing = swt;
+         int vi = st[up1].vr_ev_idx;
+         ev[vi].swing_time = swt;     // dot's x -> the newest broken swing (the real VR)
+         ev[vi].level      = level;   // dot's y / structural 1R ref -> that swing's price
+         ev[vi].bar_close  = close;
         }
       else
         {

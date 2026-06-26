@@ -26,7 +26,7 @@
 //|  eyeballed against the sequence. MT5 draws the trade arrows itself. |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.8.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.9.0"         // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -144,6 +144,7 @@ int OnInit()
       ArrayResize(g_tf[i].breaks, 0);
       g_setup[i].active     = false;  g_setup[i].seq = 0;
       g_setup[i].vr_locked  = false;  g_setup[i].vr_level = 0.0;
+      g_setup[i].vr_swing   = 0;      g_setup[i].vr_ev_idx = -1;
       g_setup[i].cf_count   = 0;      g_setup[i].last_conf_swing = 0;
       g_setup[i].pbo_swing  = 0;
      }
