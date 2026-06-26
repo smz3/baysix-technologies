@@ -53,6 +53,7 @@ input bool InpVisualize    = true;        // MASTER: draw chart objects
 input bool InpShowSequence = true;        // PBO/VR/CF classification dots
 input bool InpShowSwings   = false;        // FOB swing pivots (carets)
 input bool InpShowRawBreaks= false;        // FOB raw breakouts (dotted lines)
+input bool InpShowZones    = true;         // 4-pointer L1/L2 band + P1/P3 dots (v1.14.0 sanity-check)
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
@@ -110,6 +111,11 @@ public:
    //--- breakouts). Call AFTER RedrawCurrentTF (which ClearAll's first),
    //--- with the chart-TF's own g_tf[ChartIdx()] swing/break arrays.
    void     DrawStructure(const FobSwing &sw[], const FobBreak &br[]);
+
+   //--- draw the 4-pointer zone (L1/L2 band + P1/P3 markers) for every event
+   //--- that FIRED on this chart TF. Sanity-check layer (v1.14.0). Call AFTER
+   //--- RedrawCurrentTF (it ClearAll's first). Only valid zones are drawn.
+   void     DrawZones(const FobEvent &ev[], const int n);
   };
 
 //+------------------------------------------------------------------+
@@ -347,6 +353,56 @@ void CFobVisual::DrawStructure(const FobSwing &sw[], const FobBreak &br[])
              StringFormat("  %s %s (%s)", tag, DoubleToString(br[i].swing_price, _Digits),
                           DoubleToString(br[i].bar_close, _Digits)),
              c, ANCHOR_RIGHT);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| 4-POINTER ZONE layer (v1.14.0) — sanity-check picture.            |
+//|  For every event that fired on THIS chart TF with a valid zone:   |
+//|    • a dotted L1..L2 rectangle from P2 (the broken swing) to the   |
+//|      break bar — the structural band the stop would sit beyond.    |
+//|    • P1 (origin) and P3 (pullback) pivot markers, labelled.        |
+//|    • an "L2" tag at the far/invalidation edge.                     |
+//|  Colour follows the event role (PBO blue / VR yellow / CF green).  |
+//|  Invalid zones are NOT drawn (foolproof: no zone -> no trade).     |
+//+------------------------------------------------------------------+
+void CFobVisual::DrawZones(const FobEvent &ev[], const int n)
+  {
+   if(m_idx < 0 || !InpVisualize || !InpShowZones)
+      return;
+   int E = m_idx;
+
+   for(int i = 0; i < n; i++)
+     {
+      if(ev[i].event_tf != E)   continue;
+      if(!ev[i].zone.valid)     continue;
+
+      color  c    = FobLabelColor(ev[i].label);
+      double l1   = ev[i].level;        // P2 price = entry/trigger edge
+      double l2   = ev[i].zone.l2;      // extreme(P1,P3) = far/invalidation edge
+      string stem = FOB_VIS_PREFIX + "Z_" + (string)ev[i].swing_time + "_" +
+                    (string)ev[i].bar_time + "_" + FobLabelName(ev[i].label);
+
+      //--- L1..L2 band (dotted outline, behind candles)
+      string box = stem + "_box";
+      ObjectCreate(0, box, OBJ_RECTANGLE, 0, ev[i].swing_time, l1, ev[i].bar_time, l2);
+      ObjectSetInteger(0, box, OBJPROP_COLOR, c);
+      ObjectSetInteger(0, box, OBJPROP_STYLE, STYLE_DOT);
+      ObjectSetInteger(0, box, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, box, OBJPROP_FILL, false);
+      ObjectSetInteger(0, box, OBJPROP_BACK, true);
+      ObjectSetInteger(0, box, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, box, OBJPROP_HIDDEN, true);
+
+      //--- P1 / P3 pivot markers
+      Bullet(stem + "_p1", ev[i].zone.p1_time, ev[i].zone.p1_price, c);
+      Label (stem + "_p1t", ev[i].zone.p1_time, ev[i].zone.p1_price, "p1  ", c, ANCHOR_RIGHT);
+      Bullet(stem + "_p3", ev[i].zone.p3_time, ev[i].zone.p3_price, c);
+      Label (stem + "_p3t", ev[i].zone.p3_time, ev[i].zone.p3_price, "p3  ", c, ANCHOR_RIGHT);
+
+      //--- L2 tag at the invalidation edge
+      Label (stem + "_l2t", ev[i].bar_time, l2,
+             "  L2 " + DoubleToString(l2, _Digits), c, ANCHOR_LEFT);
      }
   }
 

@@ -21,7 +21,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.10.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.14.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
@@ -64,6 +64,7 @@ struct FobPending
    int      dir;
    double   level;
    double   close;
+   FobZone  zone;         // 4-pointer band carried from the break (v1.14.0)
   };
 
 FobTfState    g_tf[FOB_N_TF];
@@ -156,7 +157,8 @@ void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double
      }
 
    //--- raw breaks on this bar (mutates swing.broken, appends events, compacts live_sw)
-   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, cl, g_radius, InpMaxAge, s.breaks);
+   //--- s.bc/n feed the 4-pointer gap-val (v1.14.0).
+   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, cl, g_radius, InpMaxAge, s.bc, n, s.breaks);
   }
 
 //+------------------------------------------------------------------+
@@ -218,6 +220,7 @@ void OnTick()
          pend[pi].dir   = g_tf[t].breaks[b].dir;
          pend[pi].level = g_tf[t].breaks[b].swing_price;
          pend[pi].close = g_tf[t].breaks[b].bar_close;
+         pend[pi].zone  = g_tf[t].breaks[b].zone;
         }
      }
 
@@ -230,7 +233,7 @@ void OnTick()
    //--- classify each break in true chronological order
    for(int q = 0; q < np; q++)
       FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
-                       pend[q].level, pend[q].close, g_events, InpPboNewestOnly);
+                       pend[q].level, pend[q].close, pend[q].zone, g_events, InpPboNewestOnly);
 
    //--- event-TF lens is a full PROJECTION of the log -> repaint it whole
    //--- (cross-chart pending flips + role merging only work on a replay)
@@ -240,6 +243,7 @@ void OnTick()
       int ci = g_vis.ChartIdx();
       if(ci >= 0)
          g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks
+      g_vis.DrawZones(g_events, ArraySize(g_events));             // 4-pointer L1/L2 bands
      }
   }
 
@@ -255,6 +259,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    int ci = g_vis.ChartIdx();
    if(ci >= 0)
       g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks
+   g_vis.DrawZones(g_events, ArraySize(g_events));             // 4-pointer L1/L2 bands
   }
 
 //+------------------------------------------------------------------+

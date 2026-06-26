@@ -42,7 +42,8 @@ int FobCsvOpen(const string symbol, const string runid)
       return INVALID_HANDLE;
      }
    FileWriteString(fh,
-      "event_id,setup_tf,setup_seq,cf_idx,label,event_tf,direction,swing_time,bar_time,level,bar_close\r\n");
+      "event_id,setup_tf,setup_seq,cf_idx,label,event_tf,direction,swing_time,bar_time,level,bar_close,"
+      "l2,p1_time,p1_price,p3_time,p3_price,zone_valid\r\n");   // level = L1; 4-pointer zone (v1.14.0)
    return fh;
   }
 
@@ -67,7 +68,14 @@ void FobCsvWriteEvent(const int fh, const int event_id, const FobEvent &e)
       FobFmtTime(e.swing_time) + "," +
       FobFmtTime(e.bar_time) + "," +
       FobFmtPrice(e.level) + "," +
-      FobFmtPrice(e.bar_close) + "\r\n";
+      FobFmtPrice(e.bar_close) + "," +
+      //--- 4-pointer zone (L1 = level above; L2 = extreme(P1,P3))
+      FobFmtPrice(e.zone.l2) + "," +
+      FobFmtTime(e.zone.p1_time) + "," +
+      FobFmtPrice(e.zone.p1_price) + "," +
+      FobFmtTime(e.zone.p3_time) + "," +
+      FobFmtPrice(e.zone.p3_price) + "," +
+      (e.zone.valid ? "1" : "0") + "\r\n";
 
    FileWriteString(fh, row);
   }

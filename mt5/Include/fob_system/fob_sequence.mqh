@@ -29,7 +29,7 @@
 int FobAppendEvent(FobEvent &out[], const int setup_tf, const int seq, const int label,
                    const int event_tf, const int dir, const datetime swing_time,
                    const datetime bar_time, const double level, const double bar_close,
-                   const int cf_idx = 0)
+                   const FobZone &zone, const int cf_idx = 0)
   {
    int k = ArraySize(out);
    ArrayResize(out, k + 1, 1024);
@@ -43,6 +43,7 @@ int FobAppendEvent(FobEvent &out[], const int setup_tf, const int seq, const int
    out[k].bar_time   = bar_time;
    out[k].level      = level;
    out[k].bar_close  = bar_close;
+   out[k].zone       = zone;   // 4-pointer band — same break geometry on every role
    return 1;
   }
 
@@ -56,7 +57,7 @@ int FobAppendEvent(FobEvent &out[], const int setup_tf, const int seq, const int
 //+------------------------------------------------------------------+
 int FobClassifyBreak(FobSetupState &st[], const int n_tf,
                      const int etf, const int dir, const datetime swt, const datetime bt,
-                     const double level, const double close,
+                     const double level, const double close, const FobZone &zone,
                      FobEvent &ev[], const bool pbo_newest_only = true)
   {
    int made = 0;
@@ -89,7 +90,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
          st[etf].vr_ev_idx = -1;  // new cycle -> no live VR row to rewrite
          st[etf].cf_count  = 0;   // new cycle -> CF ordinal restarts
          st[etf].last_conf_swing = 0;   // new cycle -> confirming-chain watermark clears
-         made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close);
+         made += FobAppendEvent(ev, etf, st[etf].seq, FOB_PBO, etf, dir, swt, bt, level, close, zone);
         }
      }
 
@@ -110,7 +111,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
             //--- the first CF must break something NEWER than this (task 159).
             st[up1].last_conf_swing = swt;
             st[up1].vr_ev_idx = ArraySize(ev);   // the row we may rewrite on a same-bar fresher tie
-            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_VR, etf, dir, swt, bt, level, close);
+            made += FobAppendEvent(ev, up1, st[up1].seq, FOB_VR, etf, dir, swt, bt, level, close, zone);
            }
         }
       //--- SAME-BAR VR upgrade (newest-swing wins, mirrors PBO freshness): one bar
@@ -129,6 +130,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
          ev[vi].swing_time = swt;     // dot's x -> the newest broken swing (the real VR)
          ev[vi].level      = level;   // dot's y / structural 1R ref -> that swing's price
          ev[vi].bar_close  = close;
+         ev[vi].zone       = zone;    // 4-pointer rebuilt off the fresher VR break
         }
       else
         {
@@ -146,7 +148,7 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
             st[up1].cf_count += 1;
             st[up1].last_conf_swing = swt;   // advance the watermark to this CF's structure
             made += FobAppendEvent(ev, up1, st[up1].seq, FOB_CF, etf, dir, swt, bt, level, close,
-                                   st[up1].cf_count);
+                                   zone, st[up1].cf_count);
            }
         }
      }

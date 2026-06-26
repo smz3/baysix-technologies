@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.13.0"
+#define FOB_VERSION "1.14.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -54,6 +54,27 @@ struct FobSwing
    bool      broken;     // has a later close crossed it?
   };
 
+//--- 4-POINTER ZONE (v1.14.0) — a B2B-style structural band around ANY break,
+//--- adapted from BRC's 5-pointer (P5 dropped: the break IS the confirmation).
+//--- Geometry (bull break = broke a HIGH; bear = mirror):
+//---   P2 = the broken swing (= L1, the trigger/entry edge) — lives on the
+//---        owning FobBreak/FobEvent as swing_time/level (NOT duplicated here).
+//---   P1 = nearest OPPOSITE-type swing BEFORE  P2 (origin / launch pivot).
+//---   P3 = first   OPPOSITE-type swing AFTER   P2, before the break (pullback).
+//---   P4 = the break bar (bar_time/bar_close).
+//---   L2 = extreme(P1,P3): MIN(lows) for a bull, MAX(highs) for a bear — the
+//---        far / invalidation edge. Stop sits beyond L2 (the deeper of the two).
+//--- valid = P1+P3 both found AND BRC freshness (no swing strictly in (P3,P4))
+//--- AND gap-val (L2 not closed-through in (P3,P4]) pass. valid=false -> NO trade
+//--- (foolproof, no fallback — Syafiq 2026-06-26).
+struct FobZone
+  {
+   datetime  p1_time;   double p1_price;   // origin pivot (before the broken swing)
+   datetime  p3_time;   double p3_price;   // pullback pivot (after it, before break)
+   double    l2;                           // extreme(P1,P3) — far/invalidation edge
+   bool      valid;                        // P1+P3 found AND freshness+gap-val pass
+  };
+
 //--- one raw breakout (a close crossing an unbroken swing)
 struct FobBreak
   {
@@ -64,6 +85,7 @@ struct FobBreak
    datetime  bar_time;     // breaking bar time
    double    bar_close;    // breaking bar close (beyond the level)
    int       bar_index;    // absolute series index of the breaking bar
+   FobZone   zone;         // 4-pointer structural band (computed at detection)
   };
 
 //--- the four cross-TF roles a raw breakout can play
@@ -90,8 +112,9 @@ struct FobEvent
    int       dir;        // FOB_BULL | FOB_BEAR of this break
    datetime  swing_time; // broken swing TIME — the dot's x (drawn AT the swingpoint, like BRC)
    datetime  bar_time;   // break bar time (the close that crossed the level; chain ordering)
-   double    level;      // broken swing price — the dot's y (the level that was taken)
+   double    level;      // broken swing price — the dot's y (the level that was taken) = L1
    double    bar_close;  // break bar close (beyond the level)
+   FobZone   zone;       // 4-pointer band (P1/P3/L2 + valid) — same break geometry, every role
   };
 
 //+------------------------------------------------------------------+
