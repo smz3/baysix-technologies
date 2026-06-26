@@ -113,15 +113,31 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
 //| quadratic blow-up under a real-ticks model).                       |
 //+------------------------------------------------------------------+
 bool FobLiveTouch(FobZone &z, const int dir, const double l1, const datetime brk,
-                  const datetime bt, const double h, const double l)
+                  const datetime bt, const double h, const double l,
+                  const bool track_rt = false)
   {
-   if(!z.valid || !z.alive || bt <= brk)
+   if(!z.valid || bt <= brk)
       return false;
 
-   bool   bull  = (dir == FOB_BULL);
+   bool   bull = (dir == FOB_BULL);
+   double l2   = z.l2;
+
+   //--- RT live (VR-only): an INVALIDATED VR whose broken-L2 edge is re-touched by
+   //--- the FORMING wick stamps the FIRST retouch live, so [RT0]->[RT1] + the entry
+   //--- dot flip intrabar exactly like [Tn]. Runs BEFORE the alive-guard (the zone
+   //--- is dead by definition here). Higher counts settle at bar close.
+   if(track_rt && !z.alive)
+     {
+      if(z.rt_time == 0 && (bull ? (h >= l2) : (l <= l2)))
+        { z.rt_time = bt; z.rt_count = 1; return true; }
+      return false;
+     }
+
+   if(!z.alive)
+      return false;                               // dead non-RT zone -> no live touch
+
    double probe = bull ? l : h;                   // bull retests DOWN (low), bear UP (high)
    double mid   = z.mid;
-   double l2    = z.l2;
    bool   hit   = false;
 
    if(z.t1_time == 0 && (bull ? (probe <= l1)  : (probe >= l1)))  { z.t1_time = bt; hit = true; }

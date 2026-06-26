@@ -355,7 +355,8 @@ void CFobVisual::LiveTouchForming(FobEvent &ev[], const int n,
    int E = m_idx;
    for(int i = 0; i < n; i++)
       if(ev[i].event_tf == E)
-         FobLiveTouch(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, fbt, fbh, fbl);
+         FobLiveTouch(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, fbt, fbh, fbl,
+                      ev[i].label == FOB_VR);       // live RT on VRs only (parity with closed-bar)
   }
 
 //+------------------------------------------------------------------+
