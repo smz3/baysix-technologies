@@ -72,6 +72,7 @@ const color InpFobClrBreakBear = clrOrangeRed;
 //--- these are the shared mid/retest/point accents). Dead zones are DROPPED.
 const color InpFobClrMid       = clrDimGray;   // 50% line
 const color InpFobClrRetest    = clrWhite;       // T1/T2/T3 touch dots
+const color InpFobClrRT         = clrOrange;      // RT (broken-VR retouch / entry) dot
 const color InpFobClrPoint     = clrSilver;      // P1/P3 skeleton dots
 
 #define FOB_VIS_PREFIX "FOB_"
@@ -189,6 +190,7 @@ public:
             h = (h ^ (ulong)ev[i].zone.t1_time) * 1099511628211ULL;
             h = (h ^ (ulong)ev[i].zone.t2_time) * 1099511628211ULL;
             h = (h ^ (ulong)ev[i].zone.t3_time) * 1099511628211ULL;
+            h = (h ^ (ulong)ev[i].zone.rt_time) * 1099511628211ULL;   // RT label flips repaint
             h = (h ^ (ulong)((ev[i].zone.alive ? 1 : 2) + (ev[i].zone.valid ? 4 : 8))) * 1099511628211ULL;
            }
       return h;
@@ -335,7 +337,8 @@ void CFobVisual::UpdateZoneLifecycles(FobEvent &ev[], const int n,
    int E = m_idx;
    for(int i = 0; i < n; i++)
       if(ev[i].event_tf == E)
-         FobReplayZoneLife(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, bc, nb);
+         FobReplayZoneLife(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, bc, nb,
+                           ev[i].label == FOB_VR);   // track RT (broken-L2 retouch) on VRs only
   }
 
 //+------------------------------------------------------------------+
@@ -417,10 +420,10 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    if(!ev[i].zone.valid)
       return;
 
-   //--- DIMMED-FAILURE retention (v1.17.0): an INVALIDATED VR/CF no longer
+   //--- DIMMED-FAILURE retention (v1.17.1): an INVALIDATED VR/CF no longer
    //--- vanishes — it stays drawn in a FADED role colour (CF green / VR yellow),
-   //--- terminated at its death bar. This is the "failed zone" record a future
-   //--- break-of-VR/CF strategy reads off. SCOPE = parent VR/CF only; a dead
+   //--- full geometry (only the hue fades). This is the "failed zone" record a
+   //--- break-of-VR/CF (RT) strategy reads off. SCOPE = parent VR/CF only; a dead
    //--- PBO-only band still drops (a PBO's death begins a fresh cycle). Cleanup
    //--- is automatic: when the cycle supersedes, the gate above wipes the corpse.
    bool dimmed      = !ev[i].zone.alive;
@@ -436,6 +439,10 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    bool     l1Top = (bdir == FOB_BULL);             // bull: L1 is the TOP edge; bear: bottom
    bool     l2Top = (bdir == FOB_BEAR);
    string   tn   = " [" + TouchTag(ev[i].zone) + "]";
+   //--- RT (VR-only): broken-L2 retouch count rides the L2 label next to [Tn].
+   //--- [RT0] = invalidated but not yet retested; [RT1]+ = break-and-retest entries.
+   bool     isVR  = parentQual && (parLab == FOB_VR);
+   string   rtTag = isVR ? StringFormat(" [RT%d]", ev[i].zone.rt_count) : "";
 
    datetime t0 = ev[i].swing_time;                  // L1 origin (P2); band runs right as a ray
    datetime tR = (tR0 <= t0) ? t0 + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) : tR0;
@@ -478,7 +485,7 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    ENUM_ANCHOR_POINT aL1 = EdgeAnchor(l1Top, false);
    ENUM_ANCHOR_POINT aL2 = EdgeAnchor(l2Top, false);
    string l1Txt = "L1  " + priId + "  " + DoubleToString(l1, _Digits);
-   string l2Txt = "L2  " + priId + l2extra + tn + "  " + DoubleToString(l2, _Digits);
+   string l2Txt = "L2  " + priId + l2extra + tn + rtTag + "  " + DoubleToString(l2, _Digits);
    Label(stem + "_L1p", t0, l1, l1Txt, priClr, aL1);
    Label(stem + "_L2p", t0, l2, l2Txt, priClr, aL2);
 
@@ -515,6 +522,9 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
       if(ev[i].zone.t1_time > 0) Bullet(stem + "_t1", ev[i].zone.t1_time, l1,  rtClr);
       if(ev[i].zone.t2_time > 0) Bullet(stem + "_t2", ev[i].zone.t2_time, mid, rtClr);
       if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  rtClr);
+      //--- RT entry marker (VR-only): first retouch of the broken L2 edge, in a
+      //--- distinct hue so it reads apart from the white T-dots.
+      if(isVR && ev[i].zone.rt_time > 0) Bullet(stem + "_rt", ev[i].zone.rt_time, l2, InpFobClrRT);
      }
   }
 

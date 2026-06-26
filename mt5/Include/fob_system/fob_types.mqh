@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.17.1"
+#define FOB_VERSION "1.18.0"
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -84,6 +84,13 @@ struct FobZone
    datetime  t3_time;                      // first wick touch of L2
    bool      alive;                        // false once a close breaks beyond L2
    datetime  invalidation_time;            // bar that killed the zone (0 if alive)
+   //--- RT — RETOUCH (v1.18.0, VR-only). After a VR is INVALIDATED (close broke
+   //--- through L2), price returning to that broken L2 edge = a retouch = the
+   //--- break-and-retest entry trigger. rt_count = number of distinct returns to
+   //--- L2 (0 = none yet), rt_time = first one (the dot). Stamped only when the
+   //--- caller passes track_rt (FOB_VR) into FobReplayZoneLife.
+   int       rt_count;                     // distinct L2 retouches after invalidation
+   datetime  rt_time;                      // first retouch bar (0 = none) — RT dot anchor
   };
 
 //--- one raw breakout (a close crossing an unbroken swing)

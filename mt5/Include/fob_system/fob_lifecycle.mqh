@@ -40,11 +40,13 @@
 //+------------------------------------------------------------------+
 void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetime brk,
                        const datetime &bt[], const double &bh[],
-                       const double &bl[], const double &bc[], const int nb)
+                       const double &bl[], const double &bc[], const int nb,
+                       const bool track_rt = false)
   {
    //--- reset lifecycle state (stateless recompute)
    z.t1_time = 0; z.t2_time = 0; z.t3_time = 0;
    z.alive = true; z.invalidation_time = 0;
+   z.rt_count = 0; z.rt_time = 0;
    if(!z.valid)
      { z.alive = false; return; }                // no zone -> no life (foolproof)
 
@@ -53,22 +55,50 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
    double mid  = (l1 + l2) * 0.5;
    z.mid       = mid;
 
+   bool invalidated = false;                      // RT phase begins after this
+   bool armed       = false;                      // price currently on the broken side
+
    for(int i = 0; i < nb; i++)
      {
       if(bt[i] <= brk)
          continue;                                // only bars after the break
 
-      //--- retest ladder (wick) — stamped FIRST, so the death bar's wick can
-      //--- still set T3 before invalidation kills the zone (BRC parity).
-      double probe = bull ? bl[i] : bh[i];
-      if(z.t1_time == 0 && (bull ? (probe <= l1)  : (probe >= l1)))  z.t1_time = bt[i];
-      if(z.t2_time == 0 && (bull ? (probe <= mid) : (probe >= mid))) z.t2_time = bt[i];
-      if(z.t3_time == 0 && (bull ? (probe <= l2)  : (probe >= l2)))  z.t3_time = bt[i];
+      if(!invalidated)
+        {
+         //--- retest ladder (wick) — stamped FIRST, so the death bar's wick can
+         //--- still set T3 before invalidation kills the zone (BRC parity).
+         double probe = bull ? bl[i] : bh[i];
+         if(z.t1_time == 0 && (bull ? (probe <= l1)  : (probe >= l1)))  z.t1_time = bt[i];
+         if(z.t2_time == 0 && (bull ? (probe <= mid) : (probe >= mid))) z.t2_time = bt[i];
+         if(z.t3_time == 0 && (bull ? (probe <= l2)  : (probe >= l2)))  z.t3_time = bt[i];
 
-      //--- invalidation (close-only): close beyond L2 in the anti-break dir.
-      bool dead = bull ? (bc[i] < l2) : (bc[i] > l2);
-      if(dead)
-        { z.alive = false; z.invalidation_time = bt[i]; break; }
+         //--- invalidation (close-only): close beyond L2 in the anti-break dir.
+         bool dead = bull ? (bc[i] < l2) : (bc[i] > l2);
+         if(dead)
+           {
+            z.alive = false; z.invalidation_time = bt[i];
+            if(!track_rt) break;                  // CF/PBO: stop at death (old behaviour)
+            invalidated = true; armed = true;     // VR: open the RT phase from next bar
+           }
+        }
+      else
+        {
+         //--- RT phase (VR-only): count DISTINCT returns to the broken L2 edge.
+         //--- A bull VR broke DOWN through L2 -> a retouch is a wick back UP to L2
+         //--- (high >= L2); bear VR mirrors (low <= L2). Hysteresis: price must
+         //--- leave L2 (re-arm) before another return counts, so one slow retest
+         //--- straddling L2 over several bars is ONE retouch, not many.
+         if(bull)
+           {
+            if(armed && bh[i] >= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = bt[i]; armed = false; }
+            else if(bh[i] <  l2)       armed = true;
+           }
+         else
+           {
+            if(armed && bl[i] <= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = bt[i]; armed = false; }
+            else if(bl[i] >  l2)       armed = true;
+           }
+        }
      }
   }
 
