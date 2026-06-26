@@ -26,7 +26,7 @@
 //|  eyeballed against the sequence. MT5 draws the trade arrows itself. |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.11.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.11.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -49,7 +49,6 @@ enum FOB_RMODE { FOB_R_CFZONE = 0, FOB_R_ATR = 1 };
 //--- FOB-T1 trade atom
 input int      InpSetupTf     = 4;            // setup TF INDEX (M1=0..MN1=8); 4 = H1 -> CF on M30
 input int      InpCfIdxFilter = 0;            // CF ordinal to trade (0 = ALL CFs; T2 sweeps 1/2/3)
-input bool     InpFlipDir     = false;        // DEBUG flip: buy-CF->SHORT, sell-CF->LONG (fade). Clean ONLY in ATR mode.
 input FOB_RMODE InpRMode      = FOB_R_CFZONE; // CF_ZONE (pure T1) | ATR (T1b, spread-clean)
 input double   InpSlBufferK   = 0.0;          // [CF_ZONE] SL beyond the CF level by k*penetration (0 = at the level)
 input int      InpAtrTf       = -1;           // [ATR] ATR TF INDEX (-1 = the CF/event TF = setup_tf-1)
@@ -210,8 +209,6 @@ int OnInit()
                FOB_VERSION, FobTfName(InpSetupTf), FobTfName(InpSetupTf - 1),
                FobTfName(g_ingest[0]), FobTfName(g_ingest[1]),
                InpCfIdxFilter, rdesc, InpRMultTP, InpFixedLot, InpMagic);
-   if(InpFlipDir)
-      Print("[FOB TRADER] *** FLIP MODE *** trading the FADE: buy-CF -> SHORT, sell-CF -> LONG (debug; clean only in ATR mode)");
    if(InpStudyMode)
       PrintFormat("[FOB TRADER] *** STUDY MODE (T-170) *** NO ORDERS — per CF: MFE/MAE/terminal until next CF, cap=%d %s bars, ATR=%s",
                   InpStudyCapBars, FobTfName(InpSetupTf),
@@ -394,8 +391,7 @@ void ActOnNewEvents()
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
 
       double rw = 0.0;
-      int    trade_dir = InpFlipDir ? (e.dir == FOB_BULL ? FOB_BEAR : FOB_BULL) : e.dir;
-      long pid = FobOpenMarket(trade_dir, InpFixedLot, e.level, rw);   // SL anchored to the CF level (CF_ZONE) or CMP (ATR)
+      long pid = FobOpenMarket(e.dir, InpFixedLot, e.level, rw);   // SL anchored to the CF level
       if(pid > 0)
         {
          StashTrade(pid, rw, e);
