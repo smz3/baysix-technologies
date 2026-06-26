@@ -56,7 +56,7 @@ input bool InpShowRetests  = true;        // T1/T2/T3 retest touch dots
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
-const int   InpFobLabelSize  = 9;
+const int   InpFobLabelSize  = 8;
 
 //--- structure-layer colours (mirror of BRC swings/breaks; tweak in source)
 const color InpFobClrSwingHigh = clrTomato;
