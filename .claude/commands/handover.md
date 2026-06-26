@@ -33,6 +33,17 @@ Use the printed path as the filename. Never overwrite an existing file — the s
 
 ## Step 2 — Write the file
 
+The file has **two parts**, each with its own job:
+
+- **HEAD** (`## State` / `## Next` / `## Blockers`) = the 10-second cold read — *what
+  do I do now*. This mirrors `log_tasks`. **Keep the head under ~25 lines, bullets only.**
+- **NARRATIVE** (`## Why` / `## Ruled-Out` / `## Live-Threads`) = the anti-rot context
+  that lives NOWHERE ELSE — *why we're here, what's already dead, what's mid-flight*.
+  Tight bullets, **no length cap**, but it is still read in full every session, so it
+  earns its tokens by stopping re-litigation — never prose walls. Each narrative section
+  is **mandatory**: write the bullets, or write `- None this session.` (the lint blocks
+  a missing section, so you must consciously decide each one).
+
 ```markdown
 # Handover — <Month Day, Year> <TimeOfDay>
 
@@ -47,17 +58,41 @@ Use the printed path as the filename. Never overwrite an existing file — the s
 3. [Third action if any]
 
 ## Blockers
-[None — or specific blocker and what's needed to unblock]
+- [None — or specific blocker and what's needed to unblock]
+
+## Why
+- [Why the current State is shaped this way — decisions made + their rationale.
+   Stops the next session re-arguing a settled call.]
+
+## Ruled-Out
+- [What we TRIED this session and rejected, so nobody retries it cold.
+   For a strategy-defining kill (REJECTED/FALSIFIED), cite the strategy_log /
+   result_id instead of re-prosing it — only light dead-ends live inline here.]
+- [- None this session.  ← if nothing was ruled out]
+
+## Live-Threads
+- [Half-finished investigations / hunches mid-flight that are NOT clean enough
+   to be a `## Next` task yet — the loose ends that rot if not named.]
+- [- None this session.  ← if nothing is mid-flight]
 ```
 
-Keep it under 50 lines total. The next session reads this cold in 10 seconds.
+**Why two parts:** the head is the actionable summary (also in `log_tasks`); the
+narrative is the only home for *why / dead-ends / loose threads*. Squeezing both under
+one tight cap is what made narrative rot — so the cap is on the HEAD only.
 
 ## Step 2.5 — Lint (BLOCKING)
 
-Every result-shaped number (R-multiples, t-stats, win-rates, $/trade, Sharpe, z)
-must cite a backing artifact — a `step4_results` result_id (e.g. "result_id 121")
-or an on-disk artifact path (`ReportTester-*.xlsx`, `outputs/**/*.json|csv`) — in
-the SAME `##` section. This kills the hand-typed-number bug (task 50).
+The lint enforces three things, all blocking:
+1. **Required sections present** — `State / Next / Blockers / Why / Ruled-Out /
+   Live-Threads` must all exist (an explicit `- None this session.` satisfies the
+   narrative ones). A missing section blocks — this is the teeth on the narrative
+   contract (task 180); without it the narrative rules just rot like prose.
+2. **State is bullet-point form** (no prose paragraphs).
+3. **Every result-shaped number cites a backing artifact** — R-multiples, t-stats,
+   win-rates, $/trade, Sharpe, z must cite a `step4_results` result_id (e.g.
+   "result_id 121") or an on-disk artifact path (`ReportTester-*.xlsx`,
+   `outputs/**/*.json|csv`) in the SAME `##` section. Kills the hand-typed-number
+   bug (task 50).
 
 ```bash
 python research/code/infra/handover_lint.py <the-handover-path-you-just-wrote>

@@ -1,6 +1,8 @@
 """
-handover_lint.py — BLOCKING gate: every result-shaped number in a handover
-must cite a backing artifact (a step4_results.result_id, or a file on disk).
+handover_lint.py — BLOCKING gate on the handover contract. Three checks:
+  1. required sections present  (State/Next/Blockers + Why/Ruled-Out/Live-Threads — task 180)
+  2. ## State is bullet-point form
+  3. every result-shaped number cites a backing artifact (result_id or file on disk — task 50)
 
 Why this exists
 ---------------
@@ -114,6 +116,32 @@ def _citations_in(section: str, valid_ids: set[int]) -> bool:
     return False
 
 
+# --- required-section contract (task 180) ------------------------------------
+# Every handover must carry the HEAD (what-to-do, also in log_tasks) AND the
+# NARRATIVE (why / dead-ends / loose threads — lives nowhere else). A narrative
+# section can satisfy with an explicit "- None this session." but it must EXIST,
+# so the author consciously decides each one instead of silently dropping it.
+# Header text is matched tolerantly: "Ruled-Out" / "Ruled Out", "Live-Threads" /
+# "Live Threads", any case.
+REQUIRED_SECTIONS = [
+    ("State",        re.compile(r"^#{2,}\s+State\b", re.I | re.M)),
+    ("Next",         re.compile(r"^#{2,}\s+Next\b", re.I | re.M)),
+    ("Blockers",     re.compile(r"^#{2,}\s+Blockers\b", re.I | re.M)),
+    ("Why",          re.compile(r"^#{2,}\s+Why\b", re.I | re.M)),
+    ("Ruled-Out",    re.compile(r"^#{2,}\s+Ruled[\s\-]?Out\b", re.I | re.M)),
+    ("Live-Threads", re.compile(r"^#{2,}\s+Live[\s\-]?Threads\b", re.I | re.M)),
+]
+
+
+def _check_required_sections(text: str, path: Path) -> list[str]:
+    """Every handover must carry all REQUIRED_SECTIONS. Missing ones block."""
+    missing = [name for name, pat in REQUIRED_SECTIONS if not pat.search(text)]
+    if missing:
+        return [f"{path.name}  missing required section(s): {', '.join(missing)} "
+                f"(narrative sections may say '- None this session.' but must exist — task 180)"]
+    return []
+
+
 def _check_state_bullets(text: str, path: Path) -> list[str]:
     """## State section must use bullet points (lines starting with - or *)."""
     in_state = False
@@ -145,7 +173,8 @@ def _check_state_bullets(text: str, path: Path) -> list[str]:
 def lint_file(path: Path, valid_ids: set[int]) -> list[str]:
     """Return a list of violation strings for one handover file. Empty = clean."""
     text = path.read_text(encoding="utf-8", errors="replace")
-    violations: list[str] = _check_state_bullets(text, path)
+    violations: list[str] = _check_required_sections(text, path)
+    violations += _check_state_bullets(text, path)
     for start_ln, section in _split_sections(text):
         # find result-shaped numbers in this section
         hits: list[tuple[str, str]] = []
@@ -191,9 +220,11 @@ def main(argv: list[str]) -> int:
         return 0
 
     print("=" * 72)
-    print("handover_lint: BLOCKED — result-shaped numbers without a backing citation.")
-    print("Cite a step4_results result_id (e.g. 'result_id 121') or an on-disk")
-    print("artifact path (ReportTester-*.xlsx, outputs/**/*.json|csv) in the SAME section.")
+    print("handover_lint: BLOCKED — handover contract violation(s).")
+    print("Fixes: (a) add any missing section (narrative may say '- None this session.');")
+    print("       (b) make ## State bullet-point form;")
+    print("       (c) cite each result-number with a step4_results result_id or an")
+    print("           on-disk artifact path (ReportTester-*.xlsx, outputs/**/*.json|csv).")
     print("-" * 72)
     for v in all_violations:
         print("  " + v)
