@@ -162,6 +162,26 @@ public:
    void     LiveTouchForming(FobEvent &ev[], const int n,
                              const datetime fbt, const double fbh, const double fbl);
 
+   //--- cheap FNV-1a hash of the CURRENTLY-stamped chart-TF zone state (touch
+   //--- ladder + alive/valid + count). The EA repaints ONLY when this changes —
+   //--- a full ClearAll+redraw every tick is what makes the bands TWITCH. BRC
+   //--- parity: it surgically updates a zone only when its touch actually advances.
+   ulong    StateSignature(const FobEvent &ev[], const int n) const
+     {
+      if(m_idx < 0)
+         return 0;
+      ulong h = 1469598103934665603ULL ^ (ulong)n;
+      for(int i = 0; i < n; i++)
+         if(ev[i].event_tf == m_idx)
+           {
+            h = (h ^ (ulong)ev[i].zone.t1_time) * 1099511628211ULL;
+            h = (h ^ (ulong)ev[i].zone.t2_time) * 1099511628211ULL;
+            h = (h ^ (ulong)ev[i].zone.t3_time) * 1099511628211ULL;
+            h = (h ^ (ulong)((ev[i].zone.alive ? 1 : 2) + (ev[i].zone.valid ? 4 : 8))) * 1099511628211ULL;
+           }
+      return h;
+     }
+
    //--- UNIFIED zone layer: ClearAll + draw every active-cycle, ALIVE, VALID band
    //--- (lines + edge labels + optional P1/P3 + retest dots) for the chart TF.
    //--- liveTf/liveSeq = (setup_tf, seq) cycles with an OPEN position: drawn even

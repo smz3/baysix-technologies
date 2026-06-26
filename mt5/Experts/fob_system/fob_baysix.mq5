@@ -21,7 +21,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.16.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.16.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
@@ -73,6 +73,7 @@ FobEvent      g_events[];           // every classified event (CSV + redraw sour
 int           g_radius = 1;
 string        g_runid  = "";
 CFobVisual    g_vis;
+ulong         g_last_sig = 0;       // last-drawn zone-state hash -> repaint only on change (no twitch)
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -254,9 +255,16 @@ void OnTick()
          if(live && CopyRates(_Symbol, g_periods[ci], 0, 1, f) == 1)
             g_vis.LiveTouchForming(g_events, ArraySize(g_events), f[0].time, f[0].high, f[0].low);
         }
-      g_vis.DrawZones(g_events, ArraySize(g_events));              // ClearAll + zone bands + edge labels
-      if(ci >= 0)
-         g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks on top
+      //--- repaint ONLY on a real change (new event OR a newly-stamped touch) — a
+      //--- full ClearAll+redraw every tick is what made the bands TWITCH.
+      ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events));
+      if(np > 0 || sig != g_last_sig)
+        {
+         g_vis.DrawZones(g_events, ArraySize(g_events));           // ClearAll + zone bands + edge labels
+         if(ci >= 0)
+            g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks); // swings + raw breaks on top
+         g_last_sig = sig;
+        }
      }
   }
 

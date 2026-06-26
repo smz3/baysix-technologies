@@ -35,7 +35,7 @@
 //|  newer cycle supersedes it (task: visual retention).               |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.16.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.16.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -113,6 +113,7 @@ int           g_seen     = 0;           // # events already acted on (watermark 
 int           g_ingest[];               // ONLY the TF indices we ingest = {setup_tf-1, setup_tf}
 int           g_setup_tf   = 4;               // setup TF index, derived from InpTfPair in OnInit
 CFobVisual    g_vis;
+ulong         g_last_sig = 0;       // last-drawn zone-state hash -> repaint only on change (no twitch)
 
 //--- per-trade stash: position_id -> trade context (for the ledger + T2 conditioning).
 //--- These arrays hold EVERY open+closed trade — the trader is now multi-position.
@@ -560,9 +561,17 @@ void OnTick()
          if(live && CopyRates(_Symbol, g_periods[ci], 0, 1, f) == 1)
             g_vis.LiveTouchForming(g_events, ArraySize(g_events), f[0].time, f[0].high, f[0].low);
         }
-      g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf));
-      if(ci >= 0)
-         g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
+      //--- repaint ONLY on a real change (new event, a newly-stamped touch, or a
+      //--- live-cycle open/close) — full ClearAll+redraw every tick is the twitch.
+      ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events))
+                  ^ ((ulong)ArraySize(g_live_tf) * 2654435761ULL);
+      if(np > 0 || sig != g_last_sig)
+        {
+         g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf));
+         if(ci >= 0)
+            g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
+         g_last_sig = sig;
+        }
      }
   }
 
