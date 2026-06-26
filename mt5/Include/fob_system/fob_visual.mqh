@@ -108,18 +108,21 @@ private:
               { return fanLeft ? (edgeTop ? ANCHOR_RIGHT_LOWER : ANCHOR_RIGHT_UPPER)
                                : (edgeTop ? ANCHOR_LEFT_LOWER  : ANCHOR_LEFT_UPPER); }
 
-   //--- time delta that visually equals `txt`'s rendered width, so a trailing
-   //--- label starts where `txt` ends (all text fans RIGHT). Zoom-stable: recomputed
-   //--- every redraw from the chart's px<->bar scale (OnChartEvent repaints).
-   datetime RightOffset(const string txt) const
+   //--- price delta equal to `lines` rendered text rows, so a STACKED label sits
+   //--- one row OUTSIDE the previous (vertical gap, NOT horizontal — keeps the
+   //--- secondary in its own object so its role colour survives). Zoom-stable:
+   //--- recomputed every redraw from the chart's price<->pixel scale (OnChartEvent
+   //--- repaints). Both rows are left-anchored at the same x, so they can never
+   //--- collide horizontally — worst case the vertical gap just breathes.
+   double VertOffset(const int lines) const
      {
-      long   wpx = ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
-      long   vis = ChartGetInteger(0, CHART_VISIBLE_BARS);
-      int    sec = (int)PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod());
-      double px  = (double)(StringLen(txt) + 2) * (double)InpFobLabelSize * 0.85; // glyph est + pad (overshoot ok)
-      if(wpx <= 0 || vis <= 0)
-         return (datetime)((StringLen(txt) + 2) * sec);                      // fallback
-      return (datetime)(px * ((double)(vis * sec) / (double)wpx));
+      long   hpx  = ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+      double pmax = ChartGetDouble(0, CHART_PRICE_MAX);
+      double pmin = ChartGetDouble(0, CHART_PRICE_MIN);
+      double rowPx = (double)lines * (double)InpFobLabelSize * 1.6;        // row height + spacing
+      if(hpx <= 0 || pmax <= pmin)
+         return (double)lines * 100.0 * _Point;                           // fallback (~rough)
+      return rowPx * (pmax - pmin) / (double)hpx;
      }
 
    //--- own-PBO lifecycle phase badge ("" for M1 / no own PBO).
@@ -408,17 +411,20 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    Label(stem + "_L1p", t0, l1, l1Txt, priClr, aL1);
    Label(stem + "_L2p", t0, l2, l2Txt, priClr, aL2);
 
-   //--- SECONDARY fan: own PBO local view (lowercase, demoted), only when a parent
-   //--- is primary AND the own PBO is itself active/held. Trails the primary on the
-   //--- SAME row, starting where it ends (RightOffset) so both flow RIGHT, 2 colours.
+   //--- SECONDARY (own PBO local view): lowercase, demoted, only when a parent is
+   //--- primary AND the own PBO is itself active/held. Kept in its OWN blue object so
+   //--- the role colour survives; STACKED one row OUTSIDE the L1 primary (above for a
+   //--- bull top-edge, below for a bear bottom-edge), same x. Both PBO bits — the id
+   //--- and the lifecycle badge — share this single blue row; L2 carries no secondary.
    if(parentQual && anchorQual)
      {
       color  subClr = FobLabelColor(FOB_PBO);
-      string sub1   = "  ·  pbo " + FobTfName(E) + " #" + (string)pOwn;  StringToLower(sub1);
-      Label(stem + "_L1s", t0 + RightOffset(l1Txt), l1, sub1, subClr, aL1);
-      string sub2 = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);
-      if(StringLen(sub2) > 0)
-        { sub2 = "  " + sub2; StringToLower(sub2); Label(stem + "_L2s", t0 + RightOffset(l2Txt), l2, sub2, subClr, aL2); }
+      string sub    = "·  pbo " + FobTfName(E) + " #" + (string)pOwn;
+      string badge  = LifecycleBadge(E, ownActive, vrLocked[E], cfCount[E]);  // already " · ..."
+      if(StringLen(badge) > 0) sub += " " + badge;
+      StringToLower(sub);
+      double l1sP = l1 + (l1Top ? 1.0 : -1.0) * VertOffset(1);
+      Label(stem + "_L1s", t0, l1sP, sub, subClr, aL1);
      }
 
    //--- P1 / P3 skeleton dots (own toggle)
