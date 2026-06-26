@@ -8,7 +8,7 @@
 //|  emitter stays pristine (read-only); this EA adds orders.          |
 //|                                                                    |
 //|  FOB-T1 atom (the coin-flip GATE, task 163):                       |
-//|    • Trigger : a CF on InpSetupTf (default H1 -> CF fires on M30). |
+//|    • Trigger : a CF on g_setup_tf (default H1 -> CF fires on M30). |
 //|    • Entry   : MARKET on CF detection (E1), PBO/continuation dir.   |
 //|    • SL      : beyond the CF ZONE — the CF's broken swing level     |
 //|                (reclaim it = breakout failed) ± InpSlBufferK.       |
@@ -26,7 +26,7 @@
 //|  eyeballed against the sequence. MT5 draws the trade arrows itself. |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.11.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.12.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -40,31 +40,35 @@ input int    InpSwingWindow   = 3;      // close-based pivot window (odd, >=3)
 input int    InpMaxAge        = 0;      // break age filter in bars (<=0 disables)
 input bool   InpPboNewestOnly = true;   // PBO = freshest source near CMP
 
-//--- risk-unit mode (T1b, task 169). CF_ZONE = SL at the CF level: median ~0.86pt on H1,
-//--- so spread is a huge fraction of risk -> win-rate is spread-survival, not CF direction
-//--- (result_id 11). ATR = symmetric bracket sized to volatility so risk-unit >> spread:
-//--- a consistent-R coin-flip the binomial test can actually read.
-enum FOB_RMODE { FOB_R_CFZONE = 0, FOB_R_ATR = 1 };
+//--- setup/CF timeframe pair. A PBO on the setup TF is confirmed by a CF on the TF one
+//--- below it; pick a pair from the dropdown and the CF TF is always (setup TF - 1).
+enum FOB_TF_PAIR
+  {
+   FOB_TF_M5_M1   = 0,   // setup M5  -> CF on M1
+   FOB_TF_M15_M5  = 1,   // setup M15 -> CF on M5
+   FOB_TF_M30_M15 = 2,   // setup M30 -> CF on M15
+   FOB_TF_H1_M30  = 3,   // setup H1  -> CF on M30  (baseline)
+   FOB_TF_H4_H1   = 4,   // setup H4  -> CF on H1
+   FOB_TF_D1_H4   = 5    // setup D1  -> CF on H4
+  };
 
-//--- FOB-T1 trade atom
-input int      InpSetupTf     = 4;            // setup TF INDEX (M1=0..MN1=8); 4 = H1 -> CF on M30
+//--- FOB-T1 trade atom. SL = the broken CF swing level (pure T1, CF_ZONE).
+input FOB_TF_PAIR InpTfPair   = FOB_TF_H1_M30; // setup TF -> CF on the TF one below
 input int      InpCfIdxFilter = 0;            // CF ordinal to trade (0 = ALL CFs; T2 sweeps 1/2/3)
-input FOB_RMODE InpRMode      = FOB_R_CFZONE; // CF_ZONE (pure T1) | ATR (T1b, spread-clean)
-input double   InpSlBufferK   = 0.0;          // [CF_ZONE] SL beyond the CF level by k*penetration (0 = at the level)
-input int      InpAtrTf       = -1;           // [ATR] ATR TF INDEX (-1 = the CF/event TF = setup_tf-1)
-input int      InpAtrPeriod   = 14;           // [ATR] ATR period (bars)
-input double   InpAtrMult     = 1.0;          // [ATR] risk = InpAtrMult * ATR
+input double   InpSlBufferK   = 0.0;          // SL beyond the CF level by k*penetration (0 = at the level)
 input double   InpRMultTP      = 1.0;         // TP = RR * risk (1.0 = 1:1, the coin-flip null)
 input double   InpFixedLot      = 0.01;       // min lot at $50
 input ulong    InpMagic         = 3001;       // FOB trader magic
 
-//--- forward-excursion STUDY mode (T-170). NO orders: per CF on InpSetupTf, anchor at the
+//--- forward-excursion STUDY mode (T-170). NO orders: per CF on g_setup_tf, anchor at the
 //--- CF mid price and track running MFE/MAE/terminal on REAL TICKS until the NEXT CF on the
 //--- setup TF (any cf_idx) — or a cap. COST-FREE: measured on MID (zero spread) — this is
 //--- DISCOVERY, pure direction geometry; cost enters at G2, NEVER here. ATR unit = the risk
 //--- TF (default setup_tf-1 = M30). Decomposes DIRECTION vs ENTRY-TIMING.
 input bool     InpStudyMode    = false;       // [study] forward-excursion measurement (no trades)
 input int      InpStudyCapBars = 48;          // [study] force-close window after this many setup-TF bars
+input int      InpAtrTf        = -1;          // [study] ATR TF index for the MFE/MAE unit (-1 = CF TF)
+input int      InpAtrPeriod    = 14;          // [study] ATR period for the excursion unit
 
 //--- the 9 TFs (index order MUST match FobTfName in fob_types.mqh)
 ENUM_TIMEFRAMES g_periods[FOB_N_TF] =
@@ -99,7 +103,8 @@ FobEvent      g_events[];
 int           g_radius   = 1;
 int           g_seen     = 0;           // # events already acted on (watermark into g_events)
 int           g_ingest[];               // ONLY the TF indices we ingest = {setup_tf-1, setup_tf}
-int           g_atr_handle = INVALID_HANDLE;  // [ATR mode] iATR handle on the risk TF
+int           g_atr_handle = INVALID_HANDLE;  // [study] iATR handle for the MFE/MAE unit
+int           g_setup_tf   = 4;               // setup TF index, derived from InpTfPair in OnInit
 CFobVisual    g_vis;
 
 //--- one-position state
@@ -138,24 +143,20 @@ int OnInit()
    g_radius = FobSwingRadius(InpSwingWindow);
    if(g_radius < 0)
       return INIT_PARAMETERS_INCORRECT;
-   if(InpSetupTf <= 0 || InpSetupTf >= FOB_N_TF)
-     {
-      Print("[FOB TRADER] InpSetupTf must be 1..", FOB_N_TF - 1, " (a PBO needs a TF below for its CF).");
-      return INIT_PARAMETERS_INCORRECT;
-     }
+   g_setup_tf = (int)InpTfPair + 1;   // M5_M1=0->M5=1, M15_M5=1->M15=2, ... D1_H4=5->D1=6
 
    //--- ingest ONLY the setup TF and its n-1 (CF) TF: byte-identical to the full
    //--- classifier for this setup's events (a break on TF t only sets PBO(t) and
    //--- VR/CF(t+1)) — so {setup_tf-1, setup_tf} fully determines every setup_tf event.
    ArrayResize(g_ingest, 2);
-   g_ingest[0] = InpSetupTf - 1;
-   g_ingest[1] = InpSetupTf;
+   g_ingest[0] = g_setup_tf - 1;
+   g_ingest[1] = g_setup_tf;
 
-   //--- ATR risk handle (T1b): default the risk TF to the CF/event TF (setup_tf-1) unless overridden.
+   //--- ATR handle is the MFE/MAE measurement unit for STUDY mode only (no role in trading).
    if(g_atr_handle != INVALID_HANDLE) { IndicatorRelease(g_atr_handle); g_atr_handle = INVALID_HANDLE; }
-   if(InpRMode == FOB_R_ATR || InpStudyMode)   // study mode always needs ATR as the risk unit
+   if(InpStudyMode)
      {
-      int atr_tf = (InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (InpSetupTf - 1);
+      int atr_tf = (InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (g_setup_tf - 1);
       g_atr_handle = iATR(_Symbol, g_periods[atr_tf], InpAtrPeriod);
       if(g_atr_handle == INVALID_HANDLE)
         { Print("[FOB TRADER] iATR handle creation FAILED"); return INIT_FAILED; }
@@ -201,18 +202,15 @@ int OnInit()
    g_vis.SyncChartTF();
    g_vis.ClearAll();
 
-   string rdesc = (InpRMode == FOB_R_ATR)
-                  ? StringFormat("ATR(%d)x%.2f on %s", InpAtrPeriod, InpAtrMult,
-                                 FobTfName((InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (InpSetupTf - 1)))
-                  : StringFormat("CF_ZONE SLbuf=%.2f", InpSlBufferK);
+   string rdesc = StringFormat("CF_ZONE SLbuf=%.2f", InpSlBufferK);
    PrintFormat("[FOB TRADER] v%s init OK — setup_tf=%s -> CF on %s (ingest %s+%s) | cf_filter=%d | R=%s TP=%.2fR | lot=%.2f magic=%I64u",
-               FOB_VERSION, FobTfName(InpSetupTf), FobTfName(InpSetupTf - 1),
+               FOB_VERSION, FobTfName(g_setup_tf), FobTfName(g_setup_tf - 1),
                FobTfName(g_ingest[0]), FobTfName(g_ingest[1]),
                InpCfIdxFilter, rdesc, InpRMultTP, InpFixedLot, InpMagic);
    if(InpStudyMode)
       PrintFormat("[FOB TRADER] *** STUDY MODE (T-170) *** NO ORDERS — per CF: MFE/MAE/terminal until next CF, cap=%d %s bars, ATR=%s",
-                  InpStudyCapBars, FobTfName(InpSetupTf),
-                  FobTfName((InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (InpSetupTf - 1)));
+                  InpStudyCapBars, FobTfName(g_setup_tf),
+                  FobTfName((InpAtrTf >= 0 && InpAtrTf < FOB_N_TF) ? InpAtrTf : (g_setup_tf - 1)));
    return INIT_SUCCEEDED;
   }
 
@@ -298,20 +296,11 @@ long FobOpenMarket(const int dir, const double lot, const double cf_level, doubl
    bool   is_long = (dir == FOB_BULL);
    double entry   = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                             : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double sl, risk;
-   if(InpRMode == FOB_R_ATR)
-     {
-      double atr = FobAtr();
-      risk = InpAtrMult * atr;                            // volatility-scaled, spread-independent
-      sl   = is_long ? entry - risk : entry + risk;       // symmetric bracket off CMP (CF level unused)
-     }
-   else                                                   // FOB_R_CFZONE (pure T1)
-     {
-      double pen    = MathAbs(entry - cf_level);          // breakout penetration
-      double buffer = InpSlBufferK * pen;
-      sl   = is_long ? cf_level - buffer : cf_level + buffer;
-      risk = MathAbs(entry - sl);
-     }
+   //--- SL = the broken CF swing level (pure T1), pushed beyond by InpSlBufferK*penetration.
+   double pen    = MathAbs(entry - cf_level);             // breakout penetration
+   double buffer = InpSlBufferK * pen;
+   double sl     = is_long ? cf_level - buffer : cf_level + buffer;
+   double risk   = MathAbs(entry - sl);
    if(risk <= 0.0)
       return 0;
    double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
@@ -387,7 +376,7 @@ void ActOnNewEvents()
          break;                                  // one position at a time — skip the rest
       FobEvent e = g_events[k];
       if(e.label != FOB_CF)              continue;
-      if(e.setup_tf != InpSetupTf)       continue;
+      if(e.setup_tf != g_setup_tf)       continue;
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
 
       double rw = 0.0;
@@ -414,7 +403,7 @@ void CloseStudyWindow(const int next_dir)
    if(g_sw_mfe1_ts > 0 && (g_sw_mae1_ts == 0 || g_sw_mfe1_ts <= g_sw_mae1_ts)) first = 1;  // MFE hit 1ATR first
    else if(g_sw_mae1_ts > 0)                                                   first = 0;  // MAE hit 1ATR first
    else                                                                        first = -1; // neither reached 1ATR
-   int bars = (int)((TimeCurrent() - g_sw_open_ts) / PeriodSeconds(g_periods[InpSetupTf]));
+   int bars = (int)((TimeCurrent() - g_sw_open_ts) / PeriodSeconds(g_periods[g_setup_tf]));
 
    int m = ArraySize(sr_time);
    ArrayResize(sr_time, m+1);   ArrayResize(sr_dir, m+1);    ArrayResize(sr_cfidx, m+1);
@@ -444,7 +433,7 @@ void UpdateStudyWindow()
    if(g_sw_mfe1_ts == 0 && g_sw_mfe >= g_sw_atr) g_sw_mfe1_ts = TimeCurrent();
    if(g_sw_mae1_ts == 0 && g_sw_mae >= g_sw_atr) g_sw_mae1_ts = TimeCurrent();
    //--- cap: force-close after InpStudyCapBars setup-TF bars with no follow-up CF
-   if((long)(TimeCurrent() - g_sw_open_ts) >= (long)InpStudyCapBars * PeriodSeconds(g_periods[InpSetupTf]))
+   if((long)(TimeCurrent() - g_sw_open_ts) >= (long)InpStudyCapBars * PeriodSeconds(g_periods[g_setup_tf]))
       CloseStudyWindow(-1);
   }
 
@@ -475,7 +464,7 @@ void StudyOnNewEvents()
      {
       FobEvent e = g_events[k];
       if(e.label != FOB_CF)              continue;
-      if(e.setup_tf != InpSetupTf)       continue;
+      if(e.setup_tf != g_setup_tf)       continue;
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
       if(g_sw_open) CloseStudyWindow(e.dir);   // prior window ends at this CF
       OpenStudyWindow(e);
@@ -493,7 +482,7 @@ void WriteStudyLedger()
    StringReplace(stamp, ".", ""); StringReplace(stamp, ":", ""); StringReplace(stamp, " ", "_");
    string ver = FOB_VERSION; StringReplace(ver, ".", "");
    string fname = StringFormat("FOB\\fob_excursion_%s_v%s_%s_cf%d_%s.csv",
-                               _Symbol, ver, FobTfName(InpSetupTf), InpCfIdxFilter, stamp);
+                               _Symbol, ver, FobTfName(g_setup_tf), InpCfIdxFilter, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      { PrintFormat("[FOB STUDY] ledger FileOpen failed (%d) for %s", GetLastError(), fname); return; }
@@ -669,9 +658,9 @@ void WriteTradeLedger()
    string stamp = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
    StringReplace(stamp, ".", ""); StringReplace(stamp, ":", ""); StringReplace(stamp, " ", "_");
    string ver = FOB_VERSION; StringReplace(ver, ".", "");
-   string rmode = (InpRMode == FOB_R_ATR) ? "atr" : "cfz";   // keep ATR/CF_ZONE ledgers distinct
+   string rmode = "cfz";   // CF_ZONE is the only risk mode
    string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_cf%d_%s.csv",
-                               _Symbol, ver, FobTfName(InpSetupTf), rmode, InpCfIdxFilter, stamp);
+                               _Symbol, ver, FobTfName(g_setup_tf), rmode, InpCfIdxFilter, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      { PrintFormat("[FOB TRADER] ledger FileOpen failed (%d) for %s", GetLastError(), fname); return; }
