@@ -35,7 +35,7 @@
 //|  newer cycle supersedes it (task: visual retention).               |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.19.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.19.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -661,8 +661,13 @@ void WriteTradeLedger()
    StringReplace(stamp, ".", ""); StringReplace(stamp, ":", ""); StringReplace(stamp, " ", "_");
    string ver = FOB_VERSION; StringReplace(ver, ".", "");
    string rmode = "cfz";   // CF_ZONE is the only risk mode
-   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_cf%d_%s.csv",
-                               _Symbol, ver, FobTfName(g_setup_tf), rmode, InpCfIdxFilter, stamp);
+   //--- K & RR in the name so an OPTIMIZATION sweep writes one CSV per combo
+   //    (else every pass clobbers the same file). k025=SLbuf 0.25, rr200=RR 2.00.
+   string ktok  = StringFormat("k%03d",  (int)MathRound(InpSlBufferK * 100));
+   string rrtok = StringFormat("rr%03d", (int)MathRound(InpRMultTP  * 100));
+   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_%s_%s_cf%d_%s.csv",
+                               _Symbol, ver, FobTfName(g_setup_tf), rmode,
+                               ktok, rrtok, InpCfIdxFilter, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      { PrintFormat("[FOB TRADER] ledger FileOpen failed (%d) for %s", GetLastError(), fname); return; }
