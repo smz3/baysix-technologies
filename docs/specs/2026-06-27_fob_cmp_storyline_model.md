@@ -45,10 +45,12 @@ To avoid drowning in the full nested machine, **pick one execution TF** and read
 
 > **H4 setup mode (worked example):**
 > 1. Wait for the **H4 VR → CF** to complete (the setup confirms on H4).
-> 2. **Do not enter on the raw H4 CF.** Drop to **M5** and wait for an M5 setup to give a **more precise entry** aligned with the H4 bias.
-> 3. The H4 CF is the *context*; the M5 setup is the *trigger*.
+> 2. **Do not enter on the raw H4 CF.** Drop to a lower TF and wait for the **first LTF CF** to print, aligned with the H4 bias, for a **more precise entry**. The LTF is **whichever lower TF gives a CF first** — M5 is only an example; it could be M15, M30, etc. (per the FOB manual: on an HTF CF, watch the LTFs and trade the first one that confirms).
+> 3. The H4 CF is the *context*; the first LTF CF is the *trigger*.
 
-This is the concrete, simple form of "cycle within a cycle": **one bias TF (H4) + one execution TF (M5).** Generalizes to any (bias TF, execution TF) pair.
+> **CAVEAT — risk/target stay HTF-anchored (Syafiq, 2026-06-27).** When an LTF is used to *trigger* an HTF CF, the **TP uses HTF logic** (the HTF target) and the **SL sits at the HTF CF zone** — NOT the LTF's own TP/SL. The LTF only sharpens *entry timing/price*; it does **not** shrink the trade to an LTF-sized target/stop. This preserves the HTF payoff structure (where the continuation magnitude lives) while the LTF buys a tighter, better-located entry → mechanically better RR, not a smaller trade.
+
+This is the concrete, simple form of "cycle within a cycle": **one bias TF (H4) + one execution TF (first LTF CF).** Generalizes to any (bias TF, execution TF) pair, always with HTF-anchored TP/SL.
 
 ---
 
