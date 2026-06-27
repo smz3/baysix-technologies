@@ -13,8 +13,8 @@
 //|  Trade atom:                                                       |
 //|    • Trigger : every CF on g_setup_tf (default H1 -> CF on M30).   |
 //|    • Entry   : MARKET on CF detection, PBO/continuation dir.       |
-//|    • SL      : beyond the CF ZONE — the CF's broken swing level     |
-//|                (reclaim it = breakout failed) ± InpSlBufferK*pen.   |
+//|    • SL      : beyond the zone FAR edge (L2) by InpSlBufferK*band, |
+//|                band = |L1-L2| (close beyond L2 = breakout failed). |
 //|    • TP      : InpRMultTP * risk.                                  |
 //|                                                                    |
 //|  MULTI-POSITION (v1.13.0, task 176): NO one-at-a-time gate. EVERY   |
@@ -35,7 +35,7 @@
 //|  newer cycle supersedes it (task: visual retention).               |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.18.3"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.19.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -64,7 +64,7 @@ enum FOB_TF_PAIR
 //--- trade atom. SL = the broken CF swing level (CF_ZONE), pushed beyond by k*penetration.
 input FOB_TF_PAIR InpTfPair   = FOB_TF_H1_M30; // setup TF -> CF on the TF one below
 input int      InpCfIdxFilter = 0;            // CF ordinal to trade (0 = ALL CFs; T2 sweeps 1/2/3)
-input double   InpSlBufferK   = 0.0;          // SL beyond the CF level by k*penetration (0 = at the level)
+input double   InpSlBufferK   = 0.25;         // SL beyond zone L2 by k*band, band=|L1-L2| (0 = at L2)
 input double   InpRMultTP      = 1.0;         // TP = RR * risk (1.0 = 1:1, the coin-flip null)
 input double   InpFixedLot      = 0.01;       // min lot at $50
 input ulong    InpMagic         = 3001;       // FOB trader magic
@@ -264,23 +264,27 @@ ENUM_ORDER_TYPE_FILLING FobFilling()
 //+------------------------------------------------------------------+
 //| Market entry on a CF, anchored to the CF zone.                   |
 //|   entry = market (Ask/Bid)                                       |
-//|   SL    = CF level (the swing the CF broke) pushed BEYOND it by   |
-//|           InpSlBufferK * penetration (reclaim = breakout failed)  |
+//|   SL    = beyond the zone FAR edge (L2) by InpSlBufferK * band,   |
+//|           band = |L1-L2| (structural, scale-free across TF/regime)|
+//|           — a close beyond L2 = breakout invalidated.            |
 //|   TP    = entry ± risk * InpRMultTP                              |
 //| Returns the new position id (0 on failure); sets out_rw = risk.  |
 //| HEDGING-safe id capture: read POSITION_ID off the entry deal so  |
 //| each concurrent position is keyed uniquely.                      |
 //+------------------------------------------------------------------+
-long FobOpenMarket(const int dir, const double lot, const double cf_level, double &out_rw)
+long FobOpenMarket(const FobEvent &e, const double lot, double &out_rw)
   {
    out_rw = 0.0;
-   bool   is_long = (dir == FOB_BULL);
+   if(!e.zone.valid) return 0;                            // no measurable band -> no trade
+   bool   is_long = (e.dir == FOB_BULL);
    double entry   = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                             : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   //--- SL = the broken CF swing level, pushed beyond by InpSlBufferK*penetration.
-   double pen    = MathAbs(entry - cf_level);             // breakout penetration
-   double buffer = InpSlBufferK * pen;
-   double sl     = is_long ? cf_level - buffer : cf_level + buffer;
+   //--- SL = beyond the zone FAR edge (L2) by InpSlBufferK * band height.
+   double l1     = e.level;                               // broken swing (near edge)
+   double l2     = e.zone.l2;                             // far/invalidation edge
+   double band   = MathAbs(l1 - l2);                      // zone height (scale-free)
+   double buffer = InpSlBufferK * band;
+   double sl     = is_long ? l2 - buffer : l2 + buffer;
    double risk   = MathAbs(entry - sl);
    if(risk <= 0.0)
       return 0;
@@ -346,7 +350,7 @@ void ActOnNewEvents()
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
 
       double rw = 0.0;
-      long pid = FobOpenMarket(e.dir, InpFixedLot, e.level, rw);   // SL anchored to the CF level
+      long pid = FobOpenMarket(e, InpFixedLot, rw);   // SL anchored beyond zone L2
       if(pid > 0)
          StashTrade(pid, rw, e);
      }
