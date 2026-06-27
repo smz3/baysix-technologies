@@ -400,13 +400,13 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
   {
    //--- split the group into own PBO (setup_tf E) + optional parent (setup_tf E+1)
    int  pOwn = -1, ownDir = -1;
-   bool hasPar = false; int parLab = -1, parSeq = -1, parDir = -1, parCf = 0;
+   bool hasPar = false; int parLab = -1, parSeq = -1, parDir = -1, parCf = 0, parIdx = -1;
    for(int k = i; k < j; k++)
      {
       if(ev[k].label == FOB_PBO && ev[k].setup_tf == E)
         { pOwn = ev[k].seq; ownDir = ev[k].dir; }
       else if((ev[k].label == FOB_VR || ev[k].label == FOB_CF) && ev[k].setup_tf == E + 1)
-        { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; parCf = ev[k].cf_idx; }
+        { hasPar = true; parLab = ev[k].label; parSeq = ev[k].seq; parDir = ev[k].dir; parCf = ev[k].cf_idx; parIdx = k; }
      }
 
    //--- ACTIVE-CYCLE-ONLY gate (per role): active cycle OR a superseded cycle
@@ -442,8 +442,11 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    string   tn   = " [" + TouchTag(ev[i].zone) + "]";
    //--- RT (VR-only): broken-L2 retouch count rides the L2 label next to [Tn].
    //--- [RT0] = invalidated but not yet retested; [RT1]+ = break-and-retest entries.
+   //--- NOTE: rt_count is computed ONLY on the VR event row (track_rt=label==VR), which
+   //--- is the PARENT row (ev[parIdx]) — NOT ev[i] (= the own-PBO row, ROLE 1, appended
+   //--- first). Read RT off the parent VR zone or it is permanently [RT0]. (task 183)
    bool     isVR  = parentQual && (parLab == FOB_VR);
-   string   rtTag = isVR ? StringFormat(" [RT%d]", ev[i].zone.rt_count) : "";
+   string   rtTag = isVR ? StringFormat(" [RT%d]", ev[parIdx].zone.rt_count) : "";
 
    datetime t0 = ev[i].swing_time;                  // L1 origin (P2); band runs right as a ray
    datetime tR = (tR0 <= t0) ? t0 + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) : tR0;
@@ -525,7 +528,7 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
       if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  rtClr);
       //--- RT entry marker (VR-only): first retouch of the broken L2 edge, in a
       //--- distinct hue so it reads apart from the white T-dots.
-      if(isVR && ev[i].zone.rt_time > 0) Bullet(stem + "_rt", ev[i].zone.rt_time, l2, InpFobClrRT);
+      if(isVR && ev[parIdx].zone.rt_time > 0) Bullet(stem + "_rt", ev[parIdx].zone.rt_time, l2, InpFobClrRT);
      }
   }
 
