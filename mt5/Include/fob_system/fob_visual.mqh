@@ -74,6 +74,7 @@ const color InpFobClrMid       = clrDimGray;   // 50% line
 const color InpFobClrRetest    = clrWhite;       // T1/T2/T3 touch dots
 const color InpFobClrRT         = clrOrange;      // RT (broken-VR retouch / entry) dot
 const color InpFobClrPoint     = clrSilver;      // P1/P3 skeleton dots
+const color InpFobClrCfSell    = clrRed;         // CF whose thesis is SELL -> red band+label (CF BUY keeps the role green)
 
 #define FOB_VIS_PREFIX "FOB_"
 #define FOB_VIS_FONT   "Calibri Light"
@@ -464,6 +465,9 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
       else
          priId = StringFormat("%s %s #%d %s",    FobLabelName(parLab), FobTfName(E + 1), parSeq, FobDirName(parThesis));
       priClr = FobLabelColor(parLab);
+      //--- CF direction tint: a SELL-thesis CF turns RED (band lines + edge labels,
+      //--- both ride priClr); a BUY-thesis CF keeps the role green. VR untouched.
+      if(parLab == FOB_CF && parThesis == FOB_BEAR) priClr = InpFobClrCfSell;
      }
    else
      {
