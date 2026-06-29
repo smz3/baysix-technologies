@@ -21,13 +21,14 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.20.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.21.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
 #include <fob_system/fob_breakouts.mqh>   // FOB's OWN: FobDetectBreaksOnBar
 #include <fob_system/fob_types.mqh>
 #include <fob_system/fob_sequence.mqh>
+#include <fob_system/fob_lifecycle.mqh>   // FobReplayZoneLife — stamp zone lifecycle onto events for CSV
 #include <fob_system/fob_csv.mqh>
 #include <fob_system/fob_visual.mqh>      // InpVisualize master toggle (default on)
 
@@ -233,10 +234,24 @@ void OnTick()
    if(np > 0)
      {
       FobSortPending(pend);
-      //--- classify each break in true chronological order
+      //--- classify each break in true chronological order. After each break, stamp the
+      //--- RAW per-TF awareness snapshot onto the rows it just emitted — CAUSALLY (the
+      //--- snapshot reflects g_setup as-of this bar, never a future state). A same-bar VR
+      //--- upgrade rewrites an existing row in place (no append) -> it keeps its earlier
+      //--- snapshot (same bar, ~identical state), which is correct.
       for(int q = 0; q < np; q++)
+        {
+         int before = ArraySize(g_events);
          FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
                           pend[q].level, pend[q].close, pend[q].zone, g_events, InpPboNewestOnly);
+         int after = ArraySize(g_events);
+         if(after > before)
+           {
+            string snap = FobBuildHtfState(g_setup);
+            for(int z = before; z < after; z++)
+               g_events[z].htf_state = snap;
+           }
+        }
      }
 
    //--- event-TF lens is a full PROJECTION of the log -> repaint it whole (cross-chart
@@ -298,10 +313,20 @@ void OnDeinit(const int reason)
 
    int n = ArraySize(g_events);
    for(int e = 0; e < n; e++)
+     {
+      //--- STATELESS lifecycle replay over THIS event's own event-TF bar buffer (the same
+      //--- FobReplayZoneLife the chart uses), so the CSV carries mid/Tn/counts/rt/alive/
+      //--- invalidation/bars_alive/vr_fresh. VR rows track RT (the break-and-retest phase).
+      int etf = g_events[e].event_tf;
+      bool isVR = (g_events[e].label == FOB_VR);
+      FobReplayZoneLife(g_events[e].zone, g_events[e].dir, g_events[e].level, g_events[e].bar_time,
+                        g_tf[etf].bt, g_tf[etf].bh, g_tf[etf].bl, g_tf[etf].bc,
+                        ArraySize(g_tf[etf].bt), isVR);
       FobCsvWriteEvent(fh, e + 1, g_events[e]);
+     }
    FileClose(fh);
 
-   PrintFormat("[FOB] fob_baysix v%s done — %d events across %d TFs -> Common/Files/FOB/fob_events_%s_%s.csv",
+   PrintFormat("[FOB] fob_baysix v%s done — %d events across %d TFs -> Common/Files/FOB/fob_capture_%s_%s.csv",
                FOB_VERSION, n, FOB_N_TF, _Symbol, g_runid);
   }
 //+------------------------------------------------------------------+

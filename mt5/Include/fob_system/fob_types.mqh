@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.20.0"
+#define FOB_VERSION "1.21.0"   // 1.21.0: path-A capture CSV (lifecycle+counts+vr_fresh+htf_state)
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -91,6 +91,17 @@ struct FobZone
    //--- caller passes track_rt (FOB_VR) into FobReplayZoneLife.
    int       rt_count;                     // distinct L2 retouches after invalidation
    datetime  rt_time;                      // first retouch bar (0 = none) — RT dot anchor
+   //--- CAPTURE round-1 (v1.21.0, task 193) — also recomputed STATELESSLY inside
+   //--- FobReplayZoneLife (same walk as the touch ladder), so the CSV emit and the
+   //--- chart never disagree. Counts use rising-edge hysteresis (one episode per
+   //--- distinct return to the level), NOT a per-bar tally.
+   int       n_l1_touches;                 // distinct wick touches of L1  (pre-invalidation)
+   int       n_mid_touches;                // distinct wick touches of mid
+   int       n_l2_touches;                 // distinct wick touches of L2
+   int       bars_alive;                   // event-TF bars from break to invalidation (or run end)
+   bool      vr_fresh;                     // true = NO post-break bar CLOSED back inside [L1,L2]
+                                           // (price left clean → "fresh", layer in). false =
+                                           // a close re-entered the band → "structured" (ride trend).
   };
 
 //--- one raw breakout (a close crossing an unbroken swing)
@@ -133,6 +144,12 @@ struct FobEvent
    double    level;      // broken swing price — the dot's y (the level that was taken) = L1
    double    bar_close;  // break bar close (beyond the level)
    FobZone   zone;       // 4-pointer band (P1/P3/L2 + valid) — same break geometry, every role
+   //--- per-TF awareness snapshot (v1.21.0, task 193) — the RAW live-cycle standing of
+   //--- all 9 TFs AT this event's bar, stamped CAUSALLY right after FobClassifyBreak
+   //--- (so it sees only data ≤ bar_time). JSON: {"M1":{"dir":"","cf":0},...}. The model's
+   //--- awareness mapping (a TF reads from the cycle one below it) is applied in ANALYSIS,
+   //--- never baked here — keeps it lossless if the rule sharpens (frozen decision #2).
+   string    htf_state;
   };
 
 //+------------------------------------------------------------------+
@@ -207,6 +224,29 @@ string FobDirName(const int dir)
       case FOB_BEAR: return "SELL";
      }
    return "?";
+  }
+
+//+------------------------------------------------------------------+
+//| RAW per-TF awareness snapshot (frozen decision #2, task 193).      |
+//| For each of the 9 TFs, its CURRENT live-cycle standing: dir = the  |
+//| active PBO's direction (BUY/SELL, "" if no live cycle), cf = CFs   |
+//| deep so far. Snapshot only (current standing), NOT sequence        |
+//| history. The "X reads from cycle-on-(X-1)" mapping is an ANALYSIS  |
+//| derivation layered on this raw form, never baked here.             |
+//+------------------------------------------------------------------+
+string FobBuildHtfState(const FobSetupState &st[])
+  {
+   string s = "{";
+   for(int i = 0; i < FOB_N_TF; i++)
+     {
+      if(i > 0)
+         s += ",";
+      string dir = st[i].active ? ((st[i].pbo_dir == FOB_BEAR) ? "SELL" : "BUY") : "";
+      int    cf  = st[i].active ? st[i].cf_count : 0;
+      s += "\"" + FobTfName(i) + "\":{\"dir\":\"" + dir + "\",\"cf\":" + IntegerToString(cf) + "}";
+     }
+   s += "}";
+   return s;
   }
 
 //--- confirmed colour scheme (locked 2026-06-25 with Syafiq)

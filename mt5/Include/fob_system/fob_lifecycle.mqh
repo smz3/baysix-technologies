@@ -47,16 +47,21 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
    z.t1_time = 0; z.t2_time = 0; z.t3_time = 0;
    z.alive = true; z.invalidation_time = 0;
    z.rt_count = 0; z.rt_time = 0;
+   z.n_l1_touches = 0; z.n_mid_touches = 0; z.n_l2_touches = 0;
+   z.bars_alive = 0;   z.vr_fresh = true;
    if(!z.valid)
-     { z.alive = false; return; }                // no zone -> no life (foolproof)
+     { z.alive = false; z.vr_fresh = false; return; }  // no zone -> no life (foolproof)
 
    bool   bull = (dir == FOB_BULL);
    double l2   = z.l2;                            // far / invalidation edge
    double mid  = (l1 + l2) * 0.5;
    z.mid       = mid;
+   double bandLo = MathMin(l1, l2);               // [L1,L2] band for the vr_fresh test
+   double bandHi = MathMax(l1, l2);
 
    bool invalidated = false;                      // RT phase begins after this
    bool armed       = false;                      // price currently on the broken side
+   bool in1 = false, in2 = false, in3 = false;    // rising-edge state for touch COUNTS
 
    for(int i = 0; i < nb; i++)
      {
@@ -65,12 +70,24 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
 
       if(!invalidated)
         {
+         z.bars_alive++;                          // this bar lived under the zone
+
          //--- retest ladder (wick) — stamped FIRST, so the death bar's wick can
          //--- still set T3 before invalidation kills the zone (BRC parity).
          double probe = bull ? bl[i] : bh[i];
-         if(z.t1_time == 0 && (bull ? (probe <= l1)  : (probe >= l1)))  z.t1_time = bt[i];
-         if(z.t2_time == 0 && (bull ? (probe <= mid) : (probe >= mid))) z.t2_time = bt[i];
-         if(z.t3_time == 0 && (bull ? (probe <= l2)  : (probe >= l2)))  z.t3_time = bt[i];
+         bool   h1 = bull ? (probe <= l1)  : (probe >= l1);
+         bool   h2 = bull ? (probe <= mid) : (probe >= mid);
+         bool   h3 = bull ? (probe <= l2)  : (probe >= l2);
+         if(z.t1_time == 0 && h1) z.t1_time = bt[i];
+         if(z.t2_time == 0 && h2) z.t2_time = bt[i];
+         if(z.t3_time == 0 && h3) z.t3_time = bt[i];
+         //--- COUNTS: rising-edge (one episode per distinct return to the level).
+         if(h1 && !in1) z.n_l1_touches++;   in1 = h1;
+         if(h2 && !in2) z.n_mid_touches++;  in2 = h2;
+         if(h3 && !in3) z.n_l2_touches++;   in3 = h3;
+
+         //--- vr_fresh: a CLOSE landing back inside the band = "structured", not fresh.
+         if(z.vr_fresh && bc[i] >= bandLo && bc[i] <= bandHi) z.vr_fresh = false;
 
          //--- invalidation (close-only): close beyond L2 in the anti-break dir.
          bool dead = bull ? (bc[i] < l2) : (bc[i] > l2);
