@@ -21,12 +21,11 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.22.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.23.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
-#include <fob_system/fob_swings.mqh>      // FOB's OWN: FobSwingRadius / FobDetectSwingAt
-#include <fob_system/fob_breakouts.mqh>   // FOB's OWN: FobDetectBreaksOnBar
 #include <fob_system/fob_types.mqh>
+#include <fob_system/fob_engine.mqh>      // SHARED detection runtime (structs + ingest+sort) — with the trader
 #include <fob_system/fob_sequence.mqh>
 #include <fob_system/fob_lifecycle.mqh>   // FobReplayZoneLife — stamp zone lifecycle onto events for CSV
 #include <fob_system/fob_csv.mqh>
@@ -36,38 +35,8 @@ input int  InpSwingWindow    = 3;     // close-based pivot window (odd, >=3; liv
 input int  InpMaxAge         = 0;     // break age filter in bars (<=0 disables)
 input bool InpPboNewestOnly  = true;  // PBO = freshest source near CMP (reject same-dir reach-backs)
 
-//--- the 9 TFs (index order MUST match FobTfName in fob_types.mqh)
-ENUM_TIMEFRAMES g_periods[FOB_N_TF] =
-  { PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_M30, PERIOD_H1, PERIOD_H4, PERIOD_D1, PERIOD_W1, PERIOD_MN1 };
-
-//+------------------------------------------------------------------+
-//| Per-TF detection state (own clock, own buffers). Lean vs BRC —    |
-//| FOB needs swings + raw breaks only, no 5-point zones.             |
-//+------------------------------------------------------------------+
-struct FobTfState
-  {
-   datetime last_time;     // time of the last closed bar already ingested
-   datetime bt[];          // growing bar series (index 0 = OLDEST)
-   double   bh[];
-   double   bl[];
-   double   bc[];
-   FobSwing swings[];
-   int      live_sw[];     // indices into swings[] of UNBROKEN swings (O(live) scan)
-   FobBreak breaks[];       // full raw-break log for this TF
-  };
-
-//--- one new raw break awaiting chronological classification this tick
-struct FobPending
-  {
-   int      tf;
-   datetime swt;          // broken swing time (dot x-coord)
-   datetime bt;
-   int      dir;
-   double   level;
-   double   close;
-   FobZone  zone;         // 4-pointer band carried from the break (v1.14.0)
-  };
-
+//--- detection state (FobTfState/FobPending/FobIngestBar/FobSortPending/FobPeriods
+//--- all live in fob_engine.mqh, shared byte-identically with the trader)
 FobTfState    g_tf[FOB_N_TF];
 FobSetupState g_setup[FOB_N_TF];   // per-setup-TF state machine
 FobEvent      g_events[];           // every classified event (CSV + redraw source)
@@ -94,23 +63,8 @@ int OnInit()
    ArrayResize(g_events, 0);
    for(int i = 0; i < FOB_N_TF; i++)
      {
-      g_tf[i].last_time     = 0;
-      ArrayResize(g_tf[i].bt,      0);
-      ArrayResize(g_tf[i].bh,      0);
-      ArrayResize(g_tf[i].bl,      0);
-      ArrayResize(g_tf[i].bc,      0);
-      ArrayResize(g_tf[i].swings,  0);
-      ArrayResize(g_tf[i].live_sw, 0);
-      ArrayResize(g_tf[i].breaks,  0);
-      g_setup[i].active     = false;
-      g_setup[i].seq        = 0;
-      g_setup[i].vr_locked  = false;
-      g_setup[i].vr_level   = 0.0;
-      g_setup[i].vr_swing   = 0;
-      g_setup[i].vr_ev_idx  = -1;
-      g_setup[i].cf_count   = 0;
-      g_setup[i].last_conf_swing = 0;
-      g_setup[i].pbo_swing  = 0;
+      FobResetTfState(g_tf[i]);
+      FobResetSetup(g_setup[i]);
      }
 
    string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);
@@ -128,103 +82,15 @@ int OnInit()
   }
 
 //+------------------------------------------------------------------+
-//| Append one closed bar to a TF buffer and run swing-confirm +      |
-//| raw-break detection. New breaks are left appended to s.breaks[];  |
-//| the caller reads the [before,after) range for classification.     |
-//+------------------------------------------------------------------+
-void FobIngestBar(FobTfState &s, const datetime bt, const double op, const double h, const double l, const double cl)
-  {
-   int i = ArraySize(s.bt);
-   ArrayResize(s.bt, i + 1, 4096);
-   ArrayResize(s.bh, i + 1, 4096);
-   ArrayResize(s.bl, i + 1, 4096);
-   ArrayResize(s.bc, i + 1, 4096);
-   s.bt[i] = bt;  s.bh[i] = h;  s.bl[i] = l;  s.bc[i] = cl;
-   int n = i + 1;
-
-   //--- swing confirm: pivot at p = i - radius now has `radius` right neighbours
-   int p = i - g_radius;
-   if(p >= 0)
-     {
-      FobSwing sw;
-      if(FobDetectSwingAt(s.bt, s.bc, n, p, g_radius, sw))
-        {
-         int si = ArraySize(s.swings);
-         ArrayResize(s.swings, si + 1, 512);
-         s.swings[si] = sw;
-         int li = ArraySize(s.live_sw);
-         ArrayResize(s.live_sw, li + 1, 512);
-         s.live_sw[li] = si;
-        }
-     }
-
-   //--- raw breaks on this bar (mutates swing.broken, appends events, compacts live_sw)
-   //--- s.bc/n feed the 4-pointer gap-val (v1.14.0).
-   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, op, cl, g_radius, InpMaxAge, s.bc, n, s.breaks);
-  }
-
-//+------------------------------------------------------------------+
-//| Insertion-sort pending breaks: bar_time ASC, ties higher-TF first |
-//| (so a PBO is established before any same-instant lower-TF role).  |
-//+------------------------------------------------------------------+
-void FobSortPending(FobPending &p[])
-  {
-   int n = ArraySize(p);
-   for(int i = 1; i < n; i++)
-     {
-      FobPending key = p[i];
-      int j = i - 1;
-      while(j >= 0 && (p[j].bt > key.bt || (p[j].bt == key.bt && p[j].tf < key.tf)))
-        {
-         p[j + 1] = p[j];
-         j--;
-        }
-      p[j + 1] = key;
-     }
-  }
-
-//+------------------------------------------------------------------+
 //| On each tick: ingest newly CLOSED bars for every TF, collect the  |
 //| new raw breaks, sort them globally, then classify in order.       |
+//| Ingest + sort are the SHARED engine (fob_engine.mqh).             |
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   MqlRates r[];
-   ArraySetAsSeries(r, true);
-
    FobPending pend[];
-
    for(int t = 0; t < FOB_N_TF; t++)
-     {
-      int got = CopyRates(_Symbol, g_periods[t], 1, 64, r);
-      if(got <= 0)
-         continue;
-
-      int nb0 = ArraySize(g_tf[t].breaks);
-      //--- oldest -> newest so the buffer stays chronological
-      for(int k = got - 1; k >= 0; k--)
-        {
-         if(r[k].time <= g_tf[t].last_time)
-            continue;
-         FobIngestBar(g_tf[t], r[k].time, r[k].open, r[k].high, r[k].low, r[k].close);
-         g_tf[t].last_time = r[k].time;
-        }
-      int nb1 = ArraySize(g_tf[t].breaks);
-
-      //--- queue this TF's new raw breaks for chronological classification
-      for(int b = nb0; b < nb1; b++)
-        {
-         int pi = ArraySize(pend);
-         ArrayResize(pend, pi + 1, 64);
-         pend[pi].tf    = t;
-         pend[pi].swt   = g_tf[t].breaks[b].swing_time;
-         pend[pi].bt    = g_tf[t].breaks[b].bar_time;
-         pend[pi].dir   = g_tf[t].breaks[b].dir;
-         pend[pi].level = g_tf[t].breaks[b].swing_price;
-         pend[pi].close = g_tf[t].breaks[b].bar_close;
-         pend[pi].zone  = g_tf[t].breaks[b].zone;
-        }
-     }
+      FobIngestTf(g_tf[t], _Symbol, FobPeriods[t], t, g_radius, InpMaxAge, pend);
 
    int  np   = ArraySize(pend);
    bool live = !MQLInfoInteger(MQL_TESTER);
@@ -267,7 +133,7 @@ void OnTick()
          //--- LIVE intrabar touch off the FORMING bar so [Tn] flips on the wick, not
          //--- only at close. Touch-only; SKIP in tester (per-tick quadratic blow-up).
          MqlRates f[];
-         if(live && CopyRates(_Symbol, g_periods[ci], 0, 1, f) == 1)
+         if(live && CopyRates(_Symbol, FobPeriods[ci], 0, 1, f) == 1)
             g_vis.LiveTouchForming(g_events, ArraySize(g_events), f[0].time, f[0].high, f[0].low);
         }
       //--- repaint ONLY on a real change (new event OR a newly-stamped touch) — a
