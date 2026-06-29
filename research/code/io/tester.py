@@ -44,8 +44,11 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tester_runs (
     run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
     idea_id         TEXT NOT NULL,                 -- soft FK into step1_ideas (same DB)
+    run_role        TEXT CHECK(run_role IS NULL OR run_role IN ('emitter','trader')),
     ea_name         TEXT,                          -- 'baysix_orb_001'
     ea_version      TEXT,
+    git_sha         TEXT,                          -- provenance (DIRTY tree = exploratory only)
+    git_dirty       INTEGER,
     symbol          TEXT NOT NULL,                 -- e.g. 'XAUUSD_dukas'
     data_source     TEXT NOT NULL CHECK(data_source IN
                        ('dukascopy','broker_history','custom')),
@@ -82,6 +85,7 @@ CREATE TABLE IF NOT EXISTS tester_runs (
 CREATE TABLE IF NOT EXISTS tester_trades (
     tt_id            INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id           INTEGER NOT NULL REFERENCES tester_runs(run_id),
+    zone_id          INTEGER REFERENCES fob_zones(zone_id),  -- triggering zone (nullable)
     ticket           INTEGER,                       -- MT5 position id (unique within a run)
     session_date     DATE,                          -- nullable convenience (daily strategies)
     direction        TEXT CHECK(direction IS NULL OR direction IN ('long','short','flat')),
@@ -93,6 +97,8 @@ CREATE TABLE IF NOT EXISTS tester_trades (
     lots             REAL,                          -- position size
     risk_unit        REAL,                          -- generic 1R denominator (price units)
     realized_R       REAL,
+    gross_usd        REAL,
+    cost_usd         REAL,                          -- spread+commission+swap (TCM-001)
     realized_pnl_usd REAL,
     meta             TEXT CHECK(meta IS NULL OR json_valid(meta)),  -- strategy ctx (ORB: or_high/or_low/range_w)
     created_at       DATETIME NOT NULL
@@ -135,6 +141,99 @@ CREATE TABLE IF NOT EXISTS tester_zones (
 CREATE INDEX IF NOT EXISTS ix_tester_zones_run     ON tester_zones(run_id);
 CREATE INDEX IF NOT EXISTS ix_tester_zones_run_tf  ON tester_zones(run_id, tf);
 CREATE INDEX IF NOT EXISTS ix_tester_zones_confirm ON tester_zones(run_id, confirm_time);
+
+-- ── Shared spine: trader-run scorecard (1:1, trader runs only) ────────────────
+CREATE TABLE IF NOT EXISTS tester_run_summary (
+    run_id          INTEGER PRIMARY KEY REFERENCES tester_runs(run_id),
+    n_trades        INTEGER,
+    gross_usd       REAL,
+    total_cost_usd  REAL,
+    net_profit_usd  REAL,
+    profit_factor   REAL,
+    max_dd_pct      REAL,
+    win_rate        REAL,
+    expectancy_r    REAL,
+    sharpe          REAL,
+    research_result_id   INTEGER,
+    trade_overlap_pct    REAL,
+    ER_delta_vs_research REAL,
+    R_corr               REAL,
+    fidelity_verdict     TEXT CHECK(fidelity_verdict IS NULL OR
+                            fidelity_verdict IN ('pass','fail','pending')),
+    created_at      DATETIME NOT NULL
+);
+
+-- ── FOB-001 payload: storyline (cycles/events) + zones (FOB owns its shape) ───
+-- A cycle = PBO->VR->CF1->CF2... ; a NEW PBO starts a NEW cycle. tester_zones is
+-- BRC's 5-pointer table; FOB uses fob_zones (4-pointer). See spec
+-- docs/specs/2026-06-29_fob_data_capture_and_db_rebuild.md.
+CREATE TABLE IF NOT EXISTS fob_cycles (
+    cycle_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
+    setup_tf          TEXT NOT NULL,
+    seq               INTEGER NOT NULL,              -- per-setup_tf PBO ordinal = cycle id
+    direction         TEXT CHECK(direction IN ('BUY','SELL')),
+    pbo_time DATETIME, pbo_level REAL, pbo_swing_time DATETIME, pbo_bar_close REAL,
+    vr_time DATETIME, vr_level REAL,
+    vr_made_first_tf  TEXT,
+    n_cf              INTEGER,
+    first_cf_time DATETIME, last_cf_time DATETIME,
+    status            TEXT CHECK(status IS NULL OR status IN ('alive','invalidated','complete')),
+    invalidation_time DATETIME, invalidated_by TEXT,
+    start_time DATETIME, end_time DATETIME,
+    meta              TEXT CHECK(meta IS NULL OR json_valid(meta)),
+    created_at        DATETIME NOT NULL,
+    UNIQUE(run_id, setup_tf, seq)
+);
+CREATE INDEX IF NOT EXISTS ix_fob_cycles_run    ON fob_cycles(run_id);
+CREATE INDEX IF NOT EXISTS ix_fob_cycles_run_tf ON fob_cycles(run_id, setup_tf);
+
+CREATE TABLE IF NOT EXISTS fob_zones (
+    zone_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
+    cycle_id          INTEGER REFERENCES fob_cycles(cycle_id),
+    source_label      TEXT CHECK(source_label IS NULL OR source_label IN ('PBO','VR','CF')),
+    event_tf          TEXT NOT NULL,
+    direction         TEXT CHECK(direction IN ('BUY','SELL')),
+    l1 REAL, l2 REAL, mid REAL,
+    p1_time DATETIME, p1_price REAL,
+    p3_time DATETIME, p3_price REAL,
+    t1_time DATETIME, t2_time DATETIME, t3_time DATETIME,
+    n_l1_touches INTEGER, n_mid_touches INTEGER, n_l2_touches INTEGER,
+    rt_count INTEGER, rt_time DATETIME,
+    vr_fresh INTEGER,
+    confirm_time DATETIME, confirm_price REAL,
+    invalidation_time DATETIME, continued INTEGER, alive_at_end INTEGER, bars_alive INTEGER,
+    mfe_r REAL, mae_r REAL, realized_r REAL,
+    zone_key TEXT, is_primary INTEGER, superseded_by TEXT, zone_valid INTEGER,
+    meta TEXT CHECK(meta IS NULL OR json_valid(meta)),
+    created_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_fob_zones_run     ON fob_zones(run_id);
+CREATE INDEX IF NOT EXISTS ix_fob_zones_cycle   ON fob_zones(cycle_id);
+CREATE INDEX IF NOT EXISTS ix_fob_zones_confirm ON fob_zones(run_id, confirm_time);
+
+CREATE TABLE IF NOT EXISTS fob_events (
+    event_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
+    cycle_id          INTEGER REFERENCES fob_cycles(cycle_id),
+    zone_id           INTEGER REFERENCES fob_zones(zone_id),
+    event_tf          TEXT NOT NULL,
+    label             TEXT CHECK(label IN ('PBO','VR','HRCF','CF')),
+    cf_idx            INTEGER,
+    risk_class        TEXT CHECK(risk_class IS NULL OR risk_class IN ('LOW','HIGH')),
+    direction         TEXT CHECK(direction IN ('BUY','SELL')),
+    swing_time DATETIME, bar_time DATETIME NOT NULL,
+    level REAL, bar_close REAL,
+    body_clears       INTEGER,
+    vr_zone_broken    INTEGER,
+    htf_state         TEXT CHECK(htf_state IS NULL OR json_valid(htf_state)),
+    meta              TEXT CHECK(meta IS NULL OR json_valid(meta)),
+    created_at        DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_fob_events_run     ON fob_events(run_id);
+CREATE INDEX IF NOT EXISTS ix_fob_events_cycle   ON fob_events(cycle_id);
+CREATE INDEX IF NOT EXISTS ix_fob_events_run_bar ON fob_events(run_id, bar_time);
 """
 
 
@@ -402,25 +501,32 @@ def gate7_passed(idea_id: str) -> bool:
 
 
 def delete_run(run_id: int, drop_run_row: bool = True) -> dict:
-    """Hard-delete one emitter/trader run's data from research.db: its tester_zones
-    and tester_trades rows, and (optionally) the tester_runs row itself. Returns the
+    """Hard-delete one emitter/trader run's data from research.db: its payload
+    (tester_zones [BRC] + fob_cycles/fob_events/fob_zones [FOB]), tester_trades,
+    tester_run_summary, and (optionally) the tester_runs row itself. Returns the
     deleted-row counts. Destructive + irreversible — caller must have explicit human
     authorization (CLAUDE.md rule 2). Re-emit + re-ingest to restore."""
     with _conn() as conn:
         meta = conn.execute(
             "SELECT idea_id, ea_name FROM tester_runs WHERE run_id=?", (run_id,)
         ).fetchone()
+        # FOB payload: events/zones reference cycles -> delete children first
+        fe = conn.execute("DELETE FROM fob_events WHERE run_id=?", (run_id,)).rowcount
+        fz = conn.execute("DELETE FROM fob_zones  WHERE run_id=?", (run_id,)).rowcount
+        fc = conn.execute("DELETE FROM fob_cycles WHERE run_id=?", (run_id,)).rowcount
         z = conn.execute("DELETE FROM tester_zones WHERE run_id=?", (run_id,)).rowcount
         t = conn.execute("DELETE FROM tester_trades WHERE run_id=?", (run_id,)).rowcount
+        conn.execute("DELETE FROM tester_run_summary WHERE run_id=?", (run_id,))
         r = 0
         if drop_run_row:
             r = conn.execute("DELETE FROM tester_runs WHERE run_id=?", (run_id,)).rowcount
         conn.commit()
     out = {"run_id": run_id, "idea_id": meta["idea_id"] if meta else None,
            "ea_name": meta["ea_name"] if meta else None,
-           "zones_deleted": z, "trades_deleted": t, "run_rows_deleted": r}
+           "zones_deleted": z, "fob_zones_deleted": fz, "fob_events_deleted": fe,
+           "fob_cycles_deleted": fc, "trades_deleted": t, "run_rows_deleted": r}
     print(f"[tester] delete_run {run_id} ({out['idea_id']}/{out['ea_name']}): "
-          f"zones={z} trades={t} run_row={r}")
+          f"brc_zones={z} fob(c/z/e)={fc}/{fz}/{fe} trades={t} run_row={r}")
     return out
 
 
