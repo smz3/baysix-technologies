@@ -56,7 +56,7 @@ int FobCsvOpen(const string symbol, const string runid)
    FileWriteString(fh,
       //--- TIER A — identity + 4-pointer zone + lifecycle (level = L1)
       "event_id,setup_tf,seq,cf_idx,label,event_tf,direction,"
-      "swing_time,bar_time,level,bar_close,"
+      "swing_time,bar_time,level,bar_open,bar_close,"
       "l2,mid,p1_time,p1_price,p3_time,p3_price,zone_valid,"
       "t1_time,t2_time,t3_time,rt_count,rt_time,alive_at_end,invalidation_time,"
       //--- TIER B — cheap behaviour adds (same replay walk + label-derived)
@@ -97,11 +97,13 @@ void FobCsvWriteEvent(const int fh, const int event_id, const FobEvent &e)
    //--- vr_zone_broken = the zone was invalidated by a close beyond L2 (reversal /
    //--- Full-Margin trigger). Only a valid, now-dead zone counts.
    string vr_broken = (e.zone.valid && !e.zone.alive) ? "1" : "0";
-   //--- body_clears: FOB detection is CLOSE-based (a break IS a close beyond the
-   //--- level; a wick never triggers), so the breaking body cleared by construction.
-   //--- Constant 1 documents that invariant; an open-vs-level "full body" variant is
-   //--- a phase-2 refinement (needs the bar open plumbed through). See spec §6.1.
-   string body_clears = "1";
+   //--- body_clears = FULL-BODY impulse break: the candle OPENED already beyond L1
+   //--- (so the whole real body is on the broken side), not just closed beyond after
+   //--- opening inside. Close is beyond L1 by construction (close-based detection), so
+   //--- this reduces to testing the OPEN against the level in the break direction.
+   bool   full_body   = (e.dir == FOB_BULL) ? (e.zone.bar_open > e.level)
+                                            : (e.zone.bar_open < e.level);
+   string body_clears = full_body ? "1" : "0";
 
    string row =
       //--- TIER A
@@ -115,6 +117,7 @@ void FobCsvWriteEvent(const int fh, const int event_id, const FobEvent &e)
       FobFmtTime(e.swing_time) + "," +
       FobFmtTime(e.bar_time) + "," +
       FobFmtPrice(e.level) + "," +           // L1 (broken swing / trigger edge)
+      FobFmtPrice(e.zone.bar_open) + "," +   // breaking bar open (full-body-clear input)
       FobFmtPrice(e.bar_close) + "," +
       FobFmtPrice(e.zone.l2) + "," +
       FobFmtPrice(e.zone.mid) + "," +

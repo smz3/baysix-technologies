@@ -132,7 +132,7 @@ int OnInit()
 //| raw-break detection. New breaks are left appended to s.breaks[];  |
 //| the caller reads the [before,after) range for classification.     |
 //+------------------------------------------------------------------+
-void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double l, const double cl)
+void FobIngestBar(FobTfState &s, const datetime bt, const double op, const double h, const double l, const double cl)
   {
    int i = ArraySize(s.bt);
    ArrayResize(s.bt, i + 1, 4096);
@@ -160,7 +160,7 @@ void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double
 
    //--- raw breaks on this bar (mutates swing.broken, appends events, compacts live_sw)
    //--- s.bc/n feed the 4-pointer gap-val (v1.14.0).
-   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, cl, g_radius, InpMaxAge, s.bc, n, s.breaks);
+   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, op, cl, g_radius, InpMaxAge, s.bc, n, s.breaks);
   }
 
 //+------------------------------------------------------------------+
@@ -206,7 +206,7 @@ void OnTick()
         {
          if(r[k].time <= g_tf[t].last_time)
             continue;
-         FobIngestBar(g_tf[t], r[k].time, r[k].high, r[k].low, r[k].close);
+         FobIngestBar(g_tf[t], r[k].time, r[k].open, r[k].high, r[k].low, r[k].close);
          g_tf[t].last_time = r[k].time;
         }
       int nb1 = ArraySize(g_tf[t].breaks);

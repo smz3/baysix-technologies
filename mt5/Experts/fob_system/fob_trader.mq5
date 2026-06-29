@@ -252,7 +252,7 @@ int OnInit()
 //| Append one closed bar + run swing-confirm + raw-break detection. |
 //| Byte-identical to the emitter's FobIngestBar.                    |
 //+------------------------------------------------------------------+
-void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double l, const double cl)
+void FobIngestBar(FobTfState &s, const datetime bt, const double op, const double h, const double l, const double cl)
   {
    int i = ArraySize(s.bt);
    ArrayResize(s.bt, i + 1, 4096); ArrayResize(s.bh, i + 1, 4096);
@@ -274,7 +274,7 @@ void FobIngestBar(FobTfState &s, const datetime bt, const double h, const double
          s.live_sw[li] = si;
         }
      }
-   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, cl, g_radius, InpMaxAge, s.bc, n, s.breaks);
+   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, op, cl, g_radius, InpMaxAge, s.bc, n, s.breaks);
   }
 
 //+------------------------------------------------------------------+
@@ -576,7 +576,7 @@ void OnTick()
       for(int k = got - 1; k >= 0; k--)
         {
          if(r[k].time <= g_tf[t].last_time) continue;
-         FobIngestBar(g_tf[t], r[k].time, r[k].high, r[k].low, r[k].close);
+         FobIngestBar(g_tf[t], r[k].time, r[k].open, r[k].high, r[k].low, r[k].close);
          g_tf[t].last_time = r[k].time;
         }
       int nb1 = ArraySize(g_tf[t].breaks);

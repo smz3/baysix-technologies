@@ -33,6 +33,7 @@ void FobComputeBreakZone(const FobSwing &swings[], const double &closes[], const
    //--- lifecycle defaults (recomputed at draw by FobReplayZoneLife)
    b.zone.mid = 0.0; b.zone.alive = true; b.zone.invalidation_time = 0;
    b.zone.t1_time = 0; b.zone.t2_time = 0; b.zone.t3_time = 0;
+   b.zone.bar_open = b.bar_open;   // carry the breaking bar's open onto the zone payload
 
    bool     bull     = (b.dir == FOB_BULL);
    int      opp_type = bull ? FOB_SWING_LOW : FOB_SWING_HIGH;  // P1/P3 type (opposite the broken swing)
@@ -86,7 +87,8 @@ void FobComputeBreakZone(const FobSwing &swings[], const double &closes[], const
 //| Returns the number of breaks appended on this bar.                |
 //+------------------------------------------------------------------+
 int FobDetectBreaksOnBar(FobSwing &swings[], int &live[],
-                         const int bar_index, const datetime bar_time, const double bar_close,
+                         const int bar_index, const datetime bar_time,
+                         const double bar_open, const double bar_close,
                          const int radius, const int max_age,
                          const double &closes[], const int n_closes,
                          FobBreak &breaks[])
@@ -119,6 +121,7 @@ int FobDetectBreaksOnBar(FobSwing &swings[], int &live[],
       breaks[k].swing_type  = swings[s].type;
       breaks[k].dir         = is_bull ? FOB_BULL : FOB_BEAR;
       breaks[k].bar_time    = bar_time;
+      breaks[k].bar_open    = bar_open;
       breaks[k].bar_close   = bar_close;
       breaks[k].bar_index   = bar_index;
       FobComputeBreakZone(swings, closes, n_closes, breaks[k]);   // 4-pointer band (v1.14.0)

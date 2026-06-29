@@ -102,6 +102,11 @@ struct FobZone
    bool      vr_fresh;                     // true = NO post-break bar CLOSED back inside [L1,L2]
                                            // (price left clean → "fresh", layer in). false =
                                            // a close re-entered the band → "structured" (ride trend).
+   double    bar_open;                     // the BREAKING bar's OPEN — recorded raw (v1.21.0).
+                                           // Rides on the zone because the zone payload travels
+                                           // intact through the classifier (no extra plumbing).
+                                           // Lets us flag a full-body impulse break (opened already
+                                           // beyond L1) vs a closing break (opened inside, closed out).
   };
 
 //--- one raw breakout (a close crossing an unbroken swing)
@@ -112,6 +117,7 @@ struct FobBreak
    int       swing_type;   // FOB_SWING_TYPE of the broken swing
    int       dir;          // FOB_DIR of the break
    datetime  bar_time;     // breaking bar time
+   double    bar_open;     // breaking bar open (for the full-body-clear flag)
    double    bar_close;    // breaking bar close (beyond the level)
    int       bar_index;    // absolute series index of the breaking bar
    FobZone   zone;         // 4-pointer structural band (computed at detection)
