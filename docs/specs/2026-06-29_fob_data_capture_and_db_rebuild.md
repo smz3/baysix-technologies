@@ -129,3 +129,50 @@ These layer on top of the basics once round-one data is feeding simulations.
 `tester_zones` is now understood as **BRC's** 5-pointer table (it always was); **FOB stops borrowing it and uses `fob_*`**.
 So the "P5 confusion" is gone: FOB no longer touches `tester_zones`. `ingest_brc_zones` stays for BRC; FOB needs the
 new `ingest_fob` (task above). `delete_run` updated to clear `fob_cycles/events/zones` + `tester_run_summary` too.
+
+---
+
+## 6.1 CSV contract (path A) — APPROVED 2026-06-29
+
+**Grain:** ONE wide CSV, **one row per classified event** (`fob_capture_<symbol>_<runid>.csv`, UTF-8).
+Each FOB break already carries its `FobZone`, so event↔zone is 1:1 at emit. **`ingest_fob` derives all 3
+tables** from it: `fob_events` (rows as-is), `fob_zones` (zone columns), `fob_cycles` (**reconstructed** by
+grouping on `(setup_tf, seq)` — the EA never assigns surrogate keys; `cycle_id/zone_id/event_id` are
+assigned by ingest). Mirrors the retired `ingest_brc_zones`.
+
+**Columns — tiered by build effort:**
+- **TIER A — wire now (already computed by detection / `FobReplayZoneLife`):** `setup_tf, seq, cf_idx,
+  label, event_tf, direction, swing_time, bar_time, level (=L1), bar_close, l2, mid, p1_time, p1_price,
+  p3_time, p3_price, zone_valid, t1_time, t2_time, t3_time, rt_count, rt_time, alive_at_end (=alive),
+  invalidation_time`.
+- **TIER B — cheap add this task (same replay/walk pass):** `body_clears(0/1), risk_class(LR|HR),
+  vr_zone_broken(0/1), n_l1_touches, n_mid_touches, n_l2_touches, vr_fresh(0/1), bars_alive,
+  vr_made_first_tf (on VR rows), htf_state(JSON)`.
+- **TIER C — header emitted, value deferred to phase-2 / ingest-derived:** `confirm_time, confirm_price,
+  continued` (ingest derives from next-CF linkage), `mfe_r, mae_r, realized_r` (outcome labels, phase-2),
+  `zone_key, is_primary, superseded_by` (supersede, phase-2).
+
+**Three FROZEN decisions (Syafiq sign-off 2026-06-29):**
+
+1. **`realized_r` sign — good-for-the-trade is always POSITIVE**, BUY or SELL (a winning short = `+R`,
+   a losing short = `−R`). `mfe_r ≥ 0`, `mae_r ≤ 0`.
+   - **R UNIT CORRECTION:** R is **NOT** measured to the VR origin (`vr_level`). The live trader's risk unit
+     is **R = |entry − SL|, SL beyond the zone FAR edge L2 by `InpSlBufferK`·band** ([fob_trader.mq5:325-339](../mt5/Experts/fob_system/fob_trader.mq5#L325)).
+     `realized_r`'s *value* is phase-2, so the denominator just inherits the trader's real SL rule at sim time —
+     nothing mis-frozen now. (Stale `R = |entry − vr_level|` comment in `fob_types.mqh` was corrected.)
+
+2. **`htf_state` = RAW per-TF live-cycle snapshot, NOT the interpreted direction.** A TF has no direction in
+   isolation — its direction comes from the **live cycle anchored on it, which is intrinsically a 2-TF object**
+   (PBO on TF X, VR/CF on X−1). So `htf_state` stores, for each of the 9 TFs, its **current live cycle**
+   `{"dir": pbo_dir, "cf": cf_count}` straight from `FobSetupState` — a compact *snapshot* (current standing),
+   **not** the full sequence history. The model's awareness rule ("MN1 reads bull *because* the live W1 cycle is
+   CF5"; a TF reads from the cycle one below, `X ← cycle-on-(X−1)`) is a **derivation applied in analysis**,
+   layered on the raw snapshot — never baked at emit (lossless; survives a rule change).
+
+3. **vr-first + HR/LR + vr-zone-broken — all emitted now** (`vr_made_first_tf`, `risk_class`,
+   `vr_zone_broken`). This is the VR's timing stamped and compared across TFs.
+
+**Scope of task 193:** emit **A + B + the C headers** (C values null / ingest-derived). That feeds the
+storyline re-screen (task 192) the full storyline + fresh/touch/lifecycle/awareness basics. Defer the
+**C *values*** (mfe/mae/realized_r compute, supersede) to phase-2 — sign convention frozen now so the column
+is trustworthy when filled.

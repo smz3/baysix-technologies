@@ -161,9 +161,10 @@ struct FobSetupState
    int       vr_ev_idx;  // index of the emitted VR event in ev[] (-1 if none) — lets the same-bar
    // upgrade rewrite that one row instead of emitting a duplicate VR. Stable: events never removed.
    double    vr_level;   // broken-swing PRICE of the locked VR (the retracement structure).
-   // Set once on VR lock (fob_sequence). The EMITTER never reads it (CSV byte-identical);
-   // the TRADER uses it as the structural 1R reference: R = |CF entry - vr_level| (stop back
-   // through the VR origin = continuation invalidated). FOB-T1 risk unit.
+   // Set once on VR lock (fob_sequence). The EMITTER never reads it (CSV byte-identical).
+   // NOTE: this is NOT the R unit. The live TRADER's risk unit is R = |entry - SL| where SL
+   // sits beyond the zone FAR edge L2 by InpSlBufferK*band (fob_trader OpenCfTrade) — measured
+   // to L2, NOT to vr_level. vr_level is kept as the VR origin reference only.
    int       cf_count;   // CFs emitted SO FAR in the active cycle (1st-CF entry vs Nth-CF layering)
    datetime  last_conf_swing; // swing_time WATERMARK for the confirming chain (task 159).
    // NOTE: no cf_done — a cycle allows MULTIPLE CFs (2nd-CF layering, task 156).
