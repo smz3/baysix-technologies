@@ -122,6 +122,29 @@ Decoupled repos (Desktop-level, own git remotes):
 
 ---
 
+## FOB-001 — Canonical Knowledge (don't re-derive; deep refs at the bottom)
+
+FOB = First Opposite Breakout, the active XAUUSD idea. **Read this section before any FOB work** — it is the source of truth so Syafiq doesn't re-explain. Authoritative deep docs are linked at the end; this is the load-every-session distilled form.
+
+**What FOB IS (the model):** REACTION modeling on **CMP (Current Market Price)**, NOT prediction and NOT a win-rate-lifting classifier. Every PBO/VR/CF is a **tagged fact that already printed**; a trade is *a position within a confirmed nested storyline* (W1⊃D1⊃H4⊃H1⊃M30⊃M5…), not "a signal." Higher TF = **bias/context**, lower TF = **execution trigger**. ([[fob_cmp_storyline_model]])
+
+**Core SOP — `CMP → BO → VR → CF`** (never enter the first BO):
+- **PBO** = Primary BreakOut = the CMP breakout / setup anchor. Body must clear the level (wick ≠ count).
+- **VR** = Valid Retracement = the **first opposite break, exactly one TF below**; happens **ONCE**; it tells you **which TF you're trading**. When two TFs break together, **whichever made the VR first** dictates the TF.
+- **CF** = Confirmation = the continuation you actually enter on (in-zone = best; 2nd CF matters in sideways). **LR CF** = adjacent TF below (safer, premium price). **HRCF** = skip one TF (cheaper entry, higher risk; classifier currently PARKED).
+
+**CYCLE (HARD):** a cycle = **PBO → VR → CF1 → CF2 → CF3…**, anchored by the PBO. **A NEW PBO starts a NEW cycle** — NOT "repeats when price breaks the VR." Maps to EA fields: `seq` = per-setup_tf PBO ordinal (= cycle id), `cf_idx` = CF order within the cycle.
+
+**ALIGNMENT = AWARENESS, not a gate (HARD):** we do **NOT** trade only when all TFs agree. Record each higher TF's **live state** (esp. **W1 = Bias**, **D1 = Direction**) so we trade *aware* of context; the trade direction **depends on which TF setup we choose**. A TF's current direction = the direction of the **live cycle one TF below it** (lower TF controls higher). This is why the full-stack-alignment **trade gate was REJECTED** (result_id 18) — conceptually wrong, not just flat. *Example (gold, 2026-06-29): MN1 bull (live W1 CF5) but W1's dir = live D1 CF1 bear → Bias BEARISH; D1 bear w/ pending H4 CF → long-or-short depends on the setup TF.*
+
+**VR Fresh vs Not-Fresh:** Fresh = price went straight to origin, **no close back into the VR zone** → layer in. Not-Fresh = price **closed back inside** the VR zone (wick ≠ count) = "VR structured" → ride the trend. The single most important behavioral flag on a zone.
+
+**Data capture (schema LIVE, migration 035):** FOB owns its storyline payload — `fob_cycles` / `fob_events` (+ `htf_state` awareness JSON) / `fob_zones` (4-pointer + touches/RT/`vr_fresh`/lifecycle). FOB does **NOT** use `tester_zones` (that's BRC's 5-pointer table — the old P5 confusion). Shared spine: `tester_runs.run_role` (emitter|trader), `tester_run_summary`, `tester_trades`. Emit causally from the EA (path A); never Python-derive lifecycle (look-ahead). Round-1 = basics; CF↔VR distance + setup-type + regime/labels are deferred phase-2.
+
+**Deep refs (open these for full detail, don't paste into context wholesale):** [FOB manual dissection](research/papers/fob/FOB_breakout_system.dissect.md) (the full Bonker manual) · [CMP storyline model](docs/specs/2026-06-27_fob_cmp_storyline_model.md) · [storyline-alignment findings](docs/specs/2026-06-27_fob_storyline_alignment_findings.md) (⚠️ numbers computed on BRC-contaminated `tester_zones` run_id 5 — VOID for FOB until re-screened on FOB own zones, task 192) · [data-capture + DB rebuild spec](docs/specs/2026-06-29_fob_data_capture_and_db_rebuild.md).
+
+---
+
 ## Startup
 
 1. The SessionStart hook prints the live **open backlog**, recently resolved tasks, and latest results straight from `research.db` (via [.claude/hooks/scripts/session_brief.py](.claude/hooks/scripts/session_brief.py)). Read it — it is the source of truth for what is open and what is already tested.
