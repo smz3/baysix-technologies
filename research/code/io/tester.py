@@ -401,5 +401,28 @@ def gate7_passed(idea_id: str) -> bool:
     return any(g["gate_number"] == 7 and g["status"] == "passed" for g in gates)
 
 
+def delete_run(run_id: int, drop_run_row: bool = True) -> dict:
+    """Hard-delete one emitter/trader run's data from research.db: its tester_zones
+    and tester_trades rows, and (optionally) the tester_runs row itself. Returns the
+    deleted-row counts. Destructive + irreversible — caller must have explicit human
+    authorization (CLAUDE.md rule 2). Re-emit + re-ingest to restore."""
+    with _conn() as conn:
+        meta = conn.execute(
+            "SELECT idea_id, ea_name FROM tester_runs WHERE run_id=?", (run_id,)
+        ).fetchone()
+        z = conn.execute("DELETE FROM tester_zones WHERE run_id=?", (run_id,)).rowcount
+        t = conn.execute("DELETE FROM tester_trades WHERE run_id=?", (run_id,)).rowcount
+        r = 0
+        if drop_run_row:
+            r = conn.execute("DELETE FROM tester_runs WHERE run_id=?", (run_id,)).rowcount
+        conn.commit()
+    out = {"run_id": run_id, "idea_id": meta["idea_id"] if meta else None,
+           "ea_name": meta["ea_name"] if meta else None,
+           "zones_deleted": z, "trades_deleted": t, "run_rows_deleted": r}
+    print(f"[tester] delete_run {run_id} ({out['idea_id']}/{out['ea_name']}): "
+          f"zones={z} trades={t} run_row={r}")
+    return out
+
+
 if __name__ == "__main__":
     init_db()
