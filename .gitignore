@@ -138,5 +138,6 @@ research/papers/**/*.md
 # Session-temp safety copy from the 4.0 rebuild (migration 032); canonical backup lives in _backup/.
 research/db/*.pre40_rebuild
 
-# BRC auto-generated provenance header (regenerated each compile via gen_brc_version.py)
+# Auto-generated provenance headers (regenerated each compile via gen_version.py <system>)
 mt5/Include/brc_system/brc_version.mqh
+mt5/Include/fob_system/fob_version.mqh

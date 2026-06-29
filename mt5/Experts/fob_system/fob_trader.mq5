@@ -41,6 +41,7 @@
 #include <fob_system/fob_swings.mqh>
 #include <fob_system/fob_breakouts.mqh>
 #include <fob_system/fob_types.mqh>
+#include <fob_system/fob_version.mqh>   // AUTO-GEN git provenance — run gen_version.py fob before compile
 #include <fob_system/fob_sequence.mqh>
 #include <fob_system/fob_visual.mqh>     // sequence dots + InpVisualize master toggle
 
@@ -228,6 +229,9 @@ int OnInit()
 
    string ingest_lo = FobTfName(g_ingest[0]);
    string ingest_hi = FobTfName(g_ingest[ArraySize(g_ingest) - 1]);
+   PrintFormat("[FOB TRADER] v%s | git %s%s | built %s",
+               FOB_VERSION, FOB_GIT_SHA,
+               (FOB_GIT_DIRTY ? "-DIRTY(exploratory)" : ""), FOB_BUILD_TIME);
    PrintFormat("[FOB TRADER] v%s init OK — setup_tf=%s -> CF on %s (ingest %s..%s, %d TF) | cf_filter=%d | CF_ZONE SLbuf=%.2f TP=%.2fR | lot=%.2f magic=%I64u | MULTI-POSITION",
                FOB_VERSION, FobTfName(g_setup_tf), FobTfName(g_setup_tf - 1),
                ingest_lo, ingest_hi, ArraySize(g_ingest),
