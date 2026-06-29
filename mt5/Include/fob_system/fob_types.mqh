@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.21.0"   // 1.21.0: path-A capture CSV (lifecycle+counts+vr_fresh+htf_state)
+#define FOB_VERSION "1.22.0"   // 1.22.0: remove rejected full-stack align gate (result_id 18); 1.21.0: path-A capture CSV
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9

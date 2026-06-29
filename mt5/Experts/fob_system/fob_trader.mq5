@@ -35,7 +35,7 @@
 //|  newer cycle supersedes it (task: visual retention).               |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.21.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.22.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_swings.mqh>
@@ -70,16 +70,11 @@ input double   InpRMultTP      = 1.0;         // TP = RR * risk (1.0 = 1:1, the 
 input double   InpFixedLot      = 0.01;       // min lot at $50
 input ulong    InpMagic         = 3001;       // FOB trader magic
 
-//--- STORYLINE ALIGNMENT GATE (task 188). When ON, an H1 CF fires a trade ONLY if the
-//--- N higher TFs directly above the setup TF (H1 setup -> H4/D1/W1) all currently carry
-//--- the SAME confirmed-alive bias as the CF direction (full-stack 3/3). The bias of a
-//--- higher TF = direction of its most-recent CF (last confirmed continuation), read
-//--- causally from the chronological event stream at the CF instant -> no look-ahead.
-//--- FOB-NATIVE: the bias is FOB's OWN detector, not a cross-model (BRC) prior.
-//--- v1 bias = last-CF-direction (invalidation-without-replacement not modeled — a known
-//--- simplification; MT5 net is the arbiter).
-input bool     InpAlignGate    = false;       // [task188] storyline alignment gate (higher-TF bias must agree)
-input int      InpAlignDepth   = 3;           // # higher TFs above setup that must align (H1 -> 3 = H4/D1/W1)
+//--- NOTE: the full-stack STORYLINE ALIGNMENT GATE (task 188) was REMOVED 2026-06-29.
+//--- It was REJECTED (result_id 18): in FOB, higher-TF alignment is AWARENESS, not a trade
+//--- gate — we record each higher TF's live state (W1=Bias, D1=Direction) to trade aware of
+//--- context, but trade direction depends on which setup TF we pick, NOT on full-stack
+//--- agreement. The awareness snapshot now lives on the EMITTER (fob_events.htf_state).
 
 //--- forward-excursion STUDY mode (T-170). NO orders: per CF on g_setup_tf, anchor at the
 //--- CF mid price and track running MFE/MAE/terminal on REAL TICKS until the NEXT CF on the
@@ -124,9 +119,6 @@ int           g_radius   = 1;
 int           g_seen     = 0;           // # events already acted on (watermark into g_events)
 int           g_ingest[];               // ONLY the TF indices we ingest = {setup_tf-1, setup_tf}
 int           g_setup_tf   = 4;               // setup TF index, derived from InpTfPair in OnInit
-//--- storyline alignment (task 188): per-TF last-confirmed bias (FOB_BULL/FOB_BEAR; -1 = no
-//--- CF yet). Updated causally as CFs classify; the gate reads the higher-TF members.
-int           g_bias[FOB_N_TF];
 CFobVisual    g_vis;
 ulong         g_last_sig = 0;       // last-drawn zone-state hash -> repaint only on change (no twitch)
 
@@ -167,25 +159,9 @@ int OnInit()
    //--- ingest ONLY the setup TF and its n-1 (CF) TF: byte-identical to the full
    //--- classifier for this setup's events (a break on TF t only sets PBO(t) and
    //--- VR/CF(t+1)) — so {setup_tf-1, setup_tf} fully determines every setup_tf event.
-   //--- ALIGNMENT GATE (task 188): also need full PBO->VR->CF cycles on the higher-TF
-   //--- ladder (setup_tf+1 .. setup_tf+depth). Cycle on setup-TF s needs {s-1, s}, so the
-   //--- union over s in [setup_tf .. setup_tf+depth] is the contiguous range
-   //--- [setup_tf-1 .. setup_tf+depth]. depth=3 on H1 -> {M30,H1,H4,D1,W1}.
-   if(InpAlignGate)
-     {
-      int lo = g_setup_tf - 1;
-      int hi = MathMin(g_setup_tf + InpAlignDepth, FOB_N_TF - 1);
-      int cnt = hi - lo + 1;
-      ArrayResize(g_ingest, cnt);
-      for(int i = 0; i < cnt; i++)
-         g_ingest[i] = lo + i;
-     }
-   else
-     {
-      ArrayResize(g_ingest, 2);
-      g_ingest[0] = g_setup_tf - 1;
-      g_ingest[1] = g_setup_tf;
-     }
+   ArrayResize(g_ingest, 2);
+   g_ingest[0] = g_setup_tf - 1;
+   g_ingest[1] = g_setup_tf;
 
    //--- FULL reset (HARD): MT5 reinits WITHOUT unloading -> globals survive.
    ArrayResize(g_events, 0);
@@ -202,7 +178,6 @@ int OnInit()
       g_setup[i].vr_swing   = 0;      g_setup[i].vr_ev_idx = -1;
       g_setup[i].cf_count   = 0;      g_setup[i].last_conf_swing = 0;
       g_setup[i].pbo_swing  = 0;
-      g_bias[i] = -1;                 // alignment gate: no confirmed bias yet
      }
    ArrayResize(g_pid, 0); ArrayResize(g_rw, 0); ArrayResize(g_setuptf, 0);
    ArrayResize(g_eventtf, 0); ArrayResize(g_cfidx, 0); ArrayResize(g_seq, 0); ArrayResize(g_dir, 0);
@@ -236,12 +211,6 @@ int OnInit()
                FOB_VERSION, FobTfName(g_setup_tf), FobTfName(g_setup_tf - 1),
                ingest_lo, ingest_hi, ArraySize(g_ingest),
                InpCfIdxFilter, InpSlBufferK, InpRMultTP, InpFixedLot, InpMagic);
-   if(InpAlignGate)
-     {
-      int hi = MathMin(g_setup_tf + InpAlignDepth, FOB_N_TF - 1);
-      PrintFormat("[FOB TRADER] *** ALIGNMENT GATE ON (task188) *** trade %s CF only if %s..%s bias-stack (%d TF) ALL agree",
-                  FobTfName(g_setup_tf), FobTfName(g_setup_tf + 1), FobTfName(hi), hi - g_setup_tf);
-     }
    if(InpStudyMode)
       PrintFormat("[FOB TRADER] *** STUDY MODE (T-170) *** NO ORDERS — per CF: MFE/MAE/terminal (RAW POINTS) until next CF, cap=%d %s bars",
                   InpStudyCapBars, FobTfName(g_setup_tf));
@@ -378,28 +347,11 @@ void StashTrade(const long pid, const double rw, const FobEvent &e)
   }
 
 //+------------------------------------------------------------------+
-//| STORYLINE ALIGNMENT GATE (task 188). True iff every higher-TF      |
-//| ladder member (setup_tf+1 .. setup_tf+depth) currently carries the |
-//| SAME confirmed bias as `dir`. An unset bias (-1, no CF yet) or an  |
-//| opposite bias BLOCKS — full-stack agreement required.             |
-//+------------------------------------------------------------------+
-bool AlignedStack(const int dir)
-  {
-   int hi = MathMin(g_setup_tf + InpAlignDepth, FOB_N_TF - 1);
-   for(int h = g_setup_tf + 1; h <= hi; h++)
-      if(g_bias[h] != dir)
-         return false;
-   return true;
-  }
-
-//+------------------------------------------------------------------+
 //| MULTI-POSITION: act on EVERY unseen CF matching the setup-TF (+   |
 //| cf_idx) filter. No one-at-a-time gate — each CF opens its own     |
-//| independent position so the 2nd+ CFs of a cycle all fire.         |
-//| ALIGNMENT (task 188): every CF (any TF) refreshes that TF's bias  |
-//| FIRST (chronological -> causal), so a trade-TF CF reads an already |
-//| up-to-date higher-TF stack. With InpAlignGate, a trade fires only  |
-//| when the full stack agrees.                                       |
+//| independent position so the 2nd+ CFs of a cycle all fire. Higher- |
+//| TF alignment is NOT a gate (it was rejected, result_id 18) — it's |
+//| awareness, recorded on the emitter's htf_state snapshot instead.  |
 //+------------------------------------------------------------------+
 void ActOnNewEvents()
   {
@@ -408,11 +360,8 @@ void ActOnNewEvents()
      {
       FobEvent e = g_events[k];
       if(e.label != FOB_CF)              continue;
-      g_bias[e.setup_tf] = e.dir;        // last-confirmed bias on THIS TF (causal update)
-
       if(e.setup_tf != g_setup_tf)       continue;
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
-      if(InpAlignGate && !AlignedStack(e.dir)) continue;   // storyline gate: higher-TF stack must agree
 
       double rw = 0.0;
       long pid = FobOpenMarket(e, InpFixedLot, rw);   // SL anchored beyond zone L2
@@ -730,11 +679,9 @@ void WriteTradeLedger()
    //    (else every pass clobbers the same file). k025=SLbuf 0.25, rr200=RR 2.00.
    string ktok  = StringFormat("k%03d",  (int)MathRound(InpSlBufferK * 100));
    string rrtok = StringFormat("rr%03d", (int)MathRound(InpRMultTP  * 100));
-   //--- alignment-gate token so a gated run never clobbers the baseline CSV (aln0 = off)
-   string atok  = InpAlignGate ? StringFormat("aln%d", InpAlignDepth) : "aln0";
-   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_%s_%s_%s_cf%d_%s.csv",
+   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_%s_%s_cf%d_%s.csv",
                                _Symbol, ver, FobTfName(g_setup_tf), rmode,
-                               ktok, rrtok, atok, InpCfIdxFilter, stamp);
+                               ktok, rrtok, InpCfIdxFilter, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      { PrintFormat("[FOB TRADER] ledger FileOpen failed (%d) for %s", GetLastError(), fname); return; }
