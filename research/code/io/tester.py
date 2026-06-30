@@ -281,6 +281,9 @@ def ingest_tester_run(
     max_dd_pct: float = None,
     win_rate: float = None,
     notes: str = None,
+    run_role: str = None,
+    git_sha: str = None,
+    git_dirty: int = None,
 ) -> int:
     """Open a Strategy-Tester run with its data provenance + run-level summary.
     idea_id is soft-validated against research.db. Returns run_id. The FIDELITY diff
@@ -291,6 +294,8 @@ def ingest_tester_run(
         raise ValueError(f"data_source must be one of {VALID_DATA_SOURCE}")
     if tester_model is not None and tester_model not in VALID_TESTER_MODEL:
         raise ValueError(f"tester_model must be one of {VALID_TESTER_MODEL} or None")
+    if run_role is not None and run_role not in ("emitter", "trader"):
+        raise ValueError("run_role must be 'emitter', 'trader', or None")
     params_json = json.dumps(params) if params is not None else None
     now = _now()
     with _conn() as conn:
@@ -301,13 +306,13 @@ def ingest_tester_run(
                  tester_model, timeframe, period_start, period_end, tz_offset_hours,
                  magic_number, initial_deposit, leverage, spread_setting, params,
                  n_trades, net_profit_usd, profit_factor, max_dd_pct, win_rate,
-                 notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 notes, run_role, git_sha, git_dirty, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (idea_id, ea_name, ea_version, symbol, data_source, model_quality,
               tester_model, timeframe, period_start, period_end, tz_offset_hours,
               magic_number, initial_deposit, leverage, spread_setting, params_json,
               n_trades, net_profit_usd, profit_factor, max_dd_pct, win_rate,
-              notes, now, now))
+              notes, run_role, git_sha, git_dirty, now, now))
         conn.commit()
         run_id = cur.lastrowid
     print(f"[tester] run #{run_id} {idea_id} {symbol} [{data_source}/{tester_model}] n={n_trades}")
@@ -426,6 +431,151 @@ def ingest_brc_zones(run_id: int, csv_path) -> int:
         conn.commit()
     print(f"[tester] run #{run_id} ingested {len(rows)} BRC zones from {csv_path.name}")
     return len(rows)
+
+
+# ── FOB ingest: one wide capture CSV -> fob_cycles / fob_zones / fob_events ────
+_RISK_MAP = {"LR": "LOW", "HR": "HIGH", "": None}
+
+
+def ingest_fob(run_id: int, csv_path) -> dict:
+    """Derive fob_cycles / fob_zones / fob_events from a fob_capture_*.csv.
+
+    Grain: ONE row per classified event (PBO/VR/CF); event<->zone is 1:1 at emit.
+    Cycles are RECONSTRUCTED by grouping on (setup_tf, seq) — a NEW PBO = a NEW
+    cycle (CLAUDE.md FOB rule). cycle_id / zone_id / event_id are surrogate keys
+    assigned here (the EA never emits them). Returns a counts dict. Re-ingesting a
+    run_id is blocked — delete_run(run_id, drop_run_row=False) first to redo.
+    See docs/specs/2026-06-29_fob_data_capture_and_db_rebuild.md."""
+    import csv as _csv
+    from collections import OrderedDict
+    csv_path = Path(csv_path)
+    if not get_tester_run(run_id):
+        raise ValueError(f"tester run not found: {run_id} — create the run header first")
+    with _conn() as conn:
+        for t in ("fob_events", "fob_zones", "fob_cycles"):
+            n = conn.execute(f"SELECT COUNT(*) FROM {t} WHERE run_id=?", (run_id,)).fetchone()[0]
+            if n:
+                raise ValueError(f"run #{run_id} already has {n} {t} rows — "
+                                 f"delete them before re-ingesting")
+
+    def _f(v):  # float or None
+        v = str(v).strip(); return float(v) if v else None
+    def _i(v):  # int or None
+        v = str(v).strip(); return int(v) if v else None
+    def _s(v):  # str or None
+        v = str(v).strip(); return v or None
+
+    with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+        reader = _csv.DictReader(fh)
+        need = {"setup_tf", "seq", "label", "event_tf", "htf_state", "level", "l2", "mid"}
+        miss = need - set(reader.fieldnames or [])
+        if miss:
+            raise ValueError(f"CSV missing expected columns: {sorted(miss)}")
+        rows = list(reader)
+
+    now = _now()
+
+    # ── 1. reconstruct cycles by (setup_tf, seq), insertion order = chronological ─
+    groups = OrderedDict()
+    for r in rows:
+        groups.setdefault((r["setup_tf"], int(r["seq"])), []).append(r)
+
+    cycle_recs = []
+    for (stf, seq), evs in groups.items():
+        pbo = next((e for e in evs if e["label"] == "PBO"), evs[0])
+        vr  = next((e for e in evs if e["label"] == "VR"), None)
+        cfs = [e for e in evs if e["label"] in ("CF", "HRCF")]
+        cf_times = sorted(t for t in (_norm_ts(e["bar_time"]) for e in cfs) if t)
+        bar_times = sorted(t for t in (_norm_ts(e["bar_time"]) for e in evs) if t)
+        inval = _norm_ts(pbo["invalidation_time"])
+        status = "invalidated" if inval else ("alive" if str(pbo["alive_at_end"]).strip() == "1"
+                                              else "complete")
+        cycle_recs.append({
+            "run_id": run_id, "setup_tf": stf, "seq": seq, "direction": _s(pbo["direction"]),
+            "pbo_time": _norm_ts(pbo["bar_time"]), "pbo_level": _f(pbo["level"]),
+            "pbo_swing_time": _norm_ts(pbo["swing_time"]), "pbo_bar_close": _f(pbo["bar_close"]),
+            "vr_time": _norm_ts(vr["bar_time"]) if vr else None,
+            "vr_level": _f(vr["level"]) if vr else None,
+            "vr_made_first_tf": _s(vr["vr_made_first_tf"]) if vr else None,
+            "n_cf": len(cfs),
+            "first_cf_time": cf_times[0] if cf_times else None,
+            "last_cf_time": cf_times[-1] if cf_times else None,
+            "status": status, "invalidation_time": inval, "invalidated_by": None,
+            "start_time": _norm_ts(pbo["bar_time"]),
+            "end_time": bar_times[-1] if bar_times else None,
+            "meta": json.dumps({"n_events": len(evs), "has_vr": vr is not None}),
+            "created_at": now,
+        })
+
+    cyc_cols = ["run_id", "setup_tf", "seq", "direction", "pbo_time", "pbo_level",
+                "pbo_swing_time", "pbo_bar_close", "vr_time", "vr_level", "vr_made_first_tf",
+                "n_cf", "first_cf_time", "last_cf_time", "status", "invalidation_time",
+                "invalidated_by", "start_time", "end_time", "meta", "created_at"]
+    zone_cols = ["run_id", "cycle_id", "source_label", "event_tf", "direction", "l1", "l2",
+                 "mid", "p1_time", "p1_price", "p3_time", "p3_price", "t1_time", "t2_time",
+                 "t3_time", "n_l1_touches", "n_mid_touches", "n_l2_touches", "rt_count",
+                 "rt_time", "vr_fresh", "confirm_time", "confirm_price", "invalidation_time",
+                 "continued", "alive_at_end", "bars_alive", "mfe_r", "mae_r", "realized_r",
+                 "zone_key", "is_primary", "superseded_by", "zone_valid", "meta", "created_at"]
+    evt_cols = ["run_id", "cycle_id", "zone_id", "event_tf", "label", "cf_idx", "risk_class",
+                "direction", "swing_time", "bar_time", "level", "bar_close", "body_clears",
+                "vr_zone_broken", "htf_state", "meta", "created_at"]
+
+    def _ins(cur, table, cols, rec):
+        ph = ", ".join("?" for _ in cols)
+        cur.execute(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({ph})",
+                    tuple(rec[c] for c in cols))
+        return cur.lastrowid
+
+    with _conn() as conn:
+        cur = conn.cursor()
+        # cycles first -> (setup_tf, seq) -> cycle_id
+        key2cid = {}
+        for cr in cycle_recs:
+            key2cid[(cr["setup_tf"], cr["seq"])] = _ins(cur, "fob_cycles", cyc_cols, cr)
+        # then zone + event per CSV row (original chronological order)
+        n_z = n_e = 0
+        for r in rows:
+            cid = key2cid[(r["setup_tf"], int(r["seq"]))]
+            src = "CF" if r["label"] == "HRCF" else r["label"]
+            zrec = {
+                "run_id": run_id, "cycle_id": cid, "source_label": src,
+                "event_tf": r["event_tf"], "direction": _s(r["direction"]),
+                "l1": _f(r["level"]), "l2": _f(r["l2"]), "mid": _f(r["mid"]),
+                "p1_time": _norm_ts(r["p1_time"]), "p1_price": _f(r["p1_price"]),
+                "p3_time": _norm_ts(r["p3_time"]), "p3_price": _f(r["p3_price"]),
+                "t1_time": _norm_ts(r["t1_time"]), "t2_time": _norm_ts(r["t2_time"]),
+                "t3_time": _norm_ts(r["t3_time"]), "n_l1_touches": _i(r["n_l1_touches"]),
+                "n_mid_touches": _i(r["n_mid_touches"]), "n_l2_touches": _i(r["n_l2_touches"]),
+                "rt_count": _i(r["rt_count"]), "rt_time": _norm_ts(r["rt_time"]),
+                "vr_fresh": _i(r["vr_fresh"]), "confirm_time": _norm_ts(r["confirm_time"]),
+                "confirm_price": _f(r["confirm_price"]),
+                "invalidation_time": _norm_ts(r["invalidation_time"]),
+                "continued": _i(r["continued"]), "alive_at_end": _i(r["alive_at_end"]),
+                "bars_alive": _i(r["bars_alive"]), "mfe_r": _f(r["mfe_r"]),
+                "mae_r": _f(r["mae_r"]), "realized_r": _f(r["realized_r"]),
+                "zone_key": _s(r["zone_key"]), "is_primary": _i(r["is_primary"]),
+                "superseded_by": _s(r["superseded_by"]), "zone_valid": _i(r["zone_valid"]),
+                "meta": None, "created_at": now,
+            }
+            zid = _ins(cur, "fob_zones", zone_cols, zrec); n_z += 1
+            erec = {
+                "run_id": run_id, "cycle_id": cid, "zone_id": zid, "event_tf": r["event_tf"],
+                "label": r["label"], "cf_idx": _i(r["cf_idx"]),
+                "risk_class": _RISK_MAP.get(str(r["risk_class"]).strip(), None),
+                "direction": _s(r["direction"]), "swing_time": _norm_ts(r["swing_time"]),
+                "bar_time": _norm_ts(r["bar_time"]), "level": _f(r["level"]),
+                "bar_close": _f(r["bar_close"]), "body_clears": _i(r["body_clears"]),
+                "vr_zone_broken": _i(r["vr_zone_broken"]), "htf_state": _s(r["htf_state"]),
+                "meta": None, "created_at": now,
+            }
+            _ins(cur, "fob_events", evt_cols, erec); n_e += 1
+        conn.commit()
+
+    counts = {"cycles": len(cycle_recs), "zones": n_z, "events": n_e}
+    print(f"[tester] run #{run_id} ingested FOB: {counts['cycles']} cycles, "
+          f"{counts['zones']} zones, {counts['events']} events from {csv_path.name}")
+    return counts
 
 
 def log_fidelity_diff(
