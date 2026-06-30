@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.24.0"   // 1.24.0: emitter lifecycle = TRUE-TICK accumulator (intra-bar order; replaces OnDeinit closed-bar replay), real-ticks only; 1.23.0: modularize trader + shared fob_engine.mqh
+#define FOB_VERSION "1.25.0"   // 1.25.0: emitter cycle-end eviction — new PBO retires prior cycle's VR/CF from g_watch (event-driven, NO bar cap) -> linear runtime + fixes zombie rt_count; 1.24.0: emitter lifecycle = TRUE-TICK accumulator (intra-bar order; replaces OnDeinit closed-bar replay), real-ticks only; 1.23.0: modularize trader + shared fob_engine.mqh
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9

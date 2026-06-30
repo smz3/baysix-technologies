@@ -24,7 +24,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.24.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.25.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -149,6 +149,27 @@ void OnTick()
          for(int i = na; i < ne; i++)
            {
             FobAccInit(g_events[i].zone, g_acc[i], g_events[i].dir, g_events[i].level);
+            //--- CYCLE-END EVICTION (event-driven, NEVER a bar cap — [[fob_event_driven_no_bar_caps]]):
+            //--- a new PBO opens cycle S on setup_TF X, so the PRIOR cycle's VR/CF on X are
+            //--- storyline-dead -> drop them from g_watch (their rows stay in g_events, data
+            //--- intact). Bounds g_watch to the live cycle per TF -> linear runtime, and stops
+            //--- the zombie rt_count inflation. Runs BEFORE this PBO is added below, and it
+            //--- only evicts seq < S, so the new PBO (seq == S) is never self-evicted.
+            if(g_events[i].label == FOB_PBO)
+              {
+               int xtf = g_events[i].setup_tf;
+               int xsq = g_events[i].seq;
+               for(int w = ArraySize(g_watch) - 1; w >= 0; w--)
+                 {
+                  int wi = g_watch[w];
+                  if(g_events[wi].setup_tf == xtf && g_events[wi].seq < xsq)
+                    {
+                     int last = ArraySize(g_watch) - 1;
+                     g_watch[w] = g_watch[last];     // swap-remove (downward scan = safe)
+                     ArrayResize(g_watch, last);
+                    }
+                 }
+              }
             if(g_events[i].zone.valid)
               {
                int w = ArraySize(g_watch);
