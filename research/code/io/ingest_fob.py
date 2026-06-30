@@ -98,6 +98,10 @@ def main():
 
     counts = tester.ingest_fob(run_id, csv_path)
 
+    # ── phase-2 Tier-C (task 200): confirm linkage + 2R-barrier outcome ───────
+    tester.derive_fob_confirm_linkage(run_id)
+    tester.derive_fob_tier_c_outcome(run_id, target_r=2.0)
+
     # ── verify ──────────────────────────────────────────────────────────────
     import sqlite3
     conn = sqlite3.connect(tester.DB_PATH)

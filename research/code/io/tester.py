@@ -578,6 +578,135 @@ def ingest_fob(run_id: int, csv_path) -> dict:
     return counts
 
 
+def derive_fob_confirm_linkage(run_id: int) -> dict:
+    """Phase-2 Part A (task 200) — set zone.confirm_time / confirm_price for CF zones from
+    NEXT-CF LINKAGE within each cycle (the next same-cycle CF that the storyline printed).
+    Deterministic, no external data. NOTE: this is ONLY the linkage pointer — it does NOT
+    decide win/loss. The outcome (continued / realized_r) is a forward PRICE result owned by
+    derive_fob_tier_c_outcome() (next-CF linkage alone is degenerate ~99% 'continued').
+    Idempotent."""
+    if not get_tester_run(run_id):
+        raise ValueError(f"tester run not found: {run_id}")
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT z.zone_id, z.cycle_id, e.cf_idx, e.bar_time, e.level
+            FROM fob_zones z
+            JOIN fob_events e ON e.zone_id = z.zone_id
+            WHERE z.run_id = ? AND z.source_label = 'CF'
+            ORDER BY z.cycle_id, e.cf_idx, e.bar_time
+        """, (run_id,)).fetchall()
+        from collections import OrderedDict
+        cyc = OrderedDict()
+        for zid, cid, cf_idx, bar_time, level in rows:
+            cyc.setdefault(cid, []).append((zid, bar_time, level))
+        updates = []
+        for cid, cfs in cyc.items():
+            for i, (zid, bt, lv) in enumerate(cfs):
+                nxt = cfs[i + 1] if i + 1 < len(cfs) else None
+                updates.append((nxt[1] if nxt else None, nxt[2] if nxt else None, zid))
+        conn.executemany(
+            "UPDATE fob_zones SET confirm_time=?, confirm_price=? WHERE zone_id=?", updates)
+        conn.commit()
+    print(f"[tester] run #{run_id} Tier-C(confirm linkage): {len(updates)} CF zones linked")
+    return {"cf_zones": len(updates)}
+
+
+def derive_fob_tier_c_outcome(run_id: int, target_r: float = 2.0,
+                              symbol_loader=None) -> dict:
+    """Phase-2 Part B (task 200) — derive zone.continued + realized_r for CF zones via a
+    forward FIXED-2R-vs-1R BARRIER sweep on M1 mid bars (entry=l1, stop=l2, R=|l1-l2|,
+    target=entry +/- target_r*R by direction). EXPLORATORY mid-price (M1 high/low first-
+    touch) — NOT a money result; the MT5 tester is the arbiter (CLAUDE.md trust rule).
+
+    win  (continued=1, realized_r=+target_r): target touched before stop.
+    loss (continued=0, realized_r=-1.0)     : stop touched first (incl. same-bar tie -> stop,
+                                              conservative — high & low both cross in one M1).
+    censored (continued/realized_r NULL)    : neither touched by the end of available M1 bars.
+
+    Numba kernel; idempotent (overwrites). symbol_loader override = test seam (default M1)."""
+    import numpy as np
+    import pandas as pd
+    from numba import njit
+
+    if not get_tester_run(run_id):
+        raise ValueError(f"tester run not found: {run_id}")
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT z.zone_id, z.direction, z.l1, z.l2, e.bar_time
+            FROM fob_zones z JOIN fob_events e ON e.zone_id = z.zone_id
+            WHERE z.run_id = ? AND z.source_label = 'CF'
+              AND z.l1 IS NOT NULL AND z.l2 IS NOT NULL AND z.l1 != z.l2
+              AND z.direction IN ('BUY','SELL')
+            ORDER BY e.bar_time
+        """, (run_id,)).fetchall()
+    if not rows:
+        print(f"[tester] run #{run_id} Tier-C(outcome): no eligible CF zones")
+        return {"cf_zones": 0}
+
+    zids = np.array([r[0] for r in rows], dtype=np.int64)
+    is_buy = np.array([1 if r[1] == "BUY" else 0 for r in rows], dtype=np.int8)
+    l1 = np.array([float(r[2]) for r in rows])
+    l2 = np.array([float(r[3]) for r in rows])
+    R = np.abs(l1 - l2)
+    target = np.where(is_buy == 1, l1 + target_r * R, l1 - target_r * R)
+    entry_ts = pd.to_datetime([r[4] for r in rows], utc=True)
+
+    # M1 mid bars covering [first entry, end]; high/low drive first-touch.
+    loader = symbol_loader or (lambda s, e: _m1_for_outcome(s, e))
+    bars = loader(entry_ts.min(), None)
+    bt = bars.index.values.astype("datetime64[ns]")
+    highs = bars["high"].to_numpy(); lows = bars["low"].to_numpy()
+    start_idx = np.searchsorted(bt, entry_ts.values.astype("datetime64[ns]"), side="left")
+
+    @njit(cache=True)
+    def _sweep(start_idx, is_buy, stop, target, highs, lows):
+        n = start_idx.shape[0]; nb = highs.shape[0]
+        out = np.empty(n, dtype=np.int8)  # 1 win, 0 loss, -1 censored
+        for k in range(n):
+            i0 = start_idx[k]
+            res = -1
+            for i in range(i0, nb):
+                hi = highs[i]; lo = lows[i]
+                if is_buy[k] == 1:
+                    hit_stop = lo <= stop[k]; hit_tgt = hi >= target[k]
+                else:
+                    hit_stop = hi >= stop[k]; hit_tgt = lo <= target[k]
+                if hit_stop:           # tie -> stop first (conservative)
+                    res = 0; break
+                if hit_tgt:
+                    res = 1; break
+            out[k] = res
+        return out
+
+    codes = _sweep(start_idx, is_buy, l2, target, highs, lows)
+
+    updates = []
+    n_win = n_loss = n_cens = 0
+    for zid, c in zip(zids, codes):
+        if c == 1:   updates.append((1, float(target_r), int(zid)));  n_win += 1
+        elif c == 0: updates.append((0, -1.0, int(zid)));             n_loss += 1
+        else:        updates.append((None, None, int(zid)));          n_cens += 1
+    with _conn() as conn:
+        conn.executemany(
+            "UPDATE fob_zones SET continued=?, realized_r=? WHERE zone_id=?", updates)
+        conn.commit()
+
+    resolved = n_win + n_loss
+    hit = (n_win / resolved) if resolved else float("nan")
+    print(f"[tester] run #{run_id} Tier-C(outcome @ {target_r}R): {len(updates)} CF zones -> "
+          f"win={n_win} loss={n_loss} censored={n_cens}  hit-rate={hit:.4f}")
+    return {"cf_zones": len(updates), "win": n_win, "loss": n_loss,
+            "censored": n_cens, "hit_rate": hit, "target_r": target_r}
+
+
+def _m1_for_outcome(start, end):
+    """M1 mid bars for the barrier sweep, reading across the seal (research-internal,
+    not a forward-leak: outcomes are labels on past zones). Local import keeps arctic
+    optional for non-FOB callers."""
+    from research.code.io import arctic_io
+    return arctic_io.m1_bars(start=start, end=end, columns=["high", "low"])
+
+
 def log_fidelity_diff(
     run_id: int,
     research_result_id: int,
