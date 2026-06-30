@@ -8,26 +8,29 @@
 //|  colour-coded and (b) emit a UTF-8 event ledger to CSV. NO orders, |
 //|  NO money — this is the read-only oracle that feeds Python.        |
 //|                                                                    |
-//|  Run on the M5 chart, tester model "Open prices only" (swing +     |
-//|  break detection are CLOSE-only, so each bar is final at its close |
-//|  — the open-prices model is exact here and far faster). Per tick,  |
-//|  every TF's newly-closed bars are ingested, the new breaks across  |
-//|  ALL TFs are merged + sorted (bar_time asc, ties higher-TF-first)  |
-//|  and fed to the classifier in true chronological order — the same  |
-//|  ordering guard that kills the ORB unsorted-tick look-ahead.       |
+//|  Run on REAL TICKS (Model=4) — FOB is a tick-resolution model and   |
+//|  open-prices is BANNED (Syafiq 2026-06-29). Detection (swing/break) |
+//|  is CLOSE-only, but the zone LIFECYCLE (touch ladder / counts / RT) |
+//|  is now accumulated CAUSALLY tick-by-tick (FobAcc*, v1.24.0 task    |
+//|  197) so the CSV records true intra-bar ORDER. Per tick: each TF's  |
+//|  newly-closed bars are ingested (new-bar-gated), the new breaks are |
+//|  merged + sorted (bar_time asc, ties higher-TF-first) and fed to    |
+//|  the classifier in chronological order — the ordering guard that    |
+//|  kills the ORB unsorted-tick look-ahead — then the close path and   |
+//|  tick path advance each watched zone's lifecycle.                  |
 //|                                                                    |
 //|  Modules — FOB owns EVERYTHING, nothing shared with brc_system:    |
 //|    fob_types (own swing/break/dir types) · fob_swings · fob_break-  |
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.23.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.24.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
 #include <fob_system/fob_engine.mqh>      // SHARED detection runtime (structs + ingest+sort) — with the trader
 #include <fob_system/fob_sequence.mqh>
-#include <fob_system/fob_lifecycle.mqh>   // FobReplayZoneLife — stamp zone lifecycle onto events for CSV
+#include <fob_system/fob_lifecycle.mqh>   // TRUE-TICK accumulator (FobAccInit/OnTick/OnClose) — zone lifecycle source
 #include <fob_system/fob_csv.mqh>
 #include <fob_system/fob_visual.mqh>      // InpVisualize master toggle (default on)
 
@@ -45,6 +48,16 @@ string        g_runid  = "";
 CFobVisual    g_vis;
 ulong         g_last_sig = 0;       // last-drawn zone-state hash -> repaint only on change (no twitch)
 
+//--- TRUE-TICK accumulator state (v1.24.0, task 197). g_acc[] is parallel to
+//--- g_events[] (one accumulator per event); g_watch[] holds the indices of
+//--- zones still LIVE (alive, or a VR counting RT) so the per-tick inner loop
+//--- only touches a handful, never the full ledger. g_last_form[t] gates per-TF
+//--- ingest behind a real new-bar (cheap iTime vs a CopyRates every tick).
+FobZoneAcc    g_acc[];              // parallel to g_events — persistent per-zone hysteresis/RT state
+int           g_watch[];           // indices into g_events of zones still being watched
+datetime      g_last_form[FOB_N_TF];// last seen forming-bar open time per TF (new-bar gate)
+double        g_last_px = 0.0;      // last processed tick price (tick decimation)
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
@@ -61,10 +74,14 @@ int OnInit()
    //--- locks the active cycle -> "pending" stuck). Clear EVERYTHING so each
    //--- reinit rebuilds cleanly from the 64-bar window.
    ArrayResize(g_events, 0);
+   ArrayResize(g_acc,    0);
+   ArrayResize(g_watch,  0);
+   g_last_px = 0.0;
    for(int i = 0; i < FOB_N_TF; i++)
      {
       FobResetTfState(g_tf[i]);
       FobResetSetup(g_setup[i]);
+      g_last_form[i] = 0;
      }
 
    string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);
@@ -88,23 +105,28 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnTick()
   {
+   //--- (1) INGEST — gated per TF behind a REAL new bar (cheap iTime vs a CopyRates
+   //--- every tick). b0[t] snapshots each TF's pre-ingest buffer size so the close
+   //--- path (3) can sweep exactly the bars that closed this tick.
+   int b0[FOB_N_TF];
    FobPending pend[];
    for(int t = 0; t < FOB_N_TF; t++)
+     {
+      b0[t] = ArraySize(g_tf[t].bt);
+      datetime ft = iTime(_Symbol, FobPeriods[t], 0);
+      if(ft == 0 || ft == g_last_form[t])
+         continue;                                  // no new bar closed on this TF
+      g_last_form[t] = ft;
       FobIngestTf(g_tf[t], _Symbol, FobPeriods[t], t, g_radius, InpMaxAge, pend);
+     }
 
-   int  np   = ArraySize(pend);
-   bool live = !MQLInfoInteger(MQL_TESTER);
-   if(np == 0 && !live)
-      return;                       // tester: no new event -> skip the repaint (fast)
-
+   //--- (2) CLASSIFY new breaks in true chronological order (bar_time asc, ties higher-
+   //--- TF-first), stamp the causal htf_state snapshot, then SEED an accumulator per
+   //--- newly-emitted event and add the valid zones to the live watch list.
+   int np = ArraySize(pend);
    if(np > 0)
      {
       FobSortPending(pend);
-      //--- classify each break in true chronological order. After each break, stamp the
-      //--- RAW per-TF awareness snapshot onto the rows it just emitted — CAUSALLY (the
-      //--- snapshot reflects g_setup as-of this bar, never a future state). A same-bar VR
-      //--- upgrade rewrites an existing row in place (no append) -> it keeps its earlier
-      //--- snapshot (same bar, ~identical state), which is correct.
       for(int q = 0; q < np; q++)
         {
          int before = ArraySize(g_events);
@@ -118,30 +140,81 @@ void OnTick()
                g_events[z].htf_state = snap;
            }
         }
+      //--- seed accumulators for the events just appended (g_acc lags g_events).
+      int ne = ArraySize(g_events);
+      int na = ArraySize(g_acc);
+      if(ne > na)
+        {
+         ArrayResize(g_acc, ne);
+         for(int i = na; i < ne; i++)
+           {
+            FobAccInit(g_events[i].zone, g_acc[i], g_events[i].dir, g_events[i].level);
+            if(g_events[i].zone.valid)
+              {
+               int w = ArraySize(g_watch);
+               ArrayResize(g_watch, w + 1, 64);
+               g_watch[w] = i;
+              }
+           }
+        }
      }
 
-   //--- event-TF lens is a full PROJECTION of the log -> repaint it whole (cross-chart
-   //--- pending flips + role merging only work on a replay). LIVE: every tick so the
-   //--- forming-bar touch shows; TESTER: only on a new event (np>0), no forming pass.
+   //--- (3) CLOSE PATH — for each bar that just closed (per TF, oldest->newest), advance
+   //--- invalidation / vr_fresh / bars_alive on every watched zone of that TF. A dead
+   //--- CF/PBO is swap-removed from the watch list; a dead VR stays to count RT on ticks.
+   for(int t = 0; t < FOB_N_TF; t++)
+     {
+      int hi = ArraySize(g_tf[t].bt);
+      for(int i = b0[t]; i < hi; i++)
+        {
+         datetime cbt = g_tf[t].bt[i];
+         double   cbc = g_tf[t].bc[i];
+         for(int w = ArraySize(g_watch) - 1; w >= 0; w--)
+           {
+            int idx = g_watch[w];
+            if(g_events[idx].event_tf != t)
+               continue;
+            bool trackRt = (g_events[idx].label == FOB_VR);
+            bool drop = FobAccOnClose(g_events[idx].zone, g_acc[idx], g_events[idx].dir,
+                                      g_events[idx].level, g_events[idx].bar_time, cbc, cbt, trackRt);
+            if(drop)
+              {
+               int last = ArraySize(g_watch) - 1;
+               g_watch[w] = g_watch[last];          // safe: downward scan, swapped-in was already done
+               ArrayResize(g_watch, last);
+              }
+           }
+        }
+     }
+
+   //--- (4) TICK PATH — advance the touch ladder / counts / RT on every watched zone off
+   //--- the LIVE tick price, in true stream order (this is the intra-bar ORDER the old
+   //--- closed-bar replay could not resolve). Skipped when the price is unchanged
+   //--- (XAUUSD repeats ticks heavily) — the decimation that keeps a real-ticks run fast.
+   MqlTick tk;
+   if(SymbolInfoTick(_Symbol, tk) && tk.bid != g_last_px)
+     {
+      g_last_px = tk.bid;
+      int nw = ArraySize(g_watch);
+      for(int w = 0; w < nw; w++)
+        {
+         int idx = g_watch[w];
+         bool trackRt = (g_events[idx].label == FOB_VR);
+         FobAccOnTick(g_events[idx].zone, g_acc[idx], g_events[idx].dir,
+                      g_events[idx].level, tk.bid, tk.time, trackRt);
+        }
+     }
+
+   //--- (5) VISUAL (live only; OFF in the capture tester). Zones are already stamped by
+   //--- the accumulator across ALL TFs, so we just redraw on a state change — NO replay
+   //--- (UpdateZoneLifecycles/LiveTouchForming would RESET and clobber the accumulator).
    if(InpVisualize)
      {
-      int ci = g_vis.ChartIdx();
-      if(ci >= 0)                                                  // stamp T-touches FIRST (zone [Tn] + alive)
-        {
-         g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
-                                    g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
-         //--- LIVE intrabar touch off the FORMING bar so [Tn] flips on the wick, not
-         //--- only at close. Touch-only; SKIP in tester (per-tick quadratic blow-up).
-         MqlRates f[];
-         if(live && CopyRates(_Symbol, FobPeriods[ci], 0, 1, f) == 1)
-            g_vis.LiveTouchForming(g_events, ArraySize(g_events), f[0].time, f[0].high, f[0].low);
-        }
-      //--- repaint ONLY on a real change (new event OR a newly-stamped touch) — a
-      //--- full ClearAll+redraw every tick is what made the bands TWITCH.
       ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events));
       if(np > 0 || sig != g_last_sig)
         {
          g_vis.DrawZones(g_events, ArraySize(g_events));           // ClearAll + zone bands + edge labels
+         int ci = g_vis.ChartIdx();
          if(ci >= 0)
             g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks); // swings + raw breaks on top
          g_last_sig = sig;
@@ -157,11 +230,10 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    if(!InpVisualize || id != CHARTEVENT_CHART_CHANGE)
       return;
    g_vis.SyncChartTF();
-   int ci = g_vis.ChartIdx();
-   if(ci >= 0)                                                  // stamp T-touches FIRST (zone [Tn] + alive)
-      g_vis.UpdateZoneLifecycles(g_events, ArraySize(g_events),
-                                 g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, g_tf[ci].bc, ArraySize(g_tf[ci].bt));
+   //--- zones are kept current by the tick accumulator (all TFs) — just redraw for the
+   //--- new chart TF; NO replay (UpdateZoneLifecycles would reset the accumulated life).
    g_vis.DrawZones(g_events, ArraySize(g_events));              // ClearAll + zone bands + edge labels
+   int ci = g_vis.ChartIdx();
    if(ci >= 0)
       g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks on top
   }
@@ -179,17 +251,10 @@ void OnDeinit(const int reason)
 
    int n = ArraySize(g_events);
    for(int e = 0; e < n; e++)
-     {
-      //--- STATELESS lifecycle replay over THIS event's own event-TF bar buffer (the same
-      //--- FobReplayZoneLife the chart uses), so the CSV carries mid/Tn/counts/rt/alive/
-      //--- invalidation/bars_alive/vr_fresh. VR rows track RT (the break-and-retest phase).
-      int etf = g_events[e].event_tf;
-      bool isVR = (g_events[e].label == FOB_VR);
-      FobReplayZoneLife(g_events[e].zone, g_events[e].dir, g_events[e].level, g_events[e].bar_time,
-                        g_tf[etf].bt, g_tf[etf].bh, g_tf[etf].bl, g_tf[etf].bc,
-                        ArraySize(g_tf[etf].bt), isVR);
+      //--- zone lifecycle was accumulated CAUSALLY tick-by-tick during the run
+      //--- (FobAccInit/FobAccOnTick/FobAccOnClose) — serialize it AS-IS, no replay.
+      //--- mid/Tn/counts/rt/alive/invalidation/bars_alive/vr_fresh are already stamped.
       FobCsvWriteEvent(fh, e + 1, g_events[e]);
-     }
    FileClose(fh);
 
    PrintFormat("[FOB] fob_baysix v%s done — %d events across %d TFs -> Common/Files/FOB/fob_capture_%s_%s.csv",

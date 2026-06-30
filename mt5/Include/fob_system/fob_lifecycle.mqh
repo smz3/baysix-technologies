@@ -164,4 +164,141 @@ bool FobLiveTouch(FobZone &z, const int dir, const double l1, const datetime brk
    return hit;
   }
 
+//+------------------------------------------------------------------+
+//| TRUE-TICK ACCUMULATOR (v1.24.0, task 197) — the EMITTER's lifecycle |
+//| source. Unlike FobReplayZoneLife (stateless, recomputed from CLOSED |
+//| bars at OnDeinit and therefore blind to intra-bar ORDER), this is   |
+//| STATEFUL and CAUSAL: the zone's touch ladder / counts / RT advance  |
+//| tick-by-tick in true stream order, and invalidation / vr_fresh /    |
+//| bars_alive advance on each CLOSED bar. Because MT5 reveals a closed  |
+//| bar on the FIRST tick of the next bar, every tick of bar N is        |
+//| processed by FobAccOnTick BEFORE bar N's close is judged by          |
+//| FobAccOnClose — so "tapped the zone then broke it" vs "broke then    |
+//| tapped" is recorded correctly, with no look-ahead.                  |
+//|                                                                    |
+//| Logic is the SAME geometry as FobReplayZoneLife (bull retests DOWN, |
+//| bear UP; T1=L1,T2=mid,T3=L2 wick; counts = rising-edge episodes;    |
+//| invalidation = CLOSE beyond L2; RT = distinct returns to broken L2  |
+//| with re-arm hysteresis) — only the CLOCK differs (live price/close  |
+//| instead of bar high/low). The per-zone hysteresis state that used   |
+//| to be locals in the replay (in1/in2/in3, armed, invalidated) now    |
+//| persists in FobZoneAcc, held parallel to the event ledger.         |
+//+------------------------------------------------------------------+
+struct FobZoneAcc
+  {
+   bool in1, in2, in3;     // rising-edge "currently inside the level" — distinct-touch counts
+   bool armed;             // RT re-arm: price has left L2 since the last counted retouch
+   bool invalidated;       // close has broken L2 -> RT phase (VR only); also true for invalid zones
+  };
+
+//+------------------------------------------------------------------+
+//| Seed one zone's lifecycle + accumulator at the moment its event is |
+//| appended. Resets the SAME fields FobReplayZoneLife reset (so a CSV  |
+//| from the accumulator and one from the replay describe the same      |
+//| schema), computes mid, and arms the hysteresis state. An invalid    |
+//| zone is terminal (no life) — flagged invalidated so it is never     |
+//| added to the live watch list.                                      |
+//+------------------------------------------------------------------+
+void FobAccInit(FobZone &z, FobZoneAcc &a, const int dir, const double l1)
+  {
+   z.t1_time = 0; z.t2_time = 0; z.t3_time = 0;
+   z.alive = true; z.invalidation_time = 0;
+   z.rt_count = 0; z.rt_time = 0;
+   z.n_l1_touches = 0; z.n_mid_touches = 0; z.n_l2_touches = 0;
+   z.bars_alive = 0;   z.vr_fresh = true;
+   a.in1 = false; a.in2 = false; a.in3 = false;
+   a.armed = false; a.invalidated = false;
+   if(!z.valid)
+     { z.alive = false; z.vr_fresh = false; a.invalidated = true; return; }  // no zone -> no life
+   z.mid = (l1 + z.l2) * 0.5;
+  }
+
+//+------------------------------------------------------------------+
+//| ONE tick against ONE watched zone. Pre-invalidation: advance the   |
+//| touch ladder + distinct-touch counts off the live price `px`.       |
+//| Post-invalidation (VR with track_rt): count distinct returns to the |
+//| broken L2 edge. The caller must only feed ticks STRICTLY AFTER the  |
+//| break bar (a zone enters the watch list when its break bar is        |
+//| revealed closed, i.e. on the next bar's first tick) — so no break-   |
+//| bar guard is needed here.                                          |
+//+------------------------------------------------------------------+
+void FobAccOnTick(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
+                  const double px, const datetime ttime, const bool track_rt)
+  {
+   if(!z.valid)
+      return;
+   bool   bull = (dir == FOB_BULL);
+   double l2   = z.l2;
+   double mid  = z.mid;
+
+   if(!a.invalidated)
+     {
+      bool h1 = bull ? (px <= l1)  : (px >= l1);
+      bool h2 = bull ? (px <= mid) : (px >= mid);
+      bool h3 = bull ? (px <= l2)  : (px >= l2);
+      if(z.t1_time == 0 && h1) z.t1_time = ttime;
+      if(z.t2_time == 0 && h2) z.t2_time = ttime;
+      if(z.t3_time == 0 && h3) z.t3_time = ttime;
+      if(h1 && !a.in1) z.n_l1_touches++;   a.in1 = h1;
+      if(h2 && !a.in2) z.n_mid_touches++;  a.in2 = h2;
+      if(h3 && !a.in3) z.n_l2_touches++;   a.in3 = h3;
+     }
+   else if(track_rt)
+     {
+      //--- RT (VR-only): a bull VR broke DOWN through L2 -> retouch = price back UP to
+      //--- L2 (px >= l2); bear mirror. Re-arm when price leaves L2, so one slow retest
+      //--- straddling L2 counts ONCE.
+      if(bull)
+        {
+         if(a.armed && px >= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = ttime; a.armed = false; }
+         else if(px < l2)          a.armed = true;
+        }
+      else
+        {
+         if(a.armed && px <= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = ttime; a.armed = false; }
+         else if(px > l2)          a.armed = true;
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| ONE newly-CLOSED event-TF bar against ONE watched zone. Advances   |
+//| bars_alive, the vr_fresh flag (a close back inside [L1,L2] = the    |
+//| zone "structured"), and invalidation (a close beyond L2 in the     |
+//| anti-break direction). Returns TRUE when the zone is now dead AND   |
+//| done (CF/PBO) so the caller drops it from the watch list; a VR      |
+//| stays (returns FALSE) to keep counting RT on later ticks. Skips     |
+//| the zone's own break bar (btime <= brk) — BRC parity.              |
+//+------------------------------------------------------------------+
+bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
+                   const datetime brk, const double bclose, const datetime btime,
+                   const bool track_rt)
+  {
+   if(!z.valid)
+      return true;                                 // terminal — should never be watched
+   if(a.invalidated)
+      return false;                                // VR already in RT phase — close path done
+   if(btime <= brk)
+      return false;                                // only bars STRICTLY after the break
+
+   bool   bull   = (dir == FOB_BULL);
+   double l2     = z.l2;
+   double bandLo = MathMin(l1, l2);
+   double bandHi = MathMax(l1, l2);
+
+   z.bars_alive++;
+   if(z.vr_fresh && bclose >= bandLo && bclose <= bandHi)
+      z.vr_fresh = false;                          // a close re-entered the band -> "structured"
+
+   bool dead = bull ? (bclose < l2) : (bclose > l2);
+   if(dead)
+     {
+      z.alive = false; z.invalidation_time = btime;
+      if(!track_rt)
+         return true;                              // CF/PBO: stop here, drop from watch
+      a.invalidated = true; a.armed = true;        // VR: open the RT phase from next tick
+     }
+   return false;
+  }
+
 #endif // FOB_LIFECYCLE_MQH

@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.23.0"   // 1.23.0: modularize trader + shared fob_engine.mqh (no behaviour change); 1.22.0: remove align gate
+#define FOB_VERSION "1.24.0"   // 1.24.0: emitter lifecycle = TRUE-TICK accumulator (intra-bar order; replaces OnDeinit closed-bar replay), real-ticks only; 1.23.0: modularize trader + shared fob_engine.mqh
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
