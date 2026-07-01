@@ -26,7 +26,7 @@
 #property strict
 
 //--- single source of truth for the FOB code version (bump on behaviour change)
-#define FOB_VERSION "1.25.0"   // 1.25.0: emitter cycle-end eviction — new PBO retires prior cycle's VR/CF from g_watch (event-driven, NO bar cap) -> linear runtime + fixes zombie rt_count; 1.24.0: emitter lifecycle = TRUE-TICK accumulator (intra-bar order; replaces OnDeinit closed-bar replay), real-ticks only; 1.23.0: modularize trader + shared fob_engine.mqh
+#define FOB_VERSION "1.26.0"   // 1.26.0: zone always draws — P3 = raw deepest pullback close (not a lagging fractal), P1 optional, freshness+gap-val REJECTS removed (were BRC trade filters, not geometry). Fixes messy/no-box VR bug (task 210). CHANGES L2 -> trader SL/1R -> re-emit + re-test both EAs; 1.25.0: emitter cycle-end eviction — new PBO retires prior cycle's VR/CF from g_watch (event-driven, NO bar cap) -> linear runtime + fixes zombie rt_count; 1.24.0: emitter lifecycle = TRUE-TICK accumulator (intra-bar order; replaces OnDeinit closed-bar replay), real-ticks only; 1.23.0: modularize trader + shared fob_engine.mqh
 
 //--- the 9 TFs in the FOB ladder (index order MUST match g_periods in the emitter)
 #define FOB_N_TF 9
@@ -59,14 +59,16 @@ struct FobSwing
 //--- Geometry (bull break = broke a HIGH; bear = mirror):
 //---   P2 = the broken swing (= L1, the trigger/entry edge) — lives on the
 //---        owning FobBreak/FobEvent as swing_time/level (NOT duplicated here).
-//---   P1 = nearest OPPOSITE-type swing BEFORE  P2 (origin / launch pivot).
-//---   P3 = first   OPPOSITE-type swing AFTER   P2, before the break (pullback).
+//---   P1 = nearest OPPOSITE-type fractal swing BEFORE P2 (origin) — OPTIONAL.
+//---   P3 = deepest OPPOSITE-direction CLOSE in (P2, break) — the raw pullback
+//---        extreme (v1.26.0; was the first fractal swing, which lagged a bar
+//---        and vanished on sharp V-pullbacks -> "no box drawn", task 210).
 //---   P4 = the break bar (bar_time/bar_close).
 //---   L2 = extreme(P1,P3): MIN(lows) for a bull, MAX(highs) for a bear — the
 //---        far / invalidation edge. Stop sits beyond L2 (the deeper of the two).
-//--- valid = P1+P3 both found AND BRC freshness (no swing strictly in (P3,P4))
-//--- AND gap-val (L2 not closed-through in (P3,P4]) pass. valid=false -> NO trade
-//--- (foolproof, no fallback — Syafiq 2026-06-26).
+//--- valid = at least ONE of P1/P3 exists (v1.26.0). The old freshness + gap-val
+//--- REJECTS were BRC TRADE-quality filters, NOT geometry -> REMOVED so a messy/
+//--- pre-touched VR still draws its full box; gate trades on quality in the trader.
 struct FobZone
   {
    datetime  p1_time;   double p1_price;   // origin pivot (before the broken swing)

@@ -16,16 +16,28 @@
 #include "fob_types.mqh"   // FobSwing, FobBreak, FOB_BULL/BEAR (FOB's own types)
 
 //+------------------------------------------------------------------+
-//| 4-POINTER ZONE (v1.14.0) — fill b.zone for a just-detected break.  |
-//| BRC's level logic (extreme(P1,P3) + freshness + gap-val), but P2   |
-//| is PINNED to the break's own broken swing (no parallel selection   |
-//| scan -> can never desync from the FOB event). P5 dropped: the break |
-//| itself is the confirmation. Look-ahead-free: P1/P2/P3 all precede   |
-//| the break bar, gap-val reads only closes up to it.                  |
-//|   closes[] : the TF close series (index 0 = oldest), len n_closes. |
+//| 4-POINTER ZONE (v1.26.0) — fill b.zone for a just-detected break.  |
+//| L1 = P2 = the broken swing (ALWAYS known). L2 = far/invalidation   |
+//| edge = extreme(P1,P3):                                             |
+//|   P1 = nearest OPPOSITE-type fractal swing before P2 (ORIGIN) —    |
+//|        OPTIONAL (no bail if absent; only voids near start-of-      |
+//|        history where no prior opposite pivot exists).              |
+//|   P3 = deepest OPPOSITE-direction CLOSE strictly between P2's bar  |
+//|        and the break bar (the ACTUAL pullback extreme). Replaces   |
+//|        the old FIRST fractal-confirmed swing, which lagged one bar |
+//|        and vanished on sharp V-pullbacks -> the "no box drawn"     |
+//|        bug (task 210). The retrace low is a real printed close.    |
+//| valid = at least ONE of P1/P3 exists (a far edge can be placed).   |
+//| Freshness + gap-val REJECTS were BRC TRADE-quality filters, NOT    |
+//| geometry -> REMOVED (v1.26.0): a choppy / pre-touched zone still   |
+//| has a real L1+L2 and MUST draw. Re-home to the trader if ever      |
+//| wanted (fob_entry gates trades on zone.valid).                     |
+//| Look-ahead-free: every scan reads indices STRICTLY < the break bar.|
+//|   times[]  : TF bar-time series (index 0 = oldest), len n_closes.  |
+//|   closes[] : TF close series   (index 0 = oldest), len n_closes.   |
 //+------------------------------------------------------------------+
-void FobComputeBreakZone(const FobSwing &swings[], const double &closes[], const int n_closes,
-                         FobBreak &b)
+void FobComputeBreakZone(const FobSwing &swings[], const datetime &times[],
+                         const double &closes[], const int n_closes, FobBreak &b)
   {
    b.zone.valid   = false;
    b.zone.p1_time = 0; b.zone.p1_price = 0;
@@ -36,40 +48,47 @@ void FobComputeBreakZone(const FobSwing &swings[], const double &closes[], const
    b.zone.bar_open = b.bar_open;   // carry the breaking bar's open onto the zone payload
 
    bool     bull     = (b.dir == FOB_BULL);
-   int      opp_type = bull ? FOB_SWING_LOW : FOB_SWING_HIGH;  // P1/P3 type (opposite the broken swing)
+   int      opp_type = bull ? FOB_SWING_LOW : FOB_SWING_HIGH;  // P1 type (opposite the broken swing)
    datetime p2_time  = b.swing_time;                           // P2 = the broken swing (= L1)
    int      ns       = ArraySize(swings);
 
-   //--- P1 = nearest opposite-type swing STRICTLY BEFORE P2 (newest->oldest).
-   int ip1 = -1;
+   //--- P2's series index = start of the pullback window (located in the time series).
+   int p2_idx = -1;
+   for(int idx = b.bar_index - 1; idx >= 0; idx--)
+      if(times[idx] == p2_time) { p2_idx = idx; break; }
+
+   //--- P1 = ORIGIN: nearest opposite-type fractal swing STRICTLY BEFORE P2.
+   //--- OPTIONAL — a missing origin no longer voids the zone (P3 carries L2).
+   int    ip1   = -1;
    for(int k = ns - 1; k >= 0; k--)
       if(swings[k].time < p2_time && swings[k].type == opp_type) { ip1 = k; break; }
-   if(ip1 < 0) return;                                         // no origin -> no zone (foolproof)
+   bool   hasP1 = (ip1 >= 0);
 
-   //--- P3 = FIRST opposite-type swing STRICTLY AFTER P2 and before the break bar.
-   int ip3 = -1;
-   for(int k = 0; k < ns; k++)
-      if(swings[k].time > p2_time && swings[k].time < b.bar_time && swings[k].type == opp_type)
-        { ip3 = k; break; }
-   if(ip3 < 0) return;                                         // no pullback pivot -> no zone
+   //--- P3 = PULLBACK: deepest opposite-direction CLOSE strictly between P2's bar
+   //--- and the break bar. The raw retrace extreme (NOT a fractal) so it never
+   //--- lags/vanishes on a sharp V; past-only (idx < break bar) -> no look-ahead.
+   int    ip3bar = -1;
+   double p3     = 0.0;
+   if(p2_idx >= 0)
+      for(int idx = p2_idx + 1; idx < b.bar_index && idx < n_closes; idx++)
+        {
+         double c = closes[idx];
+         if(ip3bar < 0 || (bull ? c < p3 : c > p3)) { p3 = c; ip3bar = idx; }
+        }
+   bool   hasP3 = (ip3bar >= 0);
 
-   //--- FRESHNESS (BRC): no swing of ANY type strictly between P3 and the break bar.
-   for(int k = 0; k < ns; k++)
-      if(swings[k].time > swings[ip3].time && swings[k].time < b.bar_time)
-         return;                                               // messy structure -> reject
+   //--- need at least one far-edge anchor. Both absent is degenerate (no origin
+   //--- AND break bar adjacent to P2 -> no pullback bars) -> no zone.
+   if(!hasP1 && !hasP3)
+      return;
 
-   double p1 = swings[ip1].price, p3 = swings[ip3].price;
-   double l2 = bull ? MathMin(p1, p3) : MathMax(p1, p3);       // extreme(P1,P3) = far edge
+   double p1 = hasP1 ? swings[ip1].price : 0.0;
+   double l2;                                     // extreme(P1,P3) — deeper edge
+   if(hasP1 && hasP3) l2 = bull ? MathMin(p1, p3) : MathMax(p1, p3);
+   else               l2 = hasP3 ? p3 : p1;       // only one anchor -> use it
 
-   //--- GAP-VAL (BRC): L2 not closed-through in (P3, P4]. A break bar can only
-   //--- close through L1 (the opposite edge), so including P4 is harmless.
-   int p3_idx = swings[ip3].bar_index;
-   for(int idx = p3_idx + 1; idx <= b.bar_index && idx < n_closes; idx++)
-      if(bull ? (closes[idx] < l2) : (closes[idx] > l2))
-         return;                                               // zone died before triggering -> reject
-
-   b.zone.p1_time = swings[ip1].time; b.zone.p1_price = p1;
-   b.zone.p3_time = swings[ip3].time; b.zone.p3_price = p3;
+   if(hasP1) { b.zone.p1_time = swings[ip1].time; b.zone.p1_price = p1; }
+   if(hasP3) { b.zone.p3_time = times[ip3bar];    b.zone.p3_price = p3; }
    b.zone.l2      = l2;
    b.zone.mid     = (b.swing_price + l2) * 0.5;   // L1 = broken swing price
    b.zone.valid   = true;
@@ -90,7 +109,7 @@ int FobDetectBreaksOnBar(FobSwing &swings[], int &live[],
                          const int bar_index, const datetime bar_time,
                          const double bar_open, const double bar_close,
                          const int radius, const int max_age,
-                         const double &closes[], const int n_closes,
+                         const datetime &times[], const double &closes[], const int n_closes,
                          FobBreak &breaks[])
   {
    int n_live = ArraySize(live);
@@ -124,7 +143,7 @@ int FobDetectBreaksOnBar(FobSwing &swings[], int &live[],
       breaks[k].bar_open    = bar_open;
       breaks[k].bar_close   = bar_close;
       breaks[k].bar_index   = bar_index;
-      FobComputeBreakZone(swings, closes, n_closes, breaks[k]);   // 4-pointer band (v1.14.0)
+      FobComputeBreakZone(swings, times, closes, n_closes, breaks[k]);   // 4-pointer band (v1.26.0)
       added++;
      }
 

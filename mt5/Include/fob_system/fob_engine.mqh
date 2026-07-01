@@ -87,7 +87,7 @@ void FobIngestBar(FobTfState &s, const datetime bt, const double op, const doubl
 
    //--- raw breaks on this bar (mutates swing.broken, appends events, compacts live_sw)
    //--- s.bc/n feed the 4-pointer gap-val (v1.14.0).
-   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, op, cl, radius, maxAge, s.bc, n, s.breaks);
+   FobDetectBreaksOnBar(s.swings, s.live_sw, i, bt, op, cl, radius, maxAge, s.bt, s.bc, n, s.breaks);
   }
 
 //+------------------------------------------------------------------+
