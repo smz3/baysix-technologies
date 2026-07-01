@@ -2,8 +2,11 @@
 
 **Date:** 2026-07-01 · **Idea:** FOB-001 · **Status:** v2 (entry/awareness + management layer) · 1 section PENDING (Storyline Sequence)
 
-Source: FOB manual dissection (`research/papers/fob/FOB_breakout_system.dissect.md` + screenshots Img 4.1–4.12, 5.1–5.2).
+Source: FOB manual dissection (`research/papers/fob/FOB_breakout_system.dissect.md` + screenshots Img 4.1–4.12, 5.1–5.2, 6.1–6.6, 7.1–7.6, Special Note).
 This spec defines the **conditioner feature set** we screen against FOB own-zone excursion data (run_id 18, M15-M5 / M5-M1 cohorts). It is NOT a trade gate.
+
+> **North Star (manual Special Note):** *"When you truly understand direction and storyline, VR and Barrier will be an easy walk. Sir B students make millions on riding Setup Conti."*
+> Reading: **direction + storyline are the foundation**; VR/Barrier are downstream consequences, not independent signals. The edge (the money) is in **riding continuation** — so our modelling priority is (1) get direction/storyline awareness right, then (2) let VR/Barrier fall out of it, and (3) put the payoff weight on continuation-ride, not on entry-picking. Aligns with task 167 (payoff asymmetry = THE lever).
 
 ---
 
