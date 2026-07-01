@@ -6,6 +6,8 @@
 
 Source: Bonker manual Phase-2 Storyline Sequence (Images 2.1.1–2.1.9) + Phase-1 CF/VR/RTT chapters. See [FOB manual dissection](../../research/papers/fob/FOB_breakout_system.dissect.md) and [CMP storyline model](2026-06-27_fob_cmp_storyline_model.md).
 
+> **⚠️ Cross-reference (2026-07-01, after reading [awareness/conditioner spec v3](2026-07-01_fob_awareness_conditioner_spec.md)):** this doc heavily OVERLAPS that spec's Layer-1b (S1–S10) + Layer-2 classifier + decisions 4/5/6, which already answer most §9 open questions. This spec MUST conform to its three locks: **(dec 4)** purpose = LOCAL cross-TF geometry (setup CF vs its one-higher opposing VR zone + that zone's break/hold state), NOT full-stack alignment; **(dec 5)** independence guard — condition on each TF's OWN-TF cycle state, never the propagated direction (else the result_id-19 −33.8pp artifact returns); **(dec 6)** cycle birth = new PBO only, "confirmation" term retired. **UNRESOLVED CONFLICT:** the awareness spec is *conditioner-never-gate (measure-first)*; this spec's enter/skip recursion is an *active entry mechanism (logic-first)*. Which framing governs is Syafiq's call — see report.
+
 ---
 
 ## 1. The core reframe
