@@ -57,6 +57,7 @@ input bool InpShowSwings   = false;       // FOB swing pivots (carets)
 input bool InpShowRawBreaks= false;       // FOB raw breakouts
 input bool InpShowPoints   = false;       // P1/P3 skeleton dots
 input bool InpShowRetests  = true;        // T1/T2/T3 retest touch dots
+input bool InpShowParentPBO= true;        // dimmed HTF parent (E+1) PBO zone — context overlay only
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;
@@ -152,6 +153,12 @@ private:
                              const int &curSeq[], const bool &vrLocked[], const int &cfCount[],
                              const int &liveTf[], const int &liveSeq[], const int nLive,
                              const datetime tR0);
+   //--- CONTEXT overlay: the ACTIVE parent-TF (E+1) own-PBO zone, drawn dimmed +
+   //--- dotted on THIS chart so a lower-TF execution shows where its HTF breakout
+   //--- sits. Read-only projection (no touch/RT stamping, no cycle interaction) —
+   //--- pure absolute-price geometry off the parent's PBO event row.
+   void     DrawParentPbo(const FobEvent &ev[], const int n, const int E,
+                          const int parSeq, const datetime tR0);
 
 public:
             CFobVisual(void) { m_tf = ""; m_idx = -1; }
@@ -386,6 +393,59 @@ void CFobVisual::DrawZones(const FobEvent &ev[], const int n,
       if(ev[i].event_tf == E)
          DrawZoneForBreak(ev, i, j, E, curSeq, vrLocked, cfCount, liveTf, liveSeq, nLive, tR0);
       i = j;
+     }
+
+   //--- CONTEXT overlay: the ACTIVE parent-TF PBO zone (dimmed), so this chart
+   //--- shows where the HTF breakout it lives inside sits. Off by toggle.
+   if(InpShowParentPBO && E + 1 < FOB_N_TF && curSeq[E + 1] >= 0)
+      DrawParentPbo(ev, n, E, curSeq[E + 1], tR0);
+  }
+
+//+------------------------------------------------------------------+
+//| CONTEXT overlay — the ACTIVE parent-TF (E+1) own-PBO zone, faded  |
+//| + dotted on this chart. The parent's PBO fires on parent bars     |
+//| (event_tf == E+1); its L1/L2/mid are ABSOLUTE prices, so the band |
+//| renders on any lower TF unchanged. Read-only: no touch/RT/cycle    |
+//| logic — it can never perturb this chart's own detection.          |
+//+------------------------------------------------------------------+
+void CFobVisual::DrawParentPbo(const FobEvent &ev[], const int n, const int E,
+                               const int parSeq, const datetime tR0)
+  {
+   int P = E + 1;                                   // parent TF ladder index
+   for(int k = 0; k < n; k++)
+     {
+      //--- the parent's OWN PBO row for its ACTIVE cycle (fired on the parent TF)
+      if(ev[k].event_tf != P || ev[k].label != FOB_PBO || ev[k].setup_tf != P)
+         continue;
+      if(ev[k].seq != parSeq || !ev[k].zone.valid)
+         continue;
+
+      int      bdir  = ev[k].dir;
+      double   l1    = ev[k].level;                 // trigger/entry edge
+      double   l2    = ev[k].zone.l2;               // far/invalidation edge
+      double   mid   = ev[k].zone.mid;
+      bool     l1Top = (bdir == FOB_BULL);
+      bool     l2Top = (bdir == FOB_BEAR);
+      datetime t0    = ev[k].swing_time;
+      datetime tR    = (tR0 <= t0) ? t0 + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) : tR0;
+
+      color  clr  = DimColor(FobLabelColor(FOB_PBO), 0.50);   // parent context = faded PBO hue
+      color  midC = DimColor(InpFobClrMid, 0.50);
+      string id   = StringFormat("PBO %s #%d %s \x2022 context",
+                                 FobTfName(P), parSeq, FobDirName(bdir));
+      string stem = FOB_VIS_PREFIX + "PP_" + (string)ev[k].swing_time + "_" + (string)ev[k].bar_time;
+
+      //--- DOTTED edges (own zones are DASHED) so parent context reads apart at a glance
+      Line(stem + "_L1",  t0, l1,  tR, l1,  clr,  STYLE_DOT, true, 2);
+      Line(stem + "_L2",  t0, l2,  tR, l2,  clr,  STYLE_DOT, true, 2);
+      Line(stem + "_mid", t0, mid, tR, mid, midC, STYLE_DOT, true, 1);
+      Line(stem + "_LV",  t0, l1,  t0, l2,  clr,  STYLE_SOLID, false, 1);
+
+      ENUM_ANCHOR_POINT aL1 = EdgeAnchor(l1Top, false);
+      ENUM_ANCHOR_POINT aL2 = EdgeAnchor(l2Top, false);
+      Label(stem + "_L1p", t0, l1, "L1  " + id + "  " + DoubleToString(l1, _Digits), clr, aL1);
+      Label(stem + "_L2p", t0, l2, "L2  " + id + "  " + DoubleToString(l2, _Digits), clr, aL2);
+      return;                                        // one active parent PBO — done
      }
   }
 
