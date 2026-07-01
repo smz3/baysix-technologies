@@ -1,8 +1,8 @@
 # FOB Awareness / Conditioner Model — Phase-2 Feature Spec (v1 checkpoint)
 
-**Date:** 2026-07-01 · **Idea:** FOB-001 · **Status:** v2 (entry/awareness + management layer) · 1 section PENDING (Storyline Sequence)
+**Date:** 2026-07-01 · **Idea:** FOB-001 · **Status:** v3 (awareness + Storyline Sequence + management — complete)
 
-Source: FOB manual dissection (`research/papers/fob/FOB_breakout_system.dissect.md` + screenshots Img 4.1–4.12, 5.1–5.2, 6.1–6.6, 7.1–7.6, Special Note).
+Source: FOB manual dissection (`research/papers/fob/FOB_breakout_system.dissect.md` + screenshots Img 4.1–4.12, 5.1–5.2, 6.1–6.6, 7.1–7.6, Special Note) + **Storyline Sequence** screenshots (`research/papers/fob/2.1.1_sequence.JPG` … `2.1.9_sequence`, Phase-2 video 2h38m).
 This spec defines the **conditioner feature set** we screen against FOB own-zone excursion data (run_id 18, M15-M5 / M5-M1 cohorts). It is NOT a trade gate.
 
 > **North Star (manual Special Note):** *"When you truly understand direction and storyline, VR and Barrier will be an easy walk. Sir B students make millions on riding Setup Conti."*
@@ -17,6 +17,11 @@ This spec defines the **conditioner feature set** we screen against FOB own-zone
 3. **Sizing is later.** Only after a state is proven to shift the edge does it scale size — never permission.
 4. **Purpose is decided by LOCAL cross-TF geometry** (setup CF vs its one-higher opposing VR zone + that zone's break/hold state), NOT full-stack simultaneous alignment. Manual 5.2 confirms: each TF pairs with its *closest BO'd neighbour*, propagated up the chain.
 5. **Direction derives bottom-up (Axis A); read either order (Axis B).** A TF's direction = the live cycle one TF below it. **Independence guard (task 204):** condition on each higher TF's **own-TF cycle state** (its PBO/VR/CF on its own bars), NOT the propagated-direction that is a mathematical function of the setup's own lower chain — else we re-manufacture the circular full-stack artifact.
+6. **VR / cycle event vocabulary is LOCKED (no "confirmation" term):**
+   - **Cycle birth = new PBO** — `seq` (cycle id) is set by PBO only, once per cycle. VR-break is **never** a second cycle-id source. (Manual 2.1.8 "break VR → new cycle" was a wording typo, corrected by Syafiq: a new VR *confirms* the cycle the PBO already started; PBO leads, VR-break lags.)
+   - **VR detected** = first opposite break exactly one TF below the PBO → **births the VR zone**, sets which TF you trade, fires **once**/cycle. (This is the event previously muddled as "VR confirmation" — that term is retired.)
+   - **VR break** = price clears the VR zone in the **continuation/PBO direction** (L2 / far-origin edge broken). This is the *already-coded* logic and arms **`[RT0]`** ([fob_visual.mqh:444-450](../../mt5/Include/fob_system/fob_visual.mqh#L444-L450)).
+   - **RT (retest)** = retouch of the **broken** VR level. `[RT0]` = broke, not yet retested; `[RT1]+` = break-and-retest entries (`rt_count`, VR-row only). Feeds entry tasks 181/182.
 
 Definitions (manual 5.1): **Bias = W1 only** (helicopter/main direction; sets priority; counter-Bias moves are "temporary"). **Direction = D1** (prioritized operative). Below D1 = execution.
 
@@ -33,6 +38,23 @@ Computed bottom-up, read top-down. For an M15 setup the awareness TFs above = H1
 | H4, H1: direction · cycle phase · cf_idx | dir/cf HAVE · phase RE-EMIT |
 | **Bias↔Direction agreement** (W1 vs D1): aligned=prioritize / counter=temporary | DERIVE |
 | **Setup↔Bias**, **Setup↔Direction**: with or against W1 / D1 | DERIVE |
+
+## Layer 1b — Storyline Sequence (control-chain / cycle state)
+
+Source: Sequence screenshots 2.1.1–2.1.9. **Core thesis:** every move is driven by **Trade Control** = *the one-TF-lower cycle controlling the TF above it* (2.1.2, "lower TF controls the bigger TF": M1‑M5‑M15‑M30‑H1‑H4‑D‑W). "Sequence" = **reading which lower TF is actually driving an HTF move** — the gears inside the HTF candle. This is the same bottom-up propagation as Layer 1 decision 5, made into an explicit *chain* + a set of named multi-TF patterns. Same independence guard applies: condition on **own-TF cycle state**, never the propagated direction.
+
+| # | Img | Feature (measurable) | Source |
+|---|-----|----------------------|--------|
+| **S1** | 2.1.2 | **Control-chain** — walk down from a live HTF cycle to its driving child cycle (W→…→M1); the *lowest live VR* is who's moving price. State = depth + TF of the live controller. | DERIVE (cross-TF child link) |
+| **S2** | 2.1.3 | **Sequence-on** — HTF candle trending (HTF BO, no pullback) **while** an LTF VR is present. The state that says "find the LTF that's driving." | DERIVE |
+| **S3** | 2.1.3 | **"Price that doesn't come back"** — HTF BO trends with **no CMP retest**; waiting for the pullback fails → controlling TF descends a level. (= vr_fresh "straight-to-origin" at sequence scale.) Flags **setups NOT to trade**. | DERIVE / vr_fresh HAVE |
+| **S4** | 2.1.1 | **CF-in-PBO / no-pullback path** — CF forms *inside* the PBO zone, price moves without a pullback. Structural sample. (Extends L2 "CF placement vs own zone".) | DERIVE (confirm_price ∈ PBO L1/L2) |
+| **S5** | 2.1.5 | **"Setaman"** — ≥3 adjacent TFs BO **same direction concurrently** = time-frame-in-a-time-frame, concurrent confirmation → strong continuation. Count concurrent same-dir BOs across adjacent TFs in a window. | DERIVE |
+| **S6** | 2.1.4 | **"Swing" direction / TP-reach** — TP target = the **controlling parent's barrier** (trade H4 → TP at Weekly; "H4 controls Daily"). Collective adjacent-TF BO ⇒ max TP distance. Feeds **L3 Barriers**. | DERIVE (parent-barrier lookup) |
+| **S7** | 2.1.6 | **Counter / "False Breakout"** — opposite-dir LTF BO **while the higher-sequence TF is unchanged** = counter/fade, **partial-TP only, NOT a reversal**. ("Higher sequence TF still a buy.") | DERIVE (HTF cycle-dir unchanged + LTF opp VR) |
+| **S8** | 2.1.7 | **Scalp / entry-risk class** — **VR-to-VR** entry = **high risk**; **CF** entry = **low risk**. Valid only while higher-seq TF not turning. Tags entry type for sweeps 165/171/181. | DERIVE / RE-EMIT |
+| **S9** | 2.1.8 | **Market Cycle** — cycle = repetition of CMP **BO‑VR‑CF**; confirms the existing cycle model (`seq` = cycle id). | HAVE (seq) |
+| **S10** | 2.1.9 | **Cycle-VR-Breakout rule** — on VR break, **do NOT enter the pullback** (VR = high risk); wait for the **new cycle's BO** (new PBO). Enter at NEW BO, not at BO-VR. Ties to `[RT0]` arming + L3 "overlap barrier invalid". | DERIVE (uses RT state) |
 
 ## Layer 2 — Purpose geometry (local: setup CF vs one-higher opposing VR zone) — the classifier
 
@@ -86,6 +108,7 @@ Philosophy anchor (manual Special Note): *"these traders don't trade all the tim
 
 ---
 
-## PENDING — to fold into v3 (feeding next)
+## Resolved in v3
 
-- **Storyline Sequence (Phase 2 of manual)** — deep sequence/cycle chaining; enriches **Layer 1** (sequence state / cycle condition). Deserves its own pass (fresh session).
+- **Storyline Sequence (Phase 2, 2.1.1–2.1.9)** — folded into **Layer 1b** (control-chain + named multi-TF patterns S1–S10) and **locked decision 6** (VR/cycle event vocabulary). No sections pending.
+- Sequence items route: S1–S3/S9 = Layer-1b state · S4 → Layer 2 (CF placement) · S5/S8/S10 = new conditioner states · S6 → Layer 3 (Barrier TP) · S7 = new counter/fade state.
