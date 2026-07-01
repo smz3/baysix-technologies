@@ -24,7 +24,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.25.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.26.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>

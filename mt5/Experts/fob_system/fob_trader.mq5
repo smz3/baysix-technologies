@@ -27,7 +27,7 @@
 //|  fob_visual sequence dots render so fills can be eyeballed.        |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.23.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
+#property version   "1.26.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump together
 #property strict
 
 #include <fob_system/fob_types.mqh>
