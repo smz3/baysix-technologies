@@ -123,11 +123,9 @@ int OnInit()
    ArrayResize(g_live_tf, 0);      ArrayResize(g_live_seq, 0);
    FobResetStudy(g_study);
 
-   //--- kill MT5's native trade-level bands + bid/ask/OHLC lines for focus; our dots stay.
-   ChartSetInteger(0, CHART_SHOW_TRADE_LEVELS, false);
-   ChartSetInteger(0, CHART_SHOW_ASK_LINE, false);
-   ChartSetInteger(0, CHART_SHOW_BID_LINE, false);
-   ChartSetInteger(0, CHART_SHOW_OHLC, false);
+   //--- chart display is left to the user's own settings: bid/ask lines AND trade
+   //--- levels (SL/TP) MUST stay visible on a trading chart. (Removed the old
+   //--- "hide for focus" block — wrong for the EA that places the orders.)
    g_vis.SyncChartTF();
    g_vis.ClearAll();
 
