@@ -100,8 +100,18 @@ int FobClassifyBreak(FobSetupState &st[], const int n_tf,
      {
       if(!st[up1].vr_locked)
         {
-         //--- first OPPOSITE break after that PBO = the (single) VR
-         if(dir != st[up1].pbo_dir && bt > st[up1].pbo_time)
+         //--- first OPPOSITE break after that PBO = the (single) VR.
+         //--- CAUSALITY (task 221): a PBO is only a KNOWN fact at its bar CLOSE,
+         //--- not its open. bt/pbo_time are bar OPENS, and a higher-TF PBO bar
+         //--- spans a long window — so an OPEN-time gate (bt > pbo_time) would
+         //--- stamp a lower-TF opposite break that fired INSIDE the still-forming
+         //--- PBO bar as the VR (look-ahead: the VR predating its own cause).
+         //--- Gate on CONFIRMATION time instead: the VR's break must close STRICTLY
+         //--- AFTER the PBO closed. confirm = bar_open + FobTfSeconds(TF); the VR
+         //--- fires on `etf`, its PBO lives on `up1`.
+         long pbo_confirm = (long)st[up1].pbo_time + FobTfSeconds(up1);
+         long vr_confirm  = (long)bt              + FobTfSeconds(etf);
+         if(dir != st[up1].pbo_dir && vr_confirm > pbo_confirm)
            {
             st[up1].vr_locked = true;
             st[up1].vr_time   = bt;
