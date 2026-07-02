@@ -24,7 +24,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.26.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.27.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -105,6 +105,11 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnTick()
   {
+   //--- LIVE flag: the bar-resolution ladder backfill (task 217) + intrabar-dead
+   //--- dimming (task 216) are live-chart niceties only. The tester stays pure
+   //--- tick-causal (stamp_ladder=false) so OOS re-emit CSVs are byte-identical.
+   bool live = !MQLInfoInteger(MQL_TESTER);
+
    //--- (1) INGEST — gated per TF behind a REAL new bar (cheap iTime vs a CopyRates
    //--- every tick). b0[t] snapshots each TF's pre-ingest buffer size so the close
    //--- path (3) can sweep exactly the bars that closed this tick.
@@ -189,6 +194,8 @@ void OnTick()
       for(int i = b0[t]; i < hi; i++)
         {
          datetime cbt = g_tf[t].bt[i];
+         double   cbh = g_tf[t].bh[i];
+         double   cbl = g_tf[t].bl[i];
          double   cbc = g_tf[t].bc[i];
          for(int w = ArraySize(g_watch) - 1; w >= 0; w--)
            {
@@ -197,7 +204,8 @@ void OnTick()
                continue;
             bool trackRt = (g_events[idx].label == FOB_VR);
             bool drop = FobAccOnClose(g_events[idx].zone, g_acc[idx], g_events[idx].dir,
-                                      g_events[idx].level, g_events[idx].bar_time, cbc, cbt, trackRt);
+                                      g_events[idx].level, g_events[idx].bar_time,
+                                      cbh, cbl, cbc, cbt, trackRt, live);
             if(drop)
               {
                int last = ArraySize(g_watch) - 1;
@@ -231,10 +239,10 @@ void OnTick()
    //--- (UpdateZoneLifecycles/LiveTouchForming would RESET and clobber the accumulator).
    if(InpVisualize)
      {
-      ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events));
+      ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events), g_last_px);
       if(np > 0 || sig != g_last_sig)
         {
-         g_vis.DrawZones(g_events, ArraySize(g_events));           // ClearAll + zone bands + edge labels
+         g_vis.DrawZones(g_events, ArraySize(g_events), live, g_last_px);  // ClearAll + zone bands + edge labels
          int ci = g_vis.ChartIdx();
          if(ci >= 0)
             g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks); // swings + raw breaks on top
@@ -253,7 +261,9 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    g_vis.SyncChartTF();
    //--- zones are kept current by the tick accumulator (all TFs) — just redraw for the
    //--- new chart TF; NO replay (UpdateZoneLifecycles would reset the accumulated life).
-   g_vis.DrawZones(g_events, ArraySize(g_events));              // ClearAll + zone bands + edge labels
+   //--- pass live + last price so a TF switch onto a higher TF dims intrabar-dead zones (task 216).
+   bool live = !MQLInfoInteger(MQL_TESTER);
+   g_vis.DrawZones(g_events, ArraySize(g_events), live, g_last_px);  // ClearAll + zone bands + edge labels
    int ci = g_vis.ChartIdx();
    if(ci >= 0)
       g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks on top

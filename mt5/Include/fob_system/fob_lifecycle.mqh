@@ -271,8 +271,9 @@ void FobAccOnTick(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
 //| the zone's own break bar (btime <= brk) — BRC parity.              |
 //+------------------------------------------------------------------+
 bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
-                   const datetime brk, const double bclose, const datetime btime,
-                   const bool track_rt)
+                   const datetime brk, const double bhigh, const double blow,
+                   const double bclose, const datetime btime,
+                   const bool track_rt, const bool stamp_ladder = false)
   {
    if(!z.valid)
       return true;                                 // terminal — should never be watched
@@ -285,6 +286,30 @@ bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
    double l2     = z.l2;
    double bandLo = MathMin(l1, l2);
    double bandHi = MathMax(l1, l2);
+
+   //--- BAR-RESOLUTION LADDER BACKFILL (v1.27.0, task 217) — LIVE-only. On a live-
+   //--- chart ATTACH the tick history is gone, so FobAccOnTick never ran for pre-
+   //--- attach zones -> [T0]/count 0 (loses the touch context, esp. on higher TFs
+   //--- where most of the visible chart is pre-attach). Stamp the ladder off this
+   //--- CLOSED bar's WICK, sharing the SAME first-fill (Tn==0) + hysteresis
+   //--- (a.in1/2/3) as the tick path — so a later live tick can't double-count and
+   //--- the death bar's wick can still set T3 (BRC parity, mirrors FobReplayZoneLife).
+   //--- Runs FIRST, before invalidation kills the zone. The tester passes
+   //--- stamp_ladder=false -> pure tick causality preserved -> OOS re-emit byte-identical.
+   if(stamp_ladder)
+     {
+      double mid   = z.mid;
+      double probe = bull ? blow : bhigh;
+      bool   h1 = bull ? (probe <= l1)  : (probe >= l1);
+      bool   h2 = bull ? (probe <= mid) : (probe >= mid);
+      bool   h3 = bull ? (probe <= l2)  : (probe >= l2);
+      if(z.t1_time == 0 && h1) z.t1_time = btime;
+      if(z.t2_time == 0 && h2) z.t2_time = btime;
+      if(z.t3_time == 0 && h3) z.t3_time = btime;
+      if(h1 && !a.in1) z.n_l1_touches++;   a.in1 = h1;
+      if(h2 && !a.in2) z.n_mid_touches++;  a.in2 = h2;
+      if(h3 && !a.in3) z.n_l2_touches++;   a.in3 = h3;
+     }
 
    z.bars_alive++;
    if(z.vr_fresh && bclose >= bandLo && bclose <= bandHi)

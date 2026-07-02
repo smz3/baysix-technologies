@@ -152,7 +152,7 @@ private:
    void     DrawZoneForBreak(const FobEvent &ev[], const int i, const int j, const int E,
                              const int &curSeq[], const bool &vrLocked[], const int &cfCount[],
                              const int &liveTf[], const int &liveSeq[], const int nLive,
-                             const datetime tR0);
+                             const datetime tR0, const bool live, const double curPx);
    //--- CONTEXT overlay: the ACTIVE parent-TF (E+1) own-PBO zone, drawn dimmed +
    //--- dotted on THIS chart so a lower-TF execution shows where its HTF breakout
    //--- sits. Read-only projection (no touch/RT stamping, no cycle interaction) —
@@ -187,7 +187,17 @@ public:
    //--- ladder + alive/valid + count). The EA repaints ONLY when this changes —
    //--- a full ClearAll+redraw every tick is what makes the bands TWITCH. BRC
    //--- parity: it surgically updates a zone only when its touch actually advances.
-   ulong    StateSignature(const FobEvent &ev[], const int n) const
+   //--- INTRABAR-DEAD (v1.27.0, task 216) — LIVE visual only. Invalidation proper is
+   //--- CLOSE-only (a W1 zone won't formally die until its weekly bar closes), so a
+   //--- higher-TF zone price has ALREADY blown through still renders bright for days.
+   //--- This mirrors the close-only kill (bull dies below L2, bear above) off the
+   //--- CURRENT price so the band dims the instant price is beyond L2 — without ever
+   //--- touching z.alive (that stays close-only, feeding a pristine CSV). px<=0 = no
+   //--- price yet -> not dead.
+   bool     IntrabarDead(const int dir, const double l2, const double px) const
+              { return px > 0.0 && (dir == FOB_BULL ? (px < l2) : (px > l2)); }
+
+   ulong    StateSignature(const FobEvent &ev[], const int n, const double curPx = 0.0) const
      {
       if(m_idx < 0)
          return 0;
@@ -200,6 +210,11 @@ public:
             h = (h ^ (ulong)ev[i].zone.t3_time) * 1099511628211ULL;
             h = (h ^ (ulong)ev[i].zone.rt_time) * 1099511628211ULL;   // RT label flips repaint
             h = (h ^ (ulong)((ev[i].zone.alive ? 1 : 2) + (ev[i].zone.valid ? 4 : 8))) * 1099511628211ULL;
+            //--- intrabar-dead flip must trigger a repaint too (else the dim only shows
+            //--- on the NEXT unrelated state change) — hash it against the live price.
+            bool vd = ev[i].zone.valid && ev[i].zone.alive
+                      && IntrabarDead(ev[i].dir, ev[i].zone.l2, curPx);
+            h = (h ^ (ulong)(vd ? 16 : 32)) * 1099511628211ULL;
            }
       return h;
      }
@@ -210,10 +225,15 @@ public:
    //--- when superseded, so a live trade keeps its band. Touches must already be
    //--- stamped (UpdateZoneLifecycles). Call BEFORE DrawStructure (it ClearAll's).
    void     DrawZones(const FobEvent &ev[], const int n,
-                      const int &liveTf[], const int &liveSeq[], const int nLive);
-   //--- 2-arg overload for the emitter (read-only, no positions -> no live cycles)
+                      const int &liveTf[], const int &liveSeq[], const int nLive,
+                      const bool live = false, const double curPx = 0.0);
+   //--- emitter overload (read-only, no positions -> no live cycles) that still
+   //--- forwards the LIVE flag + current price for intrabar-dead dimming (task 216)
+   void     DrawZones(const FobEvent &ev[], const int n, const bool live, const double curPx)
+              { int empty[]; DrawZones(ev, n, empty, empty, 0, live, curPx); }
+   //--- bare 2-arg overload (static redraw, no live price)
    void     DrawZones(const FobEvent &ev[], const int n)
-              { int empty[]; DrawZones(ev, n, empty, empty, 0); }
+              { int empty[]; DrawZones(ev, n, empty, empty, 0, false, 0.0); }
 
    //--- draw the chart TF's OWN detected structure (swing pivots + raw breakouts).
    //--- Call AFTER DrawZones (which ClearAll's first), with the chart-TF's own
@@ -372,7 +392,8 @@ void CFobVisual::LiveTouchForming(FobEvent &ev[], const int n,
 //| state + draw one band per physical break that fired on this TF.    |
 //+------------------------------------------------------------------+
 void CFobVisual::DrawZones(const FobEvent &ev[], const int n,
-                           const int &liveTf[], const int &liveSeq[], const int nLive)
+                           const int &liveTf[], const int &liveSeq[], const int nLive,
+                           const bool live, const double curPx)
   {
    ClearAll();
    if(!InpVisualize || m_idx < 0 || !InpShowZones)
@@ -391,7 +412,7 @@ void CFobVisual::DrawZones(const FobEvent &ev[], const int n,
       while(j < n && SameBreak(ev[j], ev[i]))
          j++;
       if(ev[i].event_tf == E)
-         DrawZoneForBreak(ev, i, j, E, curSeq, vrLocked, cfCount, liveTf, liveSeq, nLive, tR0);
+         DrawZoneForBreak(ev, i, j, E, curSeq, vrLocked, cfCount, liveTf, liveSeq, nLive, tR0, live, curPx);
       i = j;
      }
 
@@ -457,7 +478,7 @@ void CFobVisual::DrawParentPbo(const FobEvent &ev[], const int n, const int E,
 void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j, const int E,
                                   const int &curSeq[], const bool &vrLocked[], const int &cfCount[],
                                   const int &liveTf[], const int &liveSeq[], const int nLive,
-                                  const datetime tR0)
+                                  const datetime tR0, const bool live, const double curPx)
   {
    //--- split the group into own PBO (setup_tf E) + optional parent (setup_tf E+1)
    int  pOwn = -1, ownDir = -1;
@@ -488,9 +509,17 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    //--- break-of-VR/CF (RT) strategy reads off. SCOPE = parent VR/CF only; a dead
    //--- PBO-only band still drops (a PBO's death begins a fresh cycle). Cleanup
    //--- is automatic: when the cycle supersedes, the gate above wipes the corpse.
-   bool dimmed      = !ev[i].zone.alive;
+   //--- dim on FORMAL death (close beyond L2) OR, LIVE only, the instant price is
+   //--- intrabar beyond L2 (task 216 — a higher-TF zone shouldn't stay bright for
+   //--- days waiting for its bar to close). z.alive is untouched (CSV stays pure).
+   //--- The WIPE decision stays keyed on FORMAL death only: an intrabar cross is
+   //--- transient (price may return before close), so wiping a PBO-only band on it
+   //--- would flicker — dim it instead, and let the formal close drive the wipe.
+   bool formalDead  = !ev[i].zone.alive;
+   bool dimmed      = formalDead
+                      || (live && IntrabarDead(ev[i].dir, ev[i].zone.l2, curPx));
    bool dimEligible = parentQual && (parLab == FOB_VR || parLab == FOB_CF);
-   if(dimmed && !dimEligible)
+   if(formalDead && !dimEligible)
       return;                                       // PBO-only / non-parent death -> wipe
 
    //--- geometry (shared by every role of this physical break)
