@@ -46,7 +46,7 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
    //--- reset lifecycle state (stateless recompute)
    z.t1_time = 0; z.t2_time = 0; z.t3_time = 0;
    z.alive = true; z.invalidation_time = 0;
-   z.rt_count = 0; z.rt_time = 0;
+   z.rt1_time = 0; z.rt2_time = 0; z.rt3_time = 0;
    z.n_l1_touches = 0; z.n_mid_touches = 0; z.n_l2_touches = 0;
    z.bars_alive = 0;   z.vr_fresh = true;
    if(!z.valid)
@@ -60,7 +60,6 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
    double bandHi = MathMax(l1, l2);
 
    bool invalidated = false;                      // RT phase begins after this
-   bool armed       = false;                      // price currently on the broken side
    bool in1 = false, in2 = false, in3 = false;    // rising-edge state for touch COUNTS
 
    for(int i = 0; i < nb; i++)
@@ -95,25 +94,27 @@ void FobReplayZoneLife(FobZone &z, const int dir, const double l1, const datetim
            {
             z.alive = false; z.invalidation_time = bt[i];
             if(!track_rt) break;                  // CF/PBO: stop at death (old behaviour)
-            invalidated = true; armed = true;     // VR: open the RT phase from next bar
+            invalidated = true;                   // VR: open the RT phase from next bar
            }
         }
       else
         {
-         //--- RT phase (VR-only): count DISTINCT returns to the broken L2 edge.
-         //--- A bull VR broke DOWN through L2 -> a retouch is a wick back UP to L2
-         //--- (high >= L2); bear VR mirrors (low <= L2). Hysteresis: price must
-         //--- leave L2 (re-arm) before another return counts, so one slow retest
-         //--- straddling L2 over several bars is ONE retouch, not many.
+         //--- RT MIRROR LADDER (VR-only): the VR broke through L2, so price RETURNS
+         //--- and re-touches L2 -> mid -> L1 in mirror order/side of the T-ladder.
+         //--- A bull VR broke DOWN, so the return is a wick back UP (probe = high);
+         //--- a bear VR broke UP, so the return is a wick back DOWN (probe = low).
+         //--- Stamp the FIRST bar to reach each level (first-touch times, no counts).
          if(bull)
            {
-            if(armed && bh[i] >= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = bt[i]; armed = false; }
-            else if(bh[i] <  l2)       armed = true;
+            if(z.rt1_time == 0 && bh[i] >= l2)  z.rt1_time = bt[i];
+            if(z.rt2_time == 0 && bh[i] >= mid) z.rt2_time = bt[i];
+            if(z.rt3_time == 0 && bh[i] >= l1)  z.rt3_time = bt[i];
            }
          else
            {
-            if(armed && bl[i] <= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = bt[i]; armed = false; }
-            else if(bl[i] >  l2)       armed = true;
+            if(z.rt1_time == 0 && bl[i] <= l2)  z.rt1_time = bt[i];
+            if(z.rt2_time == 0 && bl[i] <= mid) z.rt2_time = bt[i];
+            if(z.rt3_time == 0 && bl[i] <= l1)  z.rt3_time = bt[i];
            }
         }
      }
@@ -139,15 +140,20 @@ bool FobLiveTouch(FobZone &z, const int dir, const double l1, const datetime brk
    bool   bull = (dir == FOB_BULL);
    double l2   = z.l2;
 
-   //--- RT live (VR-only): an INVALIDATED VR whose broken-L2 edge is re-touched by
-   //--- the FORMING wick stamps the FIRST retouch live, so [RT0]->[RT1] + the entry
-   //--- dot flip intrabar exactly like [Tn]. Runs BEFORE the alive-guard (the zone
-   //--- is dead by definition here). Higher counts settle at bar close.
+   //--- RT live (VR-only): an INVALIDATED VR whose broken zone is re-touched by the
+   //--- FORMING wick stamps the RT mirror ladder live, so [RTn] + the entry dots flip
+   //--- intrabar exactly like [Tn]. Runs BEFORE the alive-guard (the zone is dead by
+   //--- definition here). Mirror of the T-ladder on the RETURN path: bull returns UP
+   //--- (probe = high) to L2 -> mid -> L1, bear returns DOWN (probe = low).
    if(track_rt && !z.alive)
      {
-      if(z.rt_time == 0 && (bull ? (h >= l2) : (l <= l2)))
-        { z.rt_time = bt; z.rt_count = 1; return true; }
-      return false;
+      double midRt = z.mid;
+      double probe = bull ? h : l;
+      bool   hit   = false;
+      if(z.rt1_time == 0 && (bull ? (probe >= l2)   : (probe <= l2)))   { z.rt1_time = bt; hit = true; }
+      if(z.rt2_time == 0 && (bull ? (probe >= midRt): (probe <= midRt))) { z.rt2_time = bt; hit = true; }
+      if(z.rt3_time == 0 && (bull ? (probe >= l1)   : (probe <= l1)))   { z.rt3_time = bt; hit = true; }
+      return hit;
      }
 
    if(!z.alive)
@@ -178,16 +184,15 @@ bool FobLiveTouch(FobZone &z, const int dir, const double l1, const datetime brk
 //|                                                                    |
 //| Logic is the SAME geometry as FobReplayZoneLife (bull retests DOWN, |
 //| bear UP; T1=L1,T2=mid,T3=L2 wick; counts = rising-edge episodes;    |
-//| invalidation = CLOSE beyond L2; RT = distinct returns to broken L2  |
-//| with re-arm hysteresis) — only the CLOCK differs (live price/close  |
+//| invalidation = CLOSE beyond L2; RT = mirror retouch ladder L2->mid  |
+//| ->L1 on the return path) — only the CLOCK differs (live price/close |
 //| instead of bar high/low). The per-zone hysteresis state that used   |
-//| to be locals in the replay (in1/in2/in3, armed, invalidated) now    |
-//| persists in FobZoneAcc, held parallel to the event ledger.         |
+//| to be locals in the replay (in1/in2/in3, invalidated) now persists  |
+//| in FobZoneAcc, held parallel to the event ledger.                  |
 //+------------------------------------------------------------------+
 struct FobZoneAcc
   {
    bool in1, in2, in3;     // rising-edge "currently inside the level" — distinct-touch counts
-   bool armed;             // RT re-arm: price has left L2 since the last counted retouch
    bool invalidated;       // close has broken L2 -> RT phase (VR only); also true for invalid zones
   };
 
@@ -203,11 +208,11 @@ void FobAccInit(FobZone &z, FobZoneAcc &a, const int dir, const double l1)
   {
    z.t1_time = 0; z.t2_time = 0; z.t3_time = 0;
    z.alive = true; z.invalidation_time = 0;
-   z.rt_count = 0; z.rt_time = 0;
+   z.rt1_time = 0; z.rt2_time = 0; z.rt3_time = 0;
    z.n_l1_touches = 0; z.n_mid_touches = 0; z.n_l2_touches = 0;
    z.bars_alive = 0;   z.vr_fresh = true;
    a.in1 = false; a.in2 = false; a.in3 = false;
-   a.armed = false; a.invalidated = false;
+   a.invalidated = false;
    if(!z.valid)
      { z.alive = false; z.vr_fresh = false; a.invalidated = true; return; }  // no zone -> no life
    z.mid = (l1 + z.l2) * 0.5;
@@ -245,18 +250,21 @@ void FobAccOnTick(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
      }
    else if(track_rt)
      {
-      //--- RT (VR-only): a bull VR broke DOWN through L2 -> retouch = price back UP to
-      //--- L2 (px >= l2); bear mirror. Re-arm when price leaves L2, so one slow retest
-      //--- straddling L2 counts ONCE.
+      //--- RT MIRROR LADDER (VR-only): the VR broke through L2, so price RETURNS and
+      //--- re-touches L2 -> mid -> L1 in mirror order/side of the T-ladder. A bull VR
+      //--- broke DOWN, so the return is a move back UP (px >= level); bear mirrors.
+      //--- Stamp the FIRST tick that reaches each level off the live price.
       if(bull)
         {
-         if(a.armed && px >= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = ttime; a.armed = false; }
-         else if(px < l2)          a.armed = true;
+         if(z.rt1_time == 0 && px >= l2)  z.rt1_time = ttime;
+         if(z.rt2_time == 0 && px >= mid) z.rt2_time = ttime;
+         if(z.rt3_time == 0 && px >= l1)  z.rt3_time = ttime;
         }
       else
         {
-         if(a.armed && px <= l2) { z.rt_count++; if(z.rt_time == 0) z.rt_time = ttime; a.armed = false; }
-         else if(px > l2)          a.armed = true;
+         if(z.rt1_time == 0 && px <= l2)  z.rt1_time = ttime;
+         if(z.rt2_time == 0 && px <= mid) z.rt2_time = ttime;
+         if(z.rt3_time == 0 && px <= l1)  z.rt3_time = ttime;
         }
      }
   }
@@ -296,7 +304,7 @@ bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
       z.alive = false; z.invalidation_time = btime;
       if(!track_rt)
          return true;                              // CF/PBO: stop here, drop from watch
-      a.invalidated = true; a.armed = true;        // VR: open the RT phase from next tick
+      a.invalidated = true;                        // VR: open the RT phase from next tick
      }
    return false;
   }
@@ -309,7 +317,7 @@ bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
 //| the band. This restores the pre-v1.24.0 behaviour (a bar-wick       |
 //| replay backfilled the ladder) but NON-DESTRUCTIVELY: it only FILLS  |
 //| a still-empty t1/t2/t3_time (never resets), and touches NOTHING     |
-//| else — invalidation / rt_count / vr_fresh / the distinct-touch      |
+//| else — invalidation / RT ladder / vr_fresh / the distinct-touch     |
 //| COUNTS all stay owned by the causal accumulator. So a zone that     |
 //| formed live keeps its tick-accurate ladder; only genuinely-empty    |
 //| (pre-attach) zones get bar-resolution first-touch times.            |

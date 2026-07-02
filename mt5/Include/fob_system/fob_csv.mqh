@@ -58,7 +58,7 @@ int FobCsvOpen(const string symbol, const string runid)
       "event_id,setup_tf,seq,cf_idx,label,event_tf,direction,"
       "swing_time,bar_time,level,bar_open,bar_close,"
       "l2,mid,p1_time,p1_price,p3_time,p3_price,zone_valid,"
-      "t1_time,t2_time,t3_time,rt_count,rt_time,alive_at_end,invalidation_time,"
+      "t1_time,t2_time,t3_time,rt1_time,rt2_time,rt3_time,alive_at_end,invalidation_time,"
       //--- TIER B — cheap behaviour adds (same replay walk + label-derived)
       "bars_alive,n_l1_touches,n_mid_touches,n_l2_touches,"
       "body_clears,risk_class,vr_zone_broken,vr_fresh,vr_made_first_tf,htf_state,"
@@ -129,8 +129,9 @@ void FobCsvWriteEvent(const int fh, const int event_id, const FobEvent &e)
       FobFmtTime(e.zone.t1_time) + "," +
       FobFmtTime(e.zone.t2_time) + "," +
       FobFmtTime(e.zone.t3_time) + "," +
-      IntegerToString(e.zone.rt_count) + "," +
-      FobFmtTime(e.zone.rt_time) + "," +
+      FobFmtTime(e.zone.rt1_time) + "," +
+      FobFmtTime(e.zone.rt2_time) + "," +
+      FobFmtTime(e.zone.rt3_time) + "," +
       (e.zone.alive ? "1" : "0") + "," +
       FobFmtTime(e.zone.invalidation_time) + "," +
       //--- TIER B

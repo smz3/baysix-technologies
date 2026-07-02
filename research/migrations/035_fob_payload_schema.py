@@ -93,8 +93,8 @@ CREATE TABLE IF NOT EXISTS fob_zones (
     -- touches (T) --
     t1_time DATETIME, t2_time DATETIME, t3_time DATETIME,   -- first touch of L1/mid/L2
     n_l1_touches INTEGER, n_mid_touches INTEGER, n_l2_touches INTEGER,
-    -- retests (RT) --
-    rt_count INTEGER, rt_time DATETIME,
+    -- retests (RT) — mirror ladder L2->mid->L1 first-touch times (task 219, v1.29.0) --
+    rt1_time DATETIME, rt2_time DATETIME, rt3_time DATETIME,
     -- fresh vs structured --
     vr_fresh INTEGER,                                -- 1 = no close back into zone; 0 = not-fresh/structured
     -- lifecycle (R = entry->stop, asset-agnostic) --

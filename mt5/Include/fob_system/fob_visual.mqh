@@ -101,6 +101,9 @@ private:
    //--- deepest retest reached, for the L2 label tag (mirror BRC TouchTag)
    string   TouchTag(const FobZone &z) const
               { return z.t3_time>0 ? "T3" : (z.t2_time>0 ? "T2" : (z.t1_time>0 ? "T1" : "T0")); }
+   //--- deepest RT MIRROR level reached on the return path: RT1=L2, RT2=mid, RT3=L1
+   string   RtTag(const FobZone &z) const
+              { return z.rt3_time>0 ? "RT3" : (z.rt2_time>0 ? "RT2" : (z.rt1_time>0 ? "RT1" : "RT0")); }
    bool     SameBreak(const FobEvent &a, const FobEvent &b) const
               { return a.event_tf == b.event_tf && a.bar_time == b.bar_time && a.swing_time == b.swing_time; }
    int      OppDir(const int d) const { return d == FOB_BULL ? FOB_BEAR : FOB_BULL; }
@@ -217,7 +220,9 @@ public:
             h = (h ^ (ulong)ev[i].zone.t1_time) * 1099511628211ULL;
             h = (h ^ (ulong)ev[i].zone.t2_time) * 1099511628211ULL;
             h = (h ^ (ulong)ev[i].zone.t3_time) * 1099511628211ULL;
-            h = (h ^ (ulong)ev[i].zone.rt_time) * 1099511628211ULL;   // RT label flips repaint
+            h = (h ^ (ulong)ev[i].zone.rt1_time) * 1099511628211ULL;  // RT ladder flips repaint
+            h = (h ^ (ulong)ev[i].zone.rt2_time) * 1099511628211ULL;
+            h = (h ^ (ulong)ev[i].zone.rt3_time) * 1099511628211ULL;
             h = (h ^ (ulong)((ev[i].zone.alive ? 1 : 2) + (ev[i].zone.valid ? 4 : 8))) * 1099511628211ULL;
             //--- intrabar-dead flip must trigger a repaint too (else the dim only shows
             //--- on the NEXT unrelated state change) — hash it against the live price.
@@ -557,13 +562,14 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    bool     l1Top = (bdir == FOB_BULL);             // bull: L1 is the TOP edge; bear: bottom
    bool     l2Top = (bdir == FOB_BEAR);
    string   tn   = " [" + TouchTag(ev[i].zone) + "]";
-   //--- RT (VR-only): broken-L2 retouch count rides the L2 label next to [Tn].
-   //--- [RT0] = invalidated but not yet retested; [RT1]+ = break-and-retest entries.
-   //--- NOTE: rt_count is computed ONLY on the VR event row (track_rt=label==VR), which
-   //--- is the PARENT row (ev[parIdx]) — NOT ev[i] (= the own-PBO row, ROLE 1, appended
-   //--- first). Read RT off the parent VR zone or it is permanently [RT0]. (task 183)
+   //--- RT (VR-only): deepest MIRROR-ladder level reached rides the L2 label next to
+   //--- [Tn]. [RT0] = invalidated, not yet returned; [RT1]=back to L2, [RT2]=mid,
+   //--- [RT3]=full return to L1 (the break-and-retest depth).
+   //--- NOTE: the RT ladder is stamped ONLY on the VR event row (track_rt=label==VR),
+   //--- which is the PARENT row (ev[parIdx]) — NOT ev[i] (= the own-PBO row, ROLE 1,
+   //--- appended first). Read RT off the parent VR zone or it is permanently [RT0]. (task 183)
    bool     isVR  = parentQual && (parLab == FOB_VR);
-   string   rtTag = isVR ? StringFormat(" [RT%d]", ev[parIdx].zone.rt_count) : "";
+   string   rtTag = isVR ? (" [" + RtTag(ev[parIdx].zone) + "]") : "";
 
    datetime t0 = ev[i].swing_time;                  // L1 origin (P2); band runs right as a ray
    datetime tR = (tR0 <= t0) ? t0 + PeriodSeconds((ENUM_TIMEFRAMES)ChartPeriod()) : tR0;
@@ -646,9 +652,14 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
       if(ev[i].zone.t1_time > 0) Bullet(stem + "_t1", ev[i].zone.t1_time, l1,  rtClr);
       if(ev[i].zone.t2_time > 0) Bullet(stem + "_t2", ev[i].zone.t2_time, mid, rtClr);
       if(ev[i].zone.t3_time > 0) Bullet(stem + "_t3", ev[i].zone.t3_time, l2,  rtClr);
-      //--- RT entry marker (VR-only): first retouch of the broken L2 edge, in a
-      //--- distinct hue so it reads apart from the white T-dots.
-      if(isVR && ev[parIdx].zone.rt_time > 0) Bullet(stem + "_rt", ev[parIdx].zone.rt_time, l2, InpFobClrRT);
+      //--- RT MIRROR-ladder dots (VR-only): RT1@L2, RT2@mid, RT3@L1 — the return path
+      //--- after invalidation, in a distinct hue so they read apart from the white T-dots.
+      if(isVR)
+        {
+         if(ev[parIdx].zone.rt1_time > 0) Bullet(stem + "_rt1", ev[parIdx].zone.rt1_time, l2,  InpFobClrRT);
+         if(ev[parIdx].zone.rt2_time > 0) Bullet(stem + "_rt2", ev[parIdx].zone.rt2_time, mid, InpFobClrRT);
+         if(ev[parIdx].zone.rt3_time > 0) Bullet(stem + "_rt3", ev[parIdx].zone.rt3_time, l1,  InpFobClrRT);
+        }
      }
   }
 
