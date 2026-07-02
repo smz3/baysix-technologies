@@ -50,42 +50,11 @@ void CFobVisual::UpdateZoneLifecycles(FobEvent &ev[], const int n,
                            ev[i].label == FOB_VR);   // track RT (broken-L2 retouch) on VRs only
   }
 
-//+------------------------------------------------------------------+
-//| Fill-only touch-ladder backfill for the chart TF's zones (task     |
-//| 217). Delegates to FobBackfillLadderTimes, which only fills empty  |
-//| Tn — safe to call every redraw, safe alongside the live tick        |
-//| accumulator (never resets, never touches counts/invalidation).     |
-//+------------------------------------------------------------------+
-void CFobVisual::BackfillChartLadder(FobEvent &ev[], const int n,
-                                     const datetime &bt[], const double &bh[],
-                                     const double &bl[], const int nb)
-  {
-   if(m_idx < 0)
-      return;
-   int E = m_idx;
-   for(int i = 0; i < n; i++)
-      if(ev[i].event_tf == E)
-         FobBackfillLadderTimes(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, nb);
-  }
-
-//+------------------------------------------------------------------+
-//| RT-ladder backfill wrapper (task 219): fill the mirror RT ladder   |
-//| of every chart-TF, INVALIDATED VR off the chart-TF bars, so a       |
-//| VR that invalidated pre-attach shows its [RTn] + dots at bar        |
-//| resolution instead of a permanent [RT0]. VR rows only (RT is        |
-//| stamped only on the VR, mirror of the accumulator's track_rt).      |
-//+------------------------------------------------------------------+
-void CFobVisual::BackfillChartRt(FobEvent &ev[], const int n,
-                                 const datetime &bt[], const double &bh[],
-                                 const double &bl[], const int nb)
-  {
-   if(m_idx < 0)
-      return;
-   int E = m_idx;
-   for(int i = 0; i < n; i++)
-      if(ev[i].event_tf == E && ev[i].label == FOB_VR)
-         FobBackfillRtTimes(ev[i].zone, ev[i].dir, ev[i].level, ev[i].zone.invalidation_time, bt, bh, bl, nb);
-  }
+//--- (v1.31.0, task 223) BackfillChartLadder / BackfillChartRt DELETED — the pre-attach
+//--- touch + RT ladders are now filled by a real historical-tick warm-up in the EA
+//--- (FobWarmupReplay -> FobWarmFillTick), not by bar-wick guessing. Bars can't recover
+//--- intrabar touch TIME (right day/week, wrong minute on low TFs); replaying the ticks
+//--- through the same stamping the accumulator uses makes live == tester, tick-exact.
 
 //+------------------------------------------------------------------+
 //| LIVE intrabar touch pass — stamp T1/T2/T3 off the chart-TF FORMING |

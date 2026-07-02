@@ -186,23 +186,10 @@ public:
    void     LiveTouchForming(FobEvent &ev[], const int n,
                              const datetime fbt, const double fbh, const double fbl);
 
-   //--- LIVE-only, chart-TF, FILL-ONLY touch-ladder backfill (task 217). The causal
-   //--- accumulator never saw pre-attach ticks, so historical zones read [T0]. This
-   //--- fills only still-empty t1/t2/t3 off the chart-TF closed-bar wicks — never
-   //--- resets, never touches counts/rt/invalidation, so it can't clobber the causal
-   //--- lifecycle (unlike UpdateZoneLifecycles, which recomputes from scratch).
-   void     BackfillChartLadder(FobEvent &ev[], const int n,
-                                const datetime &bt[], const double &bh[],
-                                const double &bl[], const int nb);
-
-   //--- LIVE-only, chart-TF, FILL-ONLY RT-ladder backfill (task 219). Sibling of
-   //--- BackfillChartLadder for the RETURN path: an invalidated VR whose RT (rt1/rt2/
-   //--- rt3) never formed live (invalidated pre-attach) gets its mirror ladder filled
-   //--- off the chart-TF closed-bar wicks AFTER invalidation_time. VR rows only; fills
-   //--- only still-empty rt times — never resets, never touches T/counts/invalidation.
-   void     BackfillChartRt(FobEvent &ev[], const int n,
-                            const datetime &bt[], const double &bh[],
-                            const double &bl[], const int nb);
+   //--- (v1.31.0, task 223) the LIVE bar-wick touch/RT backfills were DELETED — the
+   //--- pre-attach ladder is now filled by a real historical-tick warm-up in the EA
+   //--- (FobWarmFillTick), so live == tester and touch TIME is tick-exact, not guessed
+   //--- from a bar wick. No chart-TF-gated backfill lives here anymore.
 
    //--- cheap FNV-1a hash of the CURRENTLY-stamped chart-TF zone state (touch
    //--- ladder + alive/valid + count). The EA repaints ONLY when this changes —

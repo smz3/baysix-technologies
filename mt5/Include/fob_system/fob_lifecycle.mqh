@@ -310,86 +310,62 @@ bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
   }
 
 //+------------------------------------------------------------------+
-//| DRAW-TIME LADDER BACKFILL (v1.27.1, task 217) — LIVE chart only.   |
-//| The causal tick accumulator (FobAcc*) is blind to pre-attach       |
-//| history: on a fresh attach it never saw the ticks that touched a    |
-//| historical zone, so [Tn] reads T0 even where price clearly swept    |
-//| the band. This restores the pre-v1.24.0 behaviour (a bar-wick       |
-//| replay backfilled the ladder) but NON-DESTRUCTIVELY: it only FILLS  |
-//| a still-empty t1/t2/t3_time (never resets), and touches NOTHING     |
-//| else — invalidation / RT ladder / vr_fresh / the distinct-touch     |
-//| COUNTS all stay owned by the causal accumulator. So a zone that     |
-//| formed live keeps its tick-accurate ladder; only genuinely-empty    |
-//| (pre-attach) zones get bar-resolution first-touch times.            |
+//| ONE-TIME TICK WARM-UP fill (v1.31.0, task 223) — LIVE chart only.  |
+//| Replaces the deleted bar-wick backfills (FobBackfillLadderTimes /  |
+//| FobBackfillRtTimes). The causal accumulator (FobAcc*) is blind to  |
+//| pre-attach history, so on a fresh live attach a historical zone's  |
+//| ladder is empty. Instead of GUESSING touch TIME from a bar wick    |
+//| (bars can't recover intrabar time -> wrong-minute dots on low TFs),|
+//| the caller replays the REAL historical ticks and hands each one    |
+//| here. We stamp a still-empty t1/t2/t3 (pre-invalidation) or        |
+//| rt1/rt2/rt3 (VR return, post-invalidation) using the SAME level    |
+//| geometry/inequalities as FobAccOnTick — so a live attach reproduces|
+//| the tick-exact ladder the tester already builds causally. ONE      |
+//| engine, live == tester.                                            |
 //|                                                                    |
-//| Safe to run every redraw: returns instantly once all three are      |
-//| stamped. Walks the CHART-TF bar buffer (bt/bh/bl, index 0 oldest,   |
-//| length nb) STRICTLY AFTER the break. Because a close beyond L2 (the |
-//| death) puts the whole bar past L1/mid/L2, the death bar's own wick  |
-//| fills every remaining Tn — so no post-invalidation touch leaks in.  |
+//| Fill-only (never resets) + TIMES only — the distinct-touch COUNTS  |
+//| stay owned by the live accumulator (same non-destructive contract  |
+//| the wick backfill had). Routes T vs RT by the tick time vs the     |
+//| invalidating bar's CLOSE: inval_close = invalidation bar-open + its|
+//| TF seconds (0 = still alive). That is the tester boundary — a VR's |
+//| RT phase opens only once the invalidating bar has CLOSED, so every |
+//| tick within the invalidating bar still counts on the T-ladder.     |
 //+------------------------------------------------------------------+
-void FobBackfillLadderTimes(FobZone &z, const int dir, const double l1, const datetime brk,
-                            const datetime &bt[], const double &bh[], const double &bl[], const int nb)
+void FobWarmFillTick(FobZone &z, const int dir, const double l1, const datetime brk,
+                     const datetime inval_close, const bool track_rt,
+                     const double px, const datetime tt)
   {
    if(!z.valid)
       return;
-   if(z.t1_time != 0 && z.t2_time != 0 && z.t3_time != 0)
-      return;                                       // already fully stamped (live or prior backfill)
-
+   if(tt <= brk)
+      return;                                       // only ticks strictly after the break
    bool   bull = (dir == FOB_BULL);
    double l2   = z.l2;
    double mid  = z.mid;
-   for(int i = 0; i < nb; i++)
+
+   if(inval_close == 0 || tt < inval_close)
      {
-      if(bt[i] <= brk)
-         continue;                                  // only bars strictly after the break
-      double probe = bull ? bl[i] : bh[i];          // bull retests DOWN (low), bear UP (high)
-      if(z.t1_time == 0 && (bull ? (probe <= l1)  : (probe >= l1)))  z.t1_time = bt[i];
-      if(z.t2_time == 0 && (bull ? (probe <= mid) : (probe >= mid))) z.t2_time = bt[i];
-      if(z.t3_time == 0 && (bull ? (probe <= l2)  : (probe >= l2)))  z.t3_time = bt[i];
-      if(z.t1_time != 0 && z.t2_time != 0 && z.t3_time != 0)
-         return;                                    // deepest touch reached -> done
+      //--- T-PHASE: zone still alive at this tick -> advance the touch ladder (mirrors FobAccOnTick)
+      if(z.t1_time == 0 && (bull ? (px <= l1)  : (px >= l1)))  z.t1_time = tt;
+      if(z.t2_time == 0 && (bull ? (px <= mid) : (px >= mid))) z.t2_time = tt;
+      if(z.t3_time == 0 && (bull ? (px <= l2)  : (px >= l2)))  z.t3_time = tt;
      }
-  }
-
-//+------------------------------------------------------------------+
-//| DRAW-TIME RT-LADDER BACKFILL (v1.29.0, task 219) — LIVE chart only. |
-//| Sibling of FobBackfillLadderTimes for the RETURN path. A VR that    |
-//| invalidated BEFORE attach has its RT phase opened by the close-path  |
-//| replay (invalidation_time set), but the tick accumulator saw no      |
-//| pre-attach ticks, so the mirror ladder rt1/rt2/rt3 stays empty ->    |
-//| the zone reads [RT0] forever. This restores bar-resolution RT the    |
-//| same NON-DESTRUCTIVE way the T backfill does: fills only a still-     |
-//| empty rt1/rt2/rt3_time (never resets), touches NOTHING else.         |
-//|                                                                    |
-//| Mirror geometry: the VR broke THROUGH L2, so the return re-touches   |
-//| L2 -> mid -> L1 on the opposite side of the T-ladder — a bull VR     |
-//| broke DOWN so the return is a wick back UP (probe = high); bear      |
-//| mirrors (probe = low). Walks the chart-TF bar buffer STRICTLY AFTER  |
-//| invalidation_time (the RT phase start). No-op on a live/still-alive  |
-//| zone (inval == 0) or one already fully stamped. Safe every redraw.   |
-//+------------------------------------------------------------------+
-void FobBackfillRtTimes(FobZone &z, const int dir, const double l1, const datetime inval,
-                        const datetime &bt[], const double &bh[], const double &bl[], const int nb)
-  {
-   if(!z.valid || inval == 0)
-      return;                                       // no zone / not invalidated -> no RT phase
-   if(z.rt1_time != 0 && z.rt2_time != 0 && z.rt3_time != 0)
-      return;                                       // already fully stamped (live or prior backfill)
-
-   bool   bull = (dir == FOB_BULL);
-   double l2   = z.l2;
-   double mid  = z.mid;
-   for(int i = 0; i < nb; i++)
+   else if(track_rt)
      {
-      if(bt[i] <= inval)
-         continue;                                  // RT phase begins STRICTLY after invalidation
-      double probe = bull ? bh[i] : bl[i];          // return path: bull back UP (high), bear DOWN (low)
-      if(z.rt1_time == 0 && (bull ? (probe >= l2)  : (probe <= l2)))  z.rt1_time = bt[i];
-      if(z.rt2_time == 0 && (bull ? (probe >= mid) : (probe <= mid))) z.rt2_time = bt[i];
-      if(z.rt3_time == 0 && (bull ? (probe >= l1)  : (probe <= l1)))  z.rt3_time = bt[i];
-      if(z.rt1_time != 0 && z.rt2_time != 0 && z.rt3_time != 0)
-         return;                                    // full return reached -> done
+      //--- RT-PHASE (VR only): broke THROUGH L2, price RETURNS -> mirror ladder L2 -> mid -> L1.
+      //--- Bull VR broke DOWN so the return is a move back UP (px >= level); bear mirrors.
+      if(bull)
+        {
+         if(z.rt1_time == 0 && px >= l2)  z.rt1_time = tt;
+         if(z.rt2_time == 0 && px >= mid) z.rt2_time = tt;
+         if(z.rt3_time == 0 && px >= l1)  z.rt3_time = tt;
+        }
+      else
+        {
+         if(z.rt1_time == 0 && px <= l2)  z.rt1_time = tt;
+         if(z.rt2_time == 0 && px <= mid) z.rt2_time = tt;
+         if(z.rt3_time == 0 && px <= l1)  z.rt3_time = tt;
+        }
      }
   }
 

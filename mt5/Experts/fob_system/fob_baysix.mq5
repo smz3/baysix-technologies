@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.30.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.31.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -79,6 +79,14 @@ input double   InpFixedLot       = 0.01;        // [trade] min lot at $50
 input ulong    InpMagic          = 3001;        // [trade] FOB magic
 input int      InpStudyCapBars  = 48;           // [study] force-close window after this many setup-TF bars
 
+//--- LIVE-chart tick warm-up (v1.31.0, task 223). On a fresh live attach the causal
+//--- accumulator is blind to pre-attach history, so historical zones have empty touch
+//--- ladders. We replay this many DAYS of REAL ticks through FobWarmFillTick once, so
+//--- live == tester (tick-exact WHEN/WHERE) instead of guessing from bar wicks. 0 =
+//--- unbounded (back to the oldest structure bar; slow on EMIT/high-TF attach). Ignored
+//--- in the tester (already tick-causal from test-start). 30d covers M5..H4 fully.
+input int      InpTickWarmDays  = 30;           // [live] days of ticks to warm-up the touch ladder (0=unbounded)
+
 //--- detection state (FobTfState/FobPending/FobIngestBar/FobSortPending/FobPeriods live in fob_engine.mqh)
 FobTfState    g_tf[FOB_N_TF];
 FobSetupState g_setup[FOB_N_TF];   // per-setup-TF state machine
@@ -96,6 +104,7 @@ FobZoneAcc    g_acc[];              // parallel to g_events — persistent per-z
 int           g_watch[];           // indices into g_events of zones still being watched
 datetime      g_last_form[FOB_N_TF];// last seen forming-bar open time per TF (new-bar gate)
 double        g_last_px = 0.0;      // last processed tick price (tick decimation)
+bool          g_warmed  = false;    // LIVE: has the one-time historical-tick ladder warm-up run? (task 223)
 
 //--- INGEST set (mode-gated): EMIT = all 9 TFs (full storyline oracle); TRADE/STUDY = only
 //--- {setup_tf-1, setup_tf} (byte-identical to the full classifier for this setup's events —
@@ -143,6 +152,7 @@ int OnInit()
    ArrayResize(g_watch,  0);
    g_last_px = 0.0;
    g_seen    = 0;
+   g_warmed  = false;   // re-warm the ladder from ticks on every (re)attach / period switch (task 223)
    for(int i = 0; i < FOB_N_TF; i++)
      {
       FobResetTfState(g_tf[i]);
@@ -202,6 +212,61 @@ void ActOnNewEvents()
          StashTrade(g_book, pid, rw, e);
      }
    g_seen = n;   // every event up to n has now been considered
+  }
+
+//+------------------------------------------------------------------+
+//| ONE-TIME LIVE TICK WARM-UP (v1.31.0, task 223). Replaces the       |
+//| deleted bar-wick backfills. After the first tick has built the     |
+//| historical zone STRUCTURE (structure is bar-close-correct), replay |
+//| the real ticks over [now - InpTickWarmDays, now] and hand each to  |
+//| FobWarmFillTick, so every pre-attach zone gets a TICK-EXACT touch  |
+//| (and VR RT) ladder — the same one the tester builds causally. LIVE |
+//| only; the tester replays every tick from test-start already.       |
+//|                                                                    |
+//| Returns false if the tick history isn't downloaded yet (retry next |
+//| tick — don't mark warmed). Fills all TFs at once (not chart-TF     |
+//| gated, unlike the old backfill), times-only + fill-only so it can  |
+//| never clobber the live accumulator's counts.                      |
+//+------------------------------------------------------------------+
+bool FobWarmupReplay(const datetime warm_start)
+  {
+   int n = ArraySize(g_events);
+   if(n <= 0)
+      return true;                                  // nothing to warm
+
+   MqlTick ticks[];
+   ulong from_msc = (ulong)warm_start * 1000;       // 0 -> from the earliest available tick
+   ulong to_msc   = (ulong)TimeCurrent() * 1000 + 1000;
+   int got = CopyTicksRange(_Symbol, ticks, COPY_TICKS_ALL, from_msc, to_msc);
+   if(got <= 0)
+      return false;                                 // tick history not ready -> retry next tick
+
+   for(int k = 0; k < got; k++)
+     {
+      double   px = ticks[k].bid;
+      if(px <= 0.0)
+         continue;                                  // ask-only tick (no bid) -> skip, matches the live bid path
+      datetime tt = ticks[k].time;
+      for(int i = 0; i < n; i++)
+        {
+         if(!g_events[i].zone.valid)
+            continue;
+         bool track_rt = (g_events[i].label == FOB_VR);
+         //--- skip zones already fully stamped (live-formed, or filled earlier this pass)
+         bool tdone = (g_events[i].zone.t1_time != 0 && g_events[i].zone.t2_time != 0 && g_events[i].zone.t3_time != 0);
+         bool rdone = (!track_rt) || (g_events[i].zone.rt1_time != 0 && g_events[i].zone.rt2_time != 0 && g_events[i].zone.rt3_time != 0);
+         if(tdone && rdone)
+            continue;
+         //--- RT opens only after the invalidating bar CLOSES (bar-open + its TF seconds) — the
+         //--- tester boundary. 0 (still alive) -> every tick stays on the T-ladder.
+         datetime inval_close = 0;
+         if(g_events[i].zone.invalidation_time > 0)
+            inval_close = g_events[i].zone.invalidation_time + PeriodSeconds(FobPeriods[g_events[i].event_tf]);
+         FobWarmFillTick(g_events[i].zone, g_events[i].dir, g_events[i].level,
+                         g_events[i].bar_time, inval_close, track_rt, px, tt);
+        }
+     }
+   return true;
   }
 
 //+------------------------------------------------------------------+
@@ -355,22 +420,27 @@ void OnTick()
       if(InpMode == FOB_TRADE)
          CollectLiveCycles(g_book, InpMagic, g_live_tf, g_live_seq);
       int ci = g_vis.ChartIdx();
-      //--- LIVE-only, chart-TF, fill-only touch-ladder backfill (task 217): the causal
-      //--- accumulator is blind to pre-attach history, so historical zones read [T0]. This
-      //--- fills only still-empty t1/t2/t3 off the chart-TF bar wicks — never resets counts/rt.
-      if(live && ci >= 0)
+      //--- ONE-TIME historical-tick warm-up (task 223, v1.31.0) — replaces the deleted wick
+      //--- backfills. Replays real ticks through FobWarmFillTick so every pre-attach zone gets
+      //--- a TICK-EXACT touch/RT ladder (live == tester). LIVE only; retries each tick until the
+      //--- tick history is downloaded. Fills all TFs, not just the chart TF.
+      bool just_warmed = false;
+      if(live && !g_warmed)
         {
-         g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
-                                   g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
-         //--- RT mirror ladder for VRs that invalidated pre-attach (task 219) — same
-         //--- fill-only, bar-resolution, live-only contract as the T backfill above.
-         g_vis.BackfillChartRt(g_events, ArraySize(g_events),
-                               g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
+         datetime ws = (InpTickWarmDays > 0) ? TimeCurrent() - (datetime)InpTickWarmDays * 86400 : 0;
+         if(FobWarmupReplay(ws))
+           {
+            g_warmed    = true;
+            just_warmed = true;                       // force one repaint so the filled dots appear
+            PrintFormat("[FOB %s] tick warm-up complete — %d zones, window=%s",
+                        FobModeName(InpMode), ArraySize(g_events),
+                        (InpTickWarmDays > 0 ? (string)InpTickWarmDays + "d" : "unbounded"));
+           }
         }
 
       ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events), g_last_px)
                   ^ ((ulong)ArraySize(g_live_tf) * 2654435761ULL);   // live-cycle open/close flips repaint (TRADE)
-      if(np > 0 || sig != g_last_sig)
+      if(np > 0 || sig != g_last_sig || just_warmed)
         {
          g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf),
                          live, g_last_px);                        // ClearAll + zone bands + edge labels
@@ -393,14 +463,9 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       CollectLiveCycles(g_book, InpMagic, g_live_tf, g_live_seq);
    bool live = !MQLInfoInteger(MQL_TESTER);
    int ci = g_vis.ChartIdx();
-   //--- backfill the new chart TF's historical touch ladder before the redraw (task 217).
-   if(live && ci >= 0)
-     {
-      g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
-                                g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
-      g_vis.BackfillChartRt(g_events, ArraySize(g_events),
-                            g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
-     }
+   //--- (v1.31.0, task 223) no per-TF backfill here anymore — the historical-tick warm-up
+   //--- (FobWarmupReplay, OnTick) already filled every TF's ladder tick-exact, and a period
+   //--- switch re-fires OnInit -> g_warmed=false -> the next tick re-warms. Just redraw.
    g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf),
                    live, g_last_px);
    if(ci >= 0)
