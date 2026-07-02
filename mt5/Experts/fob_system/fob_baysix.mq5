@@ -1,62 +1,117 @@
 //+------------------------------------------------------------------+
 //|                                                     fob_baysix.mq5 |
-//|        FOB (First Opposite Breakout) classifier EMITTER.          |
+//|        FOB (First Opposite Breakout) — the SINGLE FOB EA.          |
 //|                                                                    |
-//|  ONE job: across 9 TFs (M1..MN1), detect raw breakouts (FOB's OWN  |
-//|  swing + breakout detection, fob_swings/fob_breakouts) and CLASSIFY|
-//|  chronological order as PBO / VR / HRCF / CF, then (a) draw them   |
-//|  colour-coded and (b) emit a UTF-8 event ledger to CSV. NO orders, |
-//|  NO money — this is the read-only oracle that feeds Python.        |
+//|  ONE EA, three modes (InpMode) — merged 2026-07-02 (v1.28.0) so    |
+//|  the oracle and the strategy can NEVER drift (they were two EAs    |
+//|  with two different lifecycle engines, which is exactly why the     |
+//|  live touch ladder disagreed). Detection + zone lifecycle now live  |
+//|  in ONE place, run by ONE causal accumulator, for every mode:      |
+//|                                                                    |
+//|    • EMIT  (default) — READ-ONLY oracle. Ingests ALL 9 TFs, stamps  |
+//|      the causal htf_state awareness snapshot, and writes the UTF-8  |
+//|      lifecycle CSV -> Python. NO orders. Pristine + re-emittable    |
+//|      for OOS (the reason the old standalone emitter existed — kept  |
+//|      intact, now just a mode).                                     |
+//|    • TRADE — the strategy. Ingests only the setup pair {n-1, n},   |
+//|      opens a MARKET position per CF on the setup TF (multi-position,|
+//|      hedging), SL beyond zone L2 by k*band, TP = RR*risk. Higher-TF |
+//|      alignment is AWARENESS, not a gate (result_id 18).            |
+//|    • STUDY — T-170 forward-excursion measurement (no orders): per   |
+//|      CF, track MFE/MAE/terminal on real ticks until the next CF.    |
 //|                                                                    |
 //|  Run on REAL TICKS (Model=4) — FOB is a tick-resolution model and   |
 //|  open-prices is BANNED (Syafiq 2026-06-29). Detection (swing/break) |
 //|  is CLOSE-only, but the zone LIFECYCLE (touch ladder / counts / RT) |
-//|  is now accumulated CAUSALLY tick-by-tick (FobAcc*, v1.24.0 task    |
-//|  197) so the CSV records true intra-bar ORDER. Per tick: each TF's  |
-//|  newly-closed bars are ingested (new-bar-gated), the new breaks are |
-//|  merged + sorted (bar_time asc, ties higher-TF-first) and fed to    |
-//|  the classifier in chronological order — the ordering guard that    |
-//|  kills the ORB unsorted-tick look-ahead — then the close path and   |
-//|  tick path advance each watched zone's lifecycle.                  |
+//|  is accumulated CAUSALLY tick-by-tick (FobAcc*, v1.24.0) so the CSV  |
+//|  and the live chart record true intra-bar ORDER.                   |
 //|                                                                    |
 //|  Modules — FOB owns EVERYTHING, nothing shared with brc_system:    |
-//|    fob_types (own swing/break/dir types) · fob_swings · fob_break-  |
-//|    outs · fob_sequence · fob_csv · fob_visual                      |
+//|    fob_types · fob_engine (shared ingest+sort) · fob_sequence ·     |
+//|    fob_lifecycle (accumulator) · fob_entry · fob_ledger ·           |
+//|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.27.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.28.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
-#include <fob_system/fob_engine.mqh>      // SHARED detection runtime (structs + ingest+sort) — with the trader
+#include <fob_system/fob_version.mqh>   // AUTO-GEN git provenance — run gen_version.py fob before compile
+#include <fob_system/fob_engine.mqh>    // SHARED detection runtime (ingest + sort)
 #include <fob_system/fob_sequence.mqh>
-#include <fob_system/fob_lifecycle.mqh>   // TRUE-TICK accumulator (FobAccInit/OnTick/OnClose) — zone lifecycle source
-#include <fob_system/fob_csv.mqh>
-#include <fob_system/fob_visual.mqh>      // InpVisualize master toggle (default on)
+#include <fob_system/fob_lifecycle.mqh> // TRUE-TICK accumulator (FobAccInit/OnTick/OnClose) — the ONE lifecycle engine
+#include <fob_system/fob_entry.mqh>     // FobOpenMarket / FobFilling            (TRADE)
+#include <fob_system/fob_ledger.mqh>    // FobTradeBook + Stash/CollectLiveCycles/WriteTradeLedger (TRADE)
+#include <fob_system/fob_study.mqh>     // T-170 forward-excursion study         (STUDY)
+#include <fob_system/fob_csv.mqh>       // event ledger CSV                       (EMIT)
+#include <fob_system/fob_visual.mqh>    // InpVisualize master toggle (default on)
 
-input int  InpSwingWindow    = 3;     // close-based pivot window (odd, >=3; live BRC = 3)
-input int  InpMaxAge         = 0;     // break age filter in bars (<=0 disables)
-input bool InpPboNewestOnly  = true;  // PBO = freshest source near CMP (reject same-dir reach-backs)
+//--- THE MODE SWITCH — one EA, three jobs (merged 2026-07-02).
+enum FOB_MODE
+  {
+   FOB_EMIT  = 0,   // read-only oracle: all 9 TFs + htf_state + CSV, NO orders (default)
+   FOB_TRADE = 1,   // the strategy: market entry per CF on the setup TF
+   FOB_STUDY = 2    // T-170 forward-excursion measurement, NO orders
+  };
+input FOB_MODE InpMode = FOB_EMIT;      // EMIT=oracle CSV · TRADE=orders · STUDY=excursion
 
-//--- detection state (FobTfState/FobPending/FobIngestBar/FobSortPending/FobPeriods
-//--- all live in fob_engine.mqh, shared byte-identically with the trader)
+//--- detection (shared by every mode)
+input int    InpSwingWindow   = 3;      // close-based pivot window (odd, >=3; live BRC = 3)
+input int    InpMaxAge        = 0;      // break age filter in bars (<=0 disables)
+input bool   InpPboNewestOnly = true;   // PBO = freshest source near CMP (reject same-dir reach-backs)
+
+//--- setup/CF timeframe pair (TRADE + STUDY only). A PBO on the setup TF is confirmed by a
+//--- CF on the TF one below it; the CF TF is always (setup TF - 1). EMIT ignores this (all 9 TFs).
+enum FOB_TF_PAIR
+  {
+   FOB_TF_M5_M1   = 0,   // setup M5  -> CF on M1
+   FOB_TF_M15_M5  = 1,   // setup M15 -> CF on M5
+   FOB_TF_M30_M15 = 2,   // setup M30 -> CF on M15
+   FOB_TF_H1_M30  = 3,   // setup H1  -> CF on M30  (baseline)
+   FOB_TF_H4_H1   = 4,   // setup H4  -> CF on H1
+   FOB_TF_D1_H4   = 5    // setup D1  -> CF on H4
+  };
+input FOB_TF_PAIR InpTfPair    = FOB_TF_H1_M30; // [trade/study] setup TF -> CF on the TF one below
+input int      InpCfIdxFilter  = 0;             // [trade/study] CF ordinal to trade (0 = ALL CFs)
+input double   InpSlBufferK    = 0.25;          // [trade] SL beyond zone L2 by k*band, band=|L1-L2| (0 = at L2)
+input double   InpRMultTP       = 1.0;          // [trade] TP = RR * risk (1.0 = 1:1, the coin-flip null)
+input double   InpFixedLot       = 0.01;        // [trade] min lot at $50
+input ulong    InpMagic          = 3001;        // [trade] FOB magic
+input int      InpStudyCapBars  = 48;           // [study] force-close window after this many setup-TF bars
+
+//--- detection state (FobTfState/FobPending/FobIngestBar/FobSortPending/FobPeriods live in fob_engine.mqh)
 FobTfState    g_tf[FOB_N_TF];
 FobSetupState g_setup[FOB_N_TF];   // per-setup-TF state machine
-FobEvent      g_events[];           // every classified event (CSV + redraw source)
+FobEvent      g_events[];           // every classified event (CSV + redraw + trade source)
 int           g_radius = 1;
 string        g_runid  = "";
 CFobVisual    g_vis;
 ulong         g_last_sig = 0;       // last-drawn zone-state hash -> repaint only on change (no twitch)
 
-//--- TRUE-TICK accumulator state (v1.24.0, task 197). g_acc[] is parallel to
-//--- g_events[] (one accumulator per event); g_watch[] holds the indices of
-//--- zones still LIVE (alive, or a VR counting RT) so the per-tick inner loop
-//--- only touches a handful, never the full ledger. g_last_form[t] gates per-TF
-//--- ingest behind a real new-bar (cheap iTime vs a CopyRates every tick).
+//--- ONE lifecycle engine (v1.24.0, now every mode). g_acc[] is parallel to g_events[]
+//--- (one accumulator per event); g_watch[] holds the indices of zones still LIVE (alive,
+//--- or a VR counting RT) so the per-tick inner loop only touches a handful. g_last_form[t]
+//--- gates per-TF ingest behind a real new-bar (cheap iTime vs a CopyRates every tick).
 FobZoneAcc    g_acc[];              // parallel to g_events — persistent per-zone hysteresis/RT state
 int           g_watch[];           // indices into g_events of zones still being watched
 datetime      g_last_form[FOB_N_TF];// last seen forming-bar open time per TF (new-bar gate)
 double        g_last_px = 0.0;      // last processed tick price (tick decimation)
+
+//--- INGEST set (mode-gated): EMIT = all 9 TFs (full storyline oracle); TRADE/STUDY = only
+//--- {setup_tf-1, setup_tf} (byte-identical to the full classifier for this setup's events —
+//--- a break on TF t only sets PBO(t) and VR/CF(t+1)). Populated in OnInit.
+int           g_ingest[];
+int           g_setup_tf = 4;       // setup TF index, derived from InpTfPair (TRADE/STUDY)
+
+//--- trade + study bookkeeping (only active in the matching mode)
+FobTradeBook  g_book;
+FobStudyState g_study;
+int           g_seen = 0;           // # events already acted on (watermark into g_events)
+int           g_live_tf[];  int g_live_seq[];   // (setup_tf, seq) cycles with an OPEN position
+
+//--- mode label for logs
+string FobModeName(const FOB_MODE m)
+  { return m == FOB_TRADE ? "TRADE" : (m == FOB_STUDY ? "STUDY" : "EMIT"); }
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -64,25 +119,42 @@ int OnInit()
    g_radius = FobSwingRadius(InpSwingWindow);
    if(g_radius < 0)
       return INIT_PARAMETERS_INCORRECT;
+   g_setup_tf = (int)InpTfPair + 1;   // M5_M1=0->M5=1, ... D1_H4=5->D1=6
 
-   //--- FULL reset (HARD): MT5 calls OnDeinit+OnInit on every chart period
-   //--- switch / recompile / param change WITHOUT unloading the program, so
-   //--- the global arrays SURVIVE. If we only zero last_time+g_setup (the old
-   //--- bug), the next tick re-ingests all 64 bars into the already-populated
-   //--- buffers -> duplicate bars (corrupt pivots -> dots misplaced) and a
-   //--- restarted seq piled onto a stale g_events (seq dupes -> visual never
-   //--- locks the active cycle -> "pending" stuck). Clear EVERYTHING so each
-   //--- reinit rebuilds cleanly from the 64-bar window.
+   //--- INGEST set by mode. EMIT = the full 9-TF oracle; TRADE/STUDY = the setup pair only.
+   if(InpMode == FOB_EMIT)
+     {
+      ArrayResize(g_ingest, FOB_N_TF);
+      for(int i = 0; i < FOB_N_TF; i++)
+         g_ingest[i] = i;
+     }
+   else
+     {
+      ArrayResize(g_ingest, 2);
+      g_ingest[0] = g_setup_tf - 1;
+      g_ingest[1] = g_setup_tf;
+     }
+
+   //--- FULL reset (HARD): MT5 calls OnDeinit+OnInit on every chart period switch / recompile /
+   //--- param change WITHOUT unloading, so the global arrays SURVIVE. Clear EVERYTHING so each
+   //--- reinit rebuilds cleanly from the 64-bar window ([[mt5_oninit_full_reset]]).
    ArrayResize(g_events, 0);
    ArrayResize(g_acc,    0);
    ArrayResize(g_watch,  0);
    g_last_px = 0.0;
+   g_seen    = 0;
    for(int i = 0; i < FOB_N_TF; i++)
      {
       FobResetTfState(g_tf[i]);
       FobResetSetup(g_setup[i]);
       g_last_form[i] = 0;
      }
+   //--- trade book + live-cycle scratch + study state
+   ArrayResize(g_book.pid, 0);     ArrayResize(g_book.rw, 0);      ArrayResize(g_book.setuptf, 0);
+   ArrayResize(g_book.eventtf, 0); ArrayResize(g_book.cfidx, 0);   ArrayResize(g_book.seq, 0);
+   ArrayResize(g_book.dir, 0);
+   ArrayResize(g_live_tf, 0);      ArrayResize(g_live_seq, 0);
+   FobResetStudy(g_study);
 
    string ts = TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES);
    StringReplace(ts, ".", "");
@@ -93,30 +165,66 @@ int OnInit()
    g_vis.SyncChartTF();
    g_vis.ClearAll();
 
-   PrintFormat("[FOB] fob_baysix v%s init OK — %d TFs, swing_window=%d radius=%d runid=%s visualize=%s",
-               FOB_VERSION, FOB_N_TF, InpSwingWindow, g_radius, g_runid, (InpVisualize ? "ON" : "off"));
+   PrintFormat("[FOB %s] v%s | git %s%s | built %s",
+               FobModeName(InpMode), FOB_VERSION, FOB_GIT_SHA,
+               (FOB_GIT_DIRTY ? "-DIRTY(exploratory)" : ""), FOB_BUILD_TIME);
+   if(InpMode == FOB_EMIT)
+      PrintFormat("[FOB EMIT] v%s init OK — %d TFs, swing_window=%d radius=%d runid=%s visualize=%s",
+                  FOB_VERSION, FOB_N_TF, InpSwingWindow, g_radius, g_runid, (InpVisualize ? "ON" : "off"));
+   else
+      PrintFormat("[FOB %s] v%s init OK — setup_tf=%s -> CF on %s (ingest %s..%s, %d TF) | cf_filter=%d | SLbuf=%.2f TP=%.2fR | lot=%.2f magic=%I64u%s",
+                  FobModeName(InpMode), FOB_VERSION, FobTfName(g_setup_tf), FobTfName(g_setup_tf - 1),
+                  FobTfName(g_ingest[0]), FobTfName(g_ingest[ArraySize(g_ingest) - 1]), ArraySize(g_ingest),
+                  InpCfIdxFilter, InpSlBufferK, InpRMultTP, InpFixedLot, InpMagic,
+                  (InpMode == FOB_STUDY ? " | *** STUDY: NO ORDERS ***" : " | MULTI-POSITION"));
    return INIT_SUCCEEDED;
   }
 
 //+------------------------------------------------------------------+
-//| On each tick: ingest newly CLOSED bars for every TF, collect the  |
-//| new raw breaks, sort them globally, then classify in order.       |
-//| Ingest + sort are the SHARED engine (fob_engine.mqh).             |
+//| MULTI-POSITION (TRADE): act on EVERY unseen CF matching the       |
+//| setup-TF (+ cf_idx) filter. Each CF opens its own independent     |
+//| position (HEDGING). Higher-TF alignment is NOT a gate (rejected,  |
+//| result_id 18) — awareness lives on the emitter's htf_state.       |
+//+------------------------------------------------------------------+
+void ActOnNewEvents()
+  {
+   int n = ArraySize(g_events);
+   for(int k = g_seen; k < n; k++)
+     {
+      FobEvent e = g_events[k];
+      if(e.label != FOB_CF)              continue;
+      if(e.setup_tf != g_setup_tf)       continue;
+      if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
+
+      double rw = 0.0;
+      long pid = FobOpenMarket(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw);
+      if(pid > 0)
+         StashTrade(g_book, pid, rw, e);
+     }
+   g_seen = n;   // every event up to n has now been considered
+  }
+
+//+------------------------------------------------------------------+
+//| On each tick: ingest newly CLOSED bars for the mode's TF set,     |
+//| classify in chronological order, seed accumulators, advance the   |
+//| ONE lifecycle engine (close path + tick path), then dispatch the  |
+//| mode's job (emit=nothing/CSV-at-deinit, trade=orders, study).     |
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   //--- LIVE flag: the bar-resolution ladder backfill (task 217) + intrabar-dead
-   //--- dimming (task 216) are live-chart niceties only. The tester stays pure
-   //--- tick-causal (stamp_ladder=false) so OOS re-emit CSVs are byte-identical.
+   //--- LIVE flag: the bar-resolution ladder backfill (task 217) + intrabar-dead dimming
+   //--- (task 216) are live-chart niceties only. The tester stays pure tick-causal so OOS
+   //--- re-emit CSVs are byte-identical.
    bool live = !MQLInfoInteger(MQL_TESTER);
 
-   //--- (1) INGEST — gated per TF behind a REAL new bar (cheap iTime vs a CopyRates
-   //--- every tick). b0[t] snapshots each TF's pre-ingest buffer size so the close
-   //--- path (3) can sweep exactly the bars that closed this tick.
+   //--- (1) INGEST — over the mode's TF set, gated per TF behind a REAL new bar. b0[t]
+   //--- snapshots each TF's pre-ingest buffer size so the close path (3) sweeps exactly
+   //--- the bars that closed this tick.
    int b0[FOB_N_TF];
    FobPending pend[];
-   for(int t = 0; t < FOB_N_TF; t++)
+   for(int gi = 0; gi < ArraySize(g_ingest); gi++)
      {
+      int t = g_ingest[gi];
       b0[t] = ArraySize(g_tf[t].bt);
       datetime ft = iTime(_Symbol, FobPeriods[t], 0);
       if(ft == 0 || ft == g_last_form[t])
@@ -125,9 +233,9 @@ void OnTick()
       FobIngestTf(g_tf[t], _Symbol, FobPeriods[t], t, g_radius, InpMaxAge, pend);
      }
 
-   //--- (2) CLASSIFY new breaks in true chronological order (bar_time asc, ties higher-
-   //--- TF-first), stamp the causal htf_state snapshot, then SEED an accumulator per
-   //--- newly-emitted event and add the valid zones to the live watch list.
+   //--- (2) CLASSIFY new breaks in true chronological order (bar_time asc, ties higher-TF-
+   //--- first). EMIT stamps the causal htf_state awareness snapshot. Then SEED an accumulator
+   //--- per newly-emitted event, run cycle-end eviction, and add valid zones to the watch list.
    int np = ArraySize(pend);
    if(np > 0)
      {
@@ -138,7 +246,7 @@ void OnTick()
          FobClassifyBreak(g_setup, FOB_N_TF, pend[q].tf, pend[q].dir, pend[q].swt, pend[q].bt,
                           pend[q].level, pend[q].close, pend[q].zone, g_events, InpPboNewestOnly);
          int after = ArraySize(g_events);
-         if(after > before)
+         if(InpMode == FOB_EMIT && after > before)
            {
             string snap = FobBuildHtfState(g_setup);
             for(int z = before; z < after; z++)
@@ -156,10 +264,9 @@ void OnTick()
             FobAccInit(g_events[i].zone, g_acc[i], g_events[i].dir, g_events[i].level);
             //--- CYCLE-END EVICTION (event-driven, NEVER a bar cap — [[fob_event_driven_no_bar_caps]]):
             //--- a new PBO opens cycle S on setup_TF X, so the PRIOR cycle's VR/CF on X are
-            //--- storyline-dead -> drop them from g_watch (their rows stay in g_events, data
-            //--- intact). Bounds g_watch to the live cycle per TF -> linear runtime, and stops
-            //--- the zombie rt_count inflation. Runs BEFORE this PBO is added below, and it
-            //--- only evicts seq < S, so the new PBO (seq == S) is never self-evicted.
+            //--- storyline-dead -> drop them from g_watch (rows stay in g_events, data intact).
+            //--- Bounds g_watch to the live cycle per TF -> linear runtime, kills zombie rt_count.
+            //--- Runs BEFORE this PBO is added below; only evicts seq < S (never self-evicts).
             if(g_events[i].label == FOB_PBO)
               {
                int xtf = g_events[i].setup_tf;
@@ -185,11 +292,12 @@ void OnTick()
         }
      }
 
-   //--- (3) CLOSE PATH — for each bar that just closed (per TF, oldest->newest), advance
-   //--- invalidation / vr_fresh / bars_alive on every watched zone of that TF. A dead
-   //--- CF/PBO is swap-removed from the watch list; a dead VR stays to count RT on ticks.
-   for(int t = 0; t < FOB_N_TF; t++)
+   //--- (3) CLOSE PATH — for each bar that just closed (per ingested TF, oldest->newest),
+   //--- advance invalidation / vr_fresh / bars_alive on every watched zone of that TF. A dead
+   //--- CF/PBO is swap-removed; a dead VR stays to count RT on ticks.
+   for(int gi = 0; gi < ArraySize(g_ingest); gi++)
      {
+      int t  = g_ingest[gi];
       int hi = ArraySize(g_tf[t].bt);
       for(int i = b0[t]; i < hi; i++)
         {
@@ -206,17 +314,16 @@ void OnTick()
             if(drop)
               {
                int last = ArraySize(g_watch) - 1;
-               g_watch[w] = g_watch[last];          // safe: downward scan, swapped-in was already done
+               g_watch[w] = g_watch[last];          // safe: downward scan
                ArrayResize(g_watch, last);
               }
            }
         }
      }
 
-   //--- (4) TICK PATH — advance the touch ladder / counts / RT on every watched zone off
-   //--- the LIVE tick price, in true stream order (this is the intra-bar ORDER the old
-   //--- closed-bar replay could not resolve). Skipped when the price is unchanged
-   //--- (XAUUSD repeats ticks heavily) — the decimation that keeps a real-ticks run fast.
+   //--- (4) TICK PATH — advance the touch ladder / counts / RT on every watched zone off the
+   //--- LIVE tick price, in true stream order. Skipped when the price is unchanged (XAUUSD
+   //--- repeats ticks heavily) — the decimation that keeps a real-ticks run fast.
    MqlTick tk;
    if(SymbolInfoTick(_Symbol, tk) && tk.bid != g_last_px)
      {
@@ -231,24 +338,36 @@ void OnTick()
         }
      }
 
-   //--- (5) VISUAL (live only; OFF in the capture tester). Zones are already stamped by
-   //--- the accumulator across ALL TFs, so we just redraw on a state change — NO replay
-   //--- (UpdateZoneLifecycles/LiveTouchForming would RESET and clobber the accumulator).
+   //--- (DISPATCH) the mode's job. EMIT does nothing here (CSV written at OnDeinit).
+   if(InpMode == FOB_STUDY)
+     {
+      if(g_study.sw_open) UpdateStudyWindow(g_study, g_setup_tf, InpStudyCapBars);  // measure THIS tick first
+      StudyOnNewEvents(g_study, g_events, g_seen, g_setup_tf, InpCfIdxFilter, InpStudyCapBars);
+     }
+   else if(InpMode == FOB_TRADE)
+      ActOnNewEvents();
+
+   //--- (5) VISUAL (live only in practice; OFF in the capture tester). Zones are already
+   //--- stamped by the accumulator across all ingested TFs — just redraw on a state change,
+   //--- NO replay (UpdateZoneLifecycles/LiveTouchForming would RESET and clobber it).
    if(InpVisualize)
      {
-      //--- LIVE-only, chart-TF, fill-only touch-ladder backfill (task 217): the causal
-      //--- accumulator is blind to pre-attach history, so historical zones read [T0].
-      //--- This fills only still-empty t1/t2/t3 off the chart-TF bar wicks — never
-      //--- resets, never touches counts/rt/invalidation (tester CSV stays pristine).
+      if(InpMode == FOB_TRADE)
+         CollectLiveCycles(g_book, InpMagic, g_live_tf, g_live_seq);
       int ci = g_vis.ChartIdx();
+      //--- LIVE-only, chart-TF, fill-only touch-ladder backfill (task 217): the causal
+      //--- accumulator is blind to pre-attach history, so historical zones read [T0]. This
+      //--- fills only still-empty t1/t2/t3 off the chart-TF bar wicks — never resets counts/rt.
       if(live && ci >= 0)
          g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
                                    g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
 
-      ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events), g_last_px);
+      ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events), g_last_px)
+                  ^ ((ulong)ArraySize(g_live_tf) * 2654435761ULL);   // live-cycle open/close flips repaint (TRADE)
       if(np > 0 || sig != g_last_sig)
         {
-         g_vis.DrawZones(g_events, ArraySize(g_events), live, g_last_px);  // ClearAll + zone bands + edge labels
+         g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf),
+                         live, g_last_px);                        // ClearAll + zone bands + edge labels
          if(ci >= 0)
             g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks); // swings + raw breaks on top
          g_last_sig = sig;
@@ -264,40 +383,50 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    if(!InpVisualize || id != CHARTEVENT_CHART_CHANGE)
       return;
    g_vis.SyncChartTF();
-   //--- zones are kept current by the tick accumulator (all TFs) — just redraw for the
-   //--- new chart TF; NO replay (UpdateZoneLifecycles would reset the accumulated life).
-   //--- pass live + last price so a TF switch onto a higher TF dims intrabar-dead zones (task 216).
+   if(InpMode == FOB_TRADE)
+      CollectLiveCycles(g_book, InpMagic, g_live_tf, g_live_seq);
    bool live = !MQLInfoInteger(MQL_TESTER);
    int ci = g_vis.ChartIdx();
    //--- backfill the new chart TF's historical touch ladder before the redraw (task 217).
    if(live && ci >= 0)
       g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
                                 g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
-   g_vis.DrawZones(g_events, ArraySize(g_events), live, g_last_px);  // ClearAll + zone bands + edge labels
+   g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf),
+                   live, g_last_px);
    if(ci >= 0)
-      g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks on top
+      g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
   }
 
 //+------------------------------------------------------------------+
-//| Dump every classified event to the run CSV.                       |
+//| On detach/recompile: wipe chart objects, then write the mode's    |
+//| output — EMIT = event ledger CSV, STUDY = excursion ledger,       |
+//| TRADE = trade ledger.                                            |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   g_vis.ClearAll();   // wipe chart objects on detach/recompile (before the CSV early-return)
+   g_vis.ClearAll();   // wipe chart objects before any early-return
 
+   if(InpMode == FOB_STUDY)
+     {
+      WriteStudyLedger(g_study, g_setup_tf, InpCfIdxFilter);
+      return;
+     }
+   if(InpMode == FOB_TRADE)
+     {
+      WriteTradeLedger(g_book, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter);
+      return;
+     }
+
+   //--- EMIT: dump every classified event to the run CSV. Lifecycle was accumulated CAUSALLY
+   //--- tick-by-tick during the run (FobAcc*) — serialize AS-IS, no replay.
    int fh = FobCsvOpen(_Symbol, g_runid);
    if(fh == INVALID_HANDLE)
       return;
-
    int n = ArraySize(g_events);
    for(int e = 0; e < n; e++)
-      //--- zone lifecycle was accumulated CAUSALLY tick-by-tick during the run
-      //--- (FobAccInit/FobAccOnTick/FobAccOnClose) — serialize it AS-IS, no replay.
-      //--- mid/Tn/counts/rt/alive/invalidation/bars_alive/vr_fresh are already stamped.
       FobCsvWriteEvent(fh, e + 1, g_events[e]);
    FileClose(fh);
-
-   PrintFormat("[FOB] fob_baysix v%s done — %d events across %d TFs -> Common/Files/FOB/fob_capture_%s_%s.csv",
+   PrintFormat("[FOB EMIT] v%s done — %d events across %d TFs -> Common/Files/FOB/fob_capture_%s_%s.csv",
                FOB_VERSION, n, FOB_N_TF, _Symbol, g_runid);
   }
 //+------------------------------------------------------------------+
