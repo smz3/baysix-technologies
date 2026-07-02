@@ -195,6 +195,15 @@ public:
                                 const datetime &bt[], const double &bh[],
                                 const double &bl[], const int nb);
 
+   //--- LIVE-only, chart-TF, FILL-ONLY RT-ladder backfill (task 219). Sibling of
+   //--- BackfillChartLadder for the RETURN path: an invalidated VR whose RT (rt1/rt2/
+   //--- rt3) never formed live (invalidated pre-attach) gets its mirror ladder filled
+   //--- off the chart-TF closed-bar wicks AFTER invalidation_time. VR rows only; fills
+   //--- only still-empty rt times — never resets, never touches T/counts/invalidation.
+   void     BackfillChartRt(FobEvent &ev[], const int n,
+                            const datetime &bt[], const double &bh[],
+                            const double &bl[], const int nb);
+
    //--- cheap FNV-1a hash of the CURRENTLY-stamped chart-TF zone state (touch
    //--- ladder + alive/valid + count). The EA repaints ONLY when this changes —
    //--- a full ClearAll+redraw every tick is what makes the bands TWITCH. BRC
@@ -399,6 +408,25 @@ void CFobVisual::BackfillChartLadder(FobEvent &ev[], const int n,
    for(int i = 0; i < n; i++)
       if(ev[i].event_tf == E)
          FobBackfillLadderTimes(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, nb);
+  }
+
+//+------------------------------------------------------------------+
+//| RT-ladder backfill wrapper (task 219): fill the mirror RT ladder   |
+//| of every chart-TF, INVALIDATED VR off the chart-TF bars, so a       |
+//| VR that invalidated pre-attach shows its [RTn] + dots at bar        |
+//| resolution instead of a permanent [RT0]. VR rows only (RT is        |
+//| stamped only on the VR, mirror of the accumulator's track_rt).      |
+//+------------------------------------------------------------------+
+void CFobVisual::BackfillChartRt(FobEvent &ev[], const int n,
+                                 const datetime &bt[], const double &bh[],
+                                 const double &bl[], const int nb)
+  {
+   if(m_idx < 0)
+      return;
+   int E = m_idx;
+   for(int i = 0; i < n; i++)
+      if(ev[i].event_tf == E && ev[i].label == FOB_VR)
+         FobBackfillRtTimes(ev[i].zone, ev[i].dir, ev[i].level, ev[i].zone.invalidation_time, bt, bh, bl, nb);
   }
 
 //+------------------------------------------------------------------+

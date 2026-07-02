@@ -352,4 +352,45 @@ void FobBackfillLadderTimes(FobZone &z, const int dir, const double l1, const da
      }
   }
 
+//+------------------------------------------------------------------+
+//| DRAW-TIME RT-LADDER BACKFILL (v1.29.0, task 219) — LIVE chart only. |
+//| Sibling of FobBackfillLadderTimes for the RETURN path. A VR that    |
+//| invalidated BEFORE attach has its RT phase opened by the close-path  |
+//| replay (invalidation_time set), but the tick accumulator saw no      |
+//| pre-attach ticks, so the mirror ladder rt1/rt2/rt3 stays empty ->    |
+//| the zone reads [RT0] forever. This restores bar-resolution RT the    |
+//| same NON-DESTRUCTIVE way the T backfill does: fills only a still-     |
+//| empty rt1/rt2/rt3_time (never resets), touches NOTHING else.         |
+//|                                                                    |
+//| Mirror geometry: the VR broke THROUGH L2, so the return re-touches   |
+//| L2 -> mid -> L1 on the opposite side of the T-ladder — a bull VR     |
+//| broke DOWN so the return is a wick back UP (probe = high); bear      |
+//| mirrors (probe = low). Walks the chart-TF bar buffer STRICTLY AFTER  |
+//| invalidation_time (the RT phase start). No-op on a live/still-alive  |
+//| zone (inval == 0) or one already fully stamped. Safe every redraw.   |
+//+------------------------------------------------------------------+
+void FobBackfillRtTimes(FobZone &z, const int dir, const double l1, const datetime inval,
+                        const datetime &bt[], const double &bh[], const double &bl[], const int nb)
+  {
+   if(!z.valid || inval == 0)
+      return;                                       // no zone / not invalidated -> no RT phase
+   if(z.rt1_time != 0 && z.rt2_time != 0 && z.rt3_time != 0)
+      return;                                       // already fully stamped (live or prior backfill)
+
+   bool   bull = (dir == FOB_BULL);
+   double l2   = z.l2;
+   double mid  = z.mid;
+   for(int i = 0; i < nb; i++)
+     {
+      if(bt[i] <= inval)
+         continue;                                  // RT phase begins STRICTLY after invalidation
+      double probe = bull ? bh[i] : bl[i];          // return path: bull back UP (high), bear DOWN (low)
+      if(z.rt1_time == 0 && (bull ? (probe >= l2)  : (probe <= l2)))  z.rt1_time = bt[i];
+      if(z.rt2_time == 0 && (bull ? (probe >= mid) : (probe <= mid))) z.rt2_time = bt[i];
+      if(z.rt3_time == 0 && (bull ? (probe >= l1)  : (probe <= l1)))  z.rt3_time = bt[i];
+      if(z.rt1_time != 0 && z.rt2_time != 0 && z.rt3_time != 0)
+         return;                                    // full return reached -> done
+     }
+  }
+
 #endif // FOB_LIFECYCLE_MQH

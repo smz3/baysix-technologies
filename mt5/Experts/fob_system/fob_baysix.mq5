@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.29.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.29.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -359,8 +359,14 @@ void OnTick()
       //--- accumulator is blind to pre-attach history, so historical zones read [T0]. This
       //--- fills only still-empty t1/t2/t3 off the chart-TF bar wicks — never resets counts/rt.
       if(live && ci >= 0)
+        {
          g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
                                    g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
+         //--- RT mirror ladder for VRs that invalidated pre-attach (task 219) — same
+         //--- fill-only, bar-resolution, live-only contract as the T backfill above.
+         g_vis.BackfillChartRt(g_events, ArraySize(g_events),
+                               g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
+        }
 
       ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events), g_last_px)
                   ^ ((ulong)ArraySize(g_live_tf) * 2654435761ULL);   // live-cycle open/close flips repaint (TRADE)
@@ -389,8 +395,12 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    int ci = g_vis.ChartIdx();
    //--- backfill the new chart TF's historical touch ladder before the redraw (task 217).
    if(live && ci >= 0)
+     {
       g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
                                 g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
+      g_vis.BackfillChartRt(g_events, ArraySize(g_events),
+                            g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
+     }
    g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq, ArraySize(g_live_tf),
                    live, g_last_px);
    if(ci >= 0)
