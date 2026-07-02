@@ -233,11 +233,6 @@ public:
             h = (h ^ (ulong)ev[i].zone.rt2_time) * 1099511628211ULL;
             h = (h ^ (ulong)ev[i].zone.rt3_time) * 1099511628211ULL;
             h = (h ^ (ulong)((ev[i].zone.alive ? 1 : 2) + (ev[i].zone.valid ? 4 : 8))) * 1099511628211ULL;
-            //--- intrabar-dead flip must trigger a repaint too (else the dim only shows
-            //--- on the NEXT unrelated state change) — hash it against the live price.
-            bool vd = ev[i].zone.valid && ev[i].zone.alive
-                      && IntrabarDead(ev[i].dir, ev[i].zone.l2, curPx);
-            h = (h ^ (ulong)(vd ? 16 : 32)) * 1099511628211ULL;
            }
       return h;
      }
@@ -569,15 +564,13 @@ void CFobVisual::DrawZoneForBreak(const FobEvent &ev[], const int i, const int j
    //--- break-of-VR/CF (RT) strategy reads off. SCOPE = parent VR/CF only; a dead
    //--- PBO-only band still drops (a PBO's death begins a fresh cycle). Cleanup
    //--- is automatic: when the cycle supersedes, the gate above wipes the corpse.
-   //--- dim on FORMAL death (close beyond L2) OR, LIVE only, the instant price is
-   //--- intrabar beyond L2 (task 216 — a higher-TF zone shouldn't stay bright for
-   //--- days waiting for its bar to close). z.alive is untouched (CSV stays pure).
-   //--- The WIPE decision stays keyed on FORMAL death only: an intrabar cross is
-   //--- transient (price may return before close), so wiping a PBO-only band on it
-   //--- would flicker — dim it instead, and let the formal close drive the wipe.
+   //--- dim on FORMAL death only: a close beyond L2 invalidated the zone (z.alive
+   //--- false), and its cycle is still active. Task-216's intrabar price-vs-L2 dim
+   //--- was REVERTED (v1.30.1) — it re-checked price every tick, so a wick crossing
+   //--- L2 back and forth made the band twitch. Invalidation is a CLOSE event; the
+   //--- dim follows it. z.alive already carries close-based death (CSV stays pure).
    bool formalDead  = !ev[i].zone.alive;
-   bool dimmed      = formalDead
-                      || (live && IntrabarDead(ev[i].dir, ev[i].zone.l2, curPx));
+   bool dimmed      = formalDead;
    bool dimEligible = parentQual && (parLab == FOB_VR || parLab == FOB_CF);
    if(formalDead && !dimEligible)
       return;                                       // PBO-only / non-parent death -> wipe
