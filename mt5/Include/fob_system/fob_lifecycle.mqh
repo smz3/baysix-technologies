@@ -271,9 +271,8 @@ void FobAccOnTick(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
 //| the zone's own break bar (btime <= brk) — BRC parity.              |
 //+------------------------------------------------------------------+
 bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
-                   const datetime brk, const double bhigh, const double blow,
-                   const double bclose, const datetime btime,
-                   const bool track_rt, const bool stamp_ladder = false)
+                   const datetime brk, const double bclose, const datetime btime,
+                   const bool track_rt)
   {
    if(!z.valid)
       return true;                                 // terminal — should never be watched
@@ -286,30 +285,6 @@ bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
    double l2     = z.l2;
    double bandLo = MathMin(l1, l2);
    double bandHi = MathMax(l1, l2);
-
-   //--- BAR-RESOLUTION LADDER BACKFILL (v1.27.0, task 217) — LIVE-only. On a live-
-   //--- chart ATTACH the tick history is gone, so FobAccOnTick never ran for pre-
-   //--- attach zones -> [T0]/count 0 (loses the touch context, esp. on higher TFs
-   //--- where most of the visible chart is pre-attach). Stamp the ladder off this
-   //--- CLOSED bar's WICK, sharing the SAME first-fill (Tn==0) + hysteresis
-   //--- (a.in1/2/3) as the tick path — so a later live tick can't double-count and
-   //--- the death bar's wick can still set T3 (BRC parity, mirrors FobReplayZoneLife).
-   //--- Runs FIRST, before invalidation kills the zone. The tester passes
-   //--- stamp_ladder=false -> pure tick causality preserved -> OOS re-emit byte-identical.
-   if(stamp_ladder)
-     {
-      double mid   = z.mid;
-      double probe = bull ? blow : bhigh;
-      bool   h1 = bull ? (probe <= l1)  : (probe >= l1);
-      bool   h2 = bull ? (probe <= mid) : (probe >= mid);
-      bool   h3 = bull ? (probe <= l2)  : (probe >= l2);
-      if(z.t1_time == 0 && h1) z.t1_time = btime;
-      if(z.t2_time == 0 && h2) z.t2_time = btime;
-      if(z.t3_time == 0 && h3) z.t3_time = btime;
-      if(h1 && !a.in1) z.n_l1_touches++;   a.in1 = h1;
-      if(h2 && !a.in2) z.n_mid_touches++;  a.in2 = h2;
-      if(h3 && !a.in3) z.n_l2_touches++;   a.in3 = h3;
-     }
 
    z.bars_alive++;
    if(z.vr_fresh && bclose >= bandLo && bclose <= bandHi)
@@ -324,6 +299,49 @@ bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
       a.invalidated = true; a.armed = true;        // VR: open the RT phase from next tick
      }
    return false;
+  }
+
+//+------------------------------------------------------------------+
+//| DRAW-TIME LADDER BACKFILL (v1.27.1, task 217) — LIVE chart only.   |
+//| The causal tick accumulator (FobAcc*) is blind to pre-attach       |
+//| history: on a fresh attach it never saw the ticks that touched a    |
+//| historical zone, so [Tn] reads T0 even where price clearly swept    |
+//| the band. This restores the pre-v1.24.0 behaviour (a bar-wick       |
+//| replay backfilled the ladder) but NON-DESTRUCTIVELY: it only FILLS  |
+//| a still-empty t1/t2/t3_time (never resets), and touches NOTHING     |
+//| else — invalidation / rt_count / vr_fresh / the distinct-touch      |
+//| COUNTS all stay owned by the causal accumulator. So a zone that     |
+//| formed live keeps its tick-accurate ladder; only genuinely-empty    |
+//| (pre-attach) zones get bar-resolution first-touch times.            |
+//|                                                                    |
+//| Safe to run every redraw: returns instantly once all three are      |
+//| stamped. Walks the CHART-TF bar buffer (bt/bh/bl, index 0 oldest,   |
+//| length nb) STRICTLY AFTER the break. Because a close beyond L2 (the |
+//| death) puts the whole bar past L1/mid/L2, the death bar's own wick  |
+//| fills every remaining Tn — so no post-invalidation touch leaks in.  |
+//+------------------------------------------------------------------+
+void FobBackfillLadderTimes(FobZone &z, const int dir, const double l1, const datetime brk,
+                            const datetime &bt[], const double &bh[], const double &bl[], const int nb)
+  {
+   if(!z.valid)
+      return;
+   if(z.t1_time != 0 && z.t2_time != 0 && z.t3_time != 0)
+      return;                                       // already fully stamped (live or prior backfill)
+
+   bool   bull = (dir == FOB_BULL);
+   double l2   = z.l2;
+   double mid  = z.mid;
+   for(int i = 0; i < nb; i++)
+     {
+      if(bt[i] <= brk)
+         continue;                                  // only bars strictly after the break
+      double probe = bull ? bl[i] : bh[i];          // bull retests DOWN (low), bear UP (high)
+      if(z.t1_time == 0 && (bull ? (probe <= l1)  : (probe >= l1)))  z.t1_time = bt[i];
+      if(z.t2_time == 0 && (bull ? (probe <= mid) : (probe >= mid))) z.t2_time = bt[i];
+      if(z.t3_time == 0 && (bull ? (probe <= l2)  : (probe >= l2)))  z.t3_time = bt[i];
+      if(z.t1_time != 0 && z.t2_time != 0 && z.t3_time != 0)
+         return;                                    // deepest touch reached -> done
+     }
   }
 
 #endif // FOB_LIFECYCLE_MQH

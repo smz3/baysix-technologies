@@ -183,6 +183,15 @@ public:
    void     LiveTouchForming(FobEvent &ev[], const int n,
                              const datetime fbt, const double fbh, const double fbl);
 
+   //--- LIVE-only, chart-TF, FILL-ONLY touch-ladder backfill (task 217). The causal
+   //--- accumulator never saw pre-attach ticks, so historical zones read [T0]. This
+   //--- fills only still-empty t1/t2/t3 off the chart-TF closed-bar wicks — never
+   //--- resets, never touches counts/rt/invalidation, so it can't clobber the causal
+   //--- lifecycle (unlike UpdateZoneLifecycles, which recomputes from scratch).
+   void     BackfillChartLadder(FobEvent &ev[], const int n,
+                                const datetime &bt[], const double &bh[],
+                                const double &bl[], const int nb);
+
    //--- cheap FNV-1a hash of the CURRENTLY-stamped chart-TF zone state (touch
    //--- ladder + alive/valid + count). The EA repaints ONLY when this changes —
    //--- a full ClearAll+redraw every tick is what makes the bands TWITCH. BRC
@@ -367,6 +376,24 @@ void CFobVisual::UpdateZoneLifecycles(FobEvent &ev[], const int n,
       if(ev[i].event_tf == E)
          FobReplayZoneLife(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, bc, nb,
                            ev[i].label == FOB_VR);   // track RT (broken-L2 retouch) on VRs only
+  }
+
+//+------------------------------------------------------------------+
+//| Fill-only touch-ladder backfill for the chart TF's zones (task     |
+//| 217). Delegates to FobBackfillLadderTimes, which only fills empty  |
+//| Tn — safe to call every redraw, safe alongside the live tick        |
+//| accumulator (never resets, never touches counts/invalidation).     |
+//+------------------------------------------------------------------+
+void CFobVisual::BackfillChartLadder(FobEvent &ev[], const int n,
+                                     const datetime &bt[], const double &bh[],
+                                     const double &bl[], const int nb)
+  {
+   if(m_idx < 0)
+      return;
+   int E = m_idx;
+   for(int i = 0; i < n; i++)
+      if(ev[i].event_tf == E)
+         FobBackfillLadderTimes(ev[i].zone, ev[i].dir, ev[i].level, ev[i].bar_time, bt, bh, bl, nb);
   }
 
 //+------------------------------------------------------------------+

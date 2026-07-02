@@ -24,7 +24,7 @@
 //|    outs · fob_sequence · fob_csv · fob_visual                      |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.27.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.27.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -194,8 +194,6 @@ void OnTick()
       for(int i = b0[t]; i < hi; i++)
         {
          datetime cbt = g_tf[t].bt[i];
-         double   cbh = g_tf[t].bh[i];
-         double   cbl = g_tf[t].bl[i];
          double   cbc = g_tf[t].bc[i];
          for(int w = ArraySize(g_watch) - 1; w >= 0; w--)
            {
@@ -204,8 +202,7 @@ void OnTick()
                continue;
             bool trackRt = (g_events[idx].label == FOB_VR);
             bool drop = FobAccOnClose(g_events[idx].zone, g_acc[idx], g_events[idx].dir,
-                                      g_events[idx].level, g_events[idx].bar_time,
-                                      cbh, cbl, cbc, cbt, trackRt, live);
+                                      g_events[idx].level, g_events[idx].bar_time, cbc, cbt, trackRt);
             if(drop)
               {
                int last = ArraySize(g_watch) - 1;
@@ -239,11 +236,19 @@ void OnTick()
    //--- (UpdateZoneLifecycles/LiveTouchForming would RESET and clobber the accumulator).
    if(InpVisualize)
      {
+      //--- LIVE-only, chart-TF, fill-only touch-ladder backfill (task 217): the causal
+      //--- accumulator is blind to pre-attach history, so historical zones read [T0].
+      //--- This fills only still-empty t1/t2/t3 off the chart-TF bar wicks — never
+      //--- resets, never touches counts/rt/invalidation (tester CSV stays pristine).
+      int ci = g_vis.ChartIdx();
+      if(live && ci >= 0)
+         g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
+                                   g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
+
       ulong sig = g_vis.StateSignature(g_events, ArraySize(g_events), g_last_px);
       if(np > 0 || sig != g_last_sig)
         {
          g_vis.DrawZones(g_events, ArraySize(g_events), live, g_last_px);  // ClearAll + zone bands + edge labels
-         int ci = g_vis.ChartIdx();
          if(ci >= 0)
             g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks); // swings + raw breaks on top
          g_last_sig = sig;
@@ -263,8 +268,12 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    //--- new chart TF; NO replay (UpdateZoneLifecycles would reset the accumulated life).
    //--- pass live + last price so a TF switch onto a higher TF dims intrabar-dead zones (task 216).
    bool live = !MQLInfoInteger(MQL_TESTER);
-   g_vis.DrawZones(g_events, ArraySize(g_events), live, g_last_px);  // ClearAll + zone bands + edge labels
    int ci = g_vis.ChartIdx();
+   //--- backfill the new chart TF's historical touch ladder before the redraw (task 217).
+   if(live && ci >= 0)
+      g_vis.BackfillChartLadder(g_events, ArraySize(g_events),
+                                g_tf[ci].bt, g_tf[ci].bh, g_tf[ci].bl, ArraySize(g_tf[ci].bt));
+   g_vis.DrawZones(g_events, ArraySize(g_events), live, g_last_px);  // ClearAll + zone bands + edge labels
    if(ci >= 0)
       g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);   // swings + raw breaks on top
   }
