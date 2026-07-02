@@ -63,7 +63,7 @@ Starting from the horizon's top TF, walk **down** the control chain reading phas
 
 ## 4. Where the numbers live (only two knobs, both trader-layer)
 
-- **Breakaway threshold** — 20 pips / 200 points (chase vs limit-on-pullback). **Open: fixed vs TF-scaled — see §6.**
+- **Breakaway threshold** — **`InpBreakawayPts`, an INPUT (never hardcoded)**, default **200 points / 20 pips** (chase vs limit-on-pullback). Must be an input because the count differs per instrument (XAUUSD vs FX vs BTC). Start fixed at 200; TF-scaling deferred (revisit only if a scalp on a higher exec TF mis-fires).
 - **Leaf depth** — how deep the chain walk is allowed to go (risk tier).
 
 Everything else (bias, location, horizon, phase, direction, fresh-CF) is **read from state**, not parameterised.
@@ -84,8 +84,7 @@ Everything else (bias, location, horizon, phase, direction, fresh-CF) is **read 
 
 ## 6. Genuinely open (before build)
 
-- **Breakaway threshold scaling.** Is 20 pips / 200 pts a **fixed constant**, or **"small relative to *this* execution TF"**? Fixed 20 is right for M5 but tiny for H1 — matters if scalp TF varies. **Awaiting Syafiq.**
-- **LOCATION detector (Layer 1).** "At a major HTF wall" has no detector today (old Q12). Needs a barrier/zone-proximity read off HTF structure. Architectural.
+- **LOCATION detector (Layer 1).** "At a major HTF wall" — **do NOT scan back N bars** (that's the complexity trap). The emitter already holds every TF's active zones in live state; **"at a wall" = CMP within `InpWallProxPts` of an active higher-TF (W1/D1/H4) zone edge already in state.** CMP-centric, no lookback, reuses existing zones. Proposed — needs Syafiq sign-off.
 - **Trader ingest window.** Full walk needs the trader to ingest the whole band below the setup TF (setup↓M5); today it ingests only `{setup_tf−1, setup_tf}` ([fob_trader.mq5:107-109](../../mt5/Experts/fob_system/fob_trader.mq5#L107-L109)). Emitter already classifies all 9 TFs, so data exists — only the trader ingest is the gap.
 
 ---
