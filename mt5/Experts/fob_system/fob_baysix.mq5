@@ -57,10 +57,10 @@ enum FOB_MODE
 input group          "══════  MODE — pick the job  ══════"
 input FOB_MODE InpMode = FOB_EMIT;      // MODE: EMIT=oracle CSV (no orders) · TRADE=orders · STUDY=excursion
 
-input group          "══════  DETECTION — all modes  ══════"
-input int    InpSwingWindow   = 3;      // DETECT: close-based pivot window (odd, >=3)
-input int    InpMaxAge        = 0;      // DETECT: break age filter in bars (<=0 disables)
-input bool   InpPboNewestOnly = true;   // DETECT: PBO = freshest source near CMP (reject same-dir reach-backs)
+//--- DETECTION — FROZEN, hidden from the Inputs tab (re-add `input` to sweep). Live-frozen values.
+const int    InpSwingWindow   = 3;      // close-based pivot window (odd, >=3)
+const int    InpMaxAge        = 0;      // break age filter in bars (<=0 disables)
+const bool   InpPboNewestOnly = true;   // PBO = freshest source near CMP (reject same-dir reach-backs)
 
 //--- setup/CF timeframe pair (TRADE + STUDY only). A PBO on the setup TF is confirmed by a
 //--- CF on the TF one below it; the CF TF is always (setup TF - 1). EMIT ignores this (all 9 TFs).
