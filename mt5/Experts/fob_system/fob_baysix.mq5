@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.31.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.31.2"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -260,11 +260,17 @@ bool FobWarmupReplay(const datetime warm_start)
             continue;
          //--- RT opens only after the invalidating bar CLOSES (bar-open + its TF seconds) — the
          //--- tester boundary. 0 (still alive) -> every tick stays on the T-ladder.
+         int tf_sec = PeriodSeconds(FobPeriods[g_events[i].event_tf]);
          datetime inval_close = 0;
          if(g_events[i].zone.invalidation_time > 0)
-            inval_close = g_events[i].zone.invalidation_time + PeriodSeconds(FobPeriods[g_events[i].event_tf]);
+            inval_close = g_events[i].zone.invalidation_time + tf_sec;
+         //--- (task 225b) T-phase starts at the break bar's CLOSE, not its OPEN: the tester seeds
+         //--- the accumulator when the break bar CLOSES, so it never counts that bar's own impulse
+         //--- plunge through L1/mid/L2 as touches. Starting at bar_time (open) collapsed t1/t2/t3
+         //--- onto the break bar -> messed-up historical T-dots. Match the tester boundary.
+         datetime brk_close = g_events[i].bar_time + tf_sec;
          FobWarmFillTick(g_events[i].zone, g_events[i].dir, g_events[i].level,
-                         g_events[i].bar_time, inval_close, track_rt, px, tt);
+                         brk_close, inval_close, track_rt, px, tt);
         }
      }
    return true;

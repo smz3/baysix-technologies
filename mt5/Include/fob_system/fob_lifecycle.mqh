@@ -331,14 +331,17 @@ bool FobAccOnClose(FobZone &z, FobZoneAcc &a, const int dir, const double l1,
 //| RT phase opens only once the invalidating bar has CLOSED, so every |
 //| tick within the invalidating bar still counts on the T-ladder.     |
 //+------------------------------------------------------------------+
-void FobWarmFillTick(FobZone &z, const int dir, const double l1, const datetime brk,
+void FobWarmFillTick(FobZone &z, const int dir, const double l1, const datetime brk_close,
                      const datetime inval_close, const bool track_rt,
                      const double px, const datetime tt)
   {
    if(!z.valid)
       return;
-   if(tt <= brk)
-      return;                                       // only ticks strictly after the break
+   if(tt < brk_close)
+      return;                                       // only ticks from the break bar's CLOSE onward
+                                                     // (task 225b: matches the tester's accumulator,
+                                                     // seeded at bar close — excludes the break bar's
+                                                     // own impulse plunge through the levels)
    bool   bull = (dir == FOB_BULL);
    double l2   = z.l2;
    double mid  = z.mid;
