@@ -84,4 +84,65 @@ long FobOpenMarket(const FobEvent &e, const double lot, const double slBufferK,
    return (long)res.order;
   }
 
+//+------------------------------------------------------------------+
+//| CF_L1_LIMIT entry: a pending LIMIT at the CF zone's L1 (near edge  |
+//| / T1) instead of market-on-confirm. Fills ONLY on a pullback to L1 |
+//| -> premium price, tighter R. SL is IDENTICAL to the market path    |
+//| (beyond L2 by slBufferK*band); TP = entry +/- risk*rMultTP with    |
+//| entry = L1, so risk = |L1-SL| = band*(1+slBufferK). Returns the    |
+//| PENDING ORDER ticket (0 on failure); out_rw = risk. Cancellation   |
+//| of a runaway winner (never pulled back) is the caller's job on a    |
+//| new setup-TF PBO. GTC -> no time expiry.                           |
+//+------------------------------------------------------------------+
+long FobPlaceLimit(const FobEvent &e, const double lot, const double slBufferK,
+                   const double rMultTP, const ulong magic, double &out_rw)
+  {
+   out_rw = 0.0;
+   if(!e.zone.valid) return 0;                            // no measurable band -> no trade
+   bool   is_long = (e.dir == FOB_BULL);
+   double l1     = e.level;                               // near edge = the limit price (T1)
+   double l2     = e.zone.l2;                             // far/invalidation edge
+   double band   = MathAbs(l1 - l2);                      // zone height (scale-free)
+   double buffer = slBufferK * band;
+   double entry  = l1;
+   double sl     = is_long ? l2 - buffer : l2 + buffer;
+   double risk   = MathAbs(entry - sl);
+   if(risk <= 0.0)
+      return 0;
+
+   //--- LIMIT-side validity: a BUY LIMIT must sit BELOW the Ask, a SELL LIMIT
+   //--- ABOVE the Bid, and both at least STOPS_LEVEL away. A CF is a continuation
+   //--- break so price sits BEYOND L1 already; skip the rare too-close case.
+   double ask     = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid     = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
+                    * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   if(is_long)  { if(entry >= ask - minstop) return 0; }
+   else         { if(entry <= bid + minstop) return 0; }
+   if(risk < minstop || risk * rMultTP < minstop)
+      return 0;                                          // bracket too tight for the broker
+
+   double tp = is_long ? entry + risk * rMultTP : entry - risk * rMultTP;
+
+   MqlTradeRequest req;  MqlTradeResult res;
+   ZeroMemory(req);  ZeroMemory(res);
+   req.action       = TRADE_ACTION_PENDING;
+   req.symbol       = _Symbol;
+   req.magic        = magic;
+   req.type         = is_long ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+   req.volume       = lot;
+   req.price        = NormalizeDouble(entry, _Digits);
+   req.sl           = NormalizeDouble(sl, _Digits);
+   req.tp           = NormalizeDouble(tp, _Digits);
+   req.type_time    = ORDER_TIME_GTC;                     // cancelled by a new setup-TF PBO, not time
+   req.type_filling = FobFilling();
+   if(!OrderSend(req, res))
+      return 0;
+   if(res.retcode != TRADE_RETCODE_DONE && res.retcode != TRADE_RETCODE_PLACED)
+      return 0;
+
+   out_rw = risk;
+   return (long)res.order;                                // the pending order ticket
+  }
+
 #endif // FOB_ENTRY_MQH

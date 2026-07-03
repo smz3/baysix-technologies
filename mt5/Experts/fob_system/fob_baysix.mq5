@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.32.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.33.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -83,6 +83,17 @@ input double   InpRMultTP       = 1.0;          // TRADE: TP = RR * risk (1.0 = 
 input double   InpFixedLot       = 0.01;        // TRADE: fixed lot (min lot at $50)
 input ulong    InpMagic          = 3001;        // TRADE: FOB magic number
 
+//--- ENTRY MECHANIC (TRADE only). CF_MARKET = market at CF confirmation (baseline).
+//--- CF_L1_LIMIT = pending LIMIT at the CF zone L1 (T1): fills only on a pullback to
+//--- L1 (premium price, tighter R), SL unchanged (l2±k*band); a runaway winner that
+//--- never pulls back is cancelled when the SETUP TF makes a new PBO (parent cycle end).
+enum FOB_ENTRY_MODE
+  {
+   CF_MARKET   = 0,   // market on CF confirmation (Ask/Bid) — the A/B baseline
+   CF_L1_LIMIT = 1    // pending limit at CF zone L1 (pullback entry), cancel at parent PBO
+  };
+input FOB_ENTRY_MODE InpEntryMode = CF_MARKET;  // TRADE: CF entry mechanic (market vs L1 pullback limit)
+
 input group          "══════  STUDY — excursion only  ══════"
 input int      InpStudyCapBars  = 48;           // STUDY: force-close window after this many setup-TF bars
 
@@ -131,6 +142,7 @@ int           g_setup_tf = 4;       // setup TF index, derived from InpTfPair (T
 
 //--- trade + study bookkeeping (only active in the matching mode)
 FobTradeBook  g_book;
+FobPendingBook g_pend;              // (CF_L1_LIMIT) pending L1 limits keyed by order ticket
 FobStudyState g_study;
 int           g_seen = 0;           // # events already acted on (watermark into g_events)
 int           g_live_tf[];  int g_live_seq[];   // (setup_tf, seq) cycles with an OPEN position
@@ -211,6 +223,9 @@ int OnInit()
    ArrayResize(g_book.pid, 0);     ArrayResize(g_book.rw, 0);      ArrayResize(g_book.setuptf, 0);
    ArrayResize(g_book.eventtf, 0); ArrayResize(g_book.cfidx, 0);   ArrayResize(g_book.seq, 0);
    ArrayResize(g_book.dir, 0);
+   ArrayResize(g_pend.ticket, 0);  ArrayResize(g_pend.rw, 0);      ArrayResize(g_pend.setuptf, 0);
+   ArrayResize(g_pend.eventtf, 0); ArrayResize(g_pend.cfidx, 0);   ArrayResize(g_pend.seq, 0);
+   ArrayResize(g_pend.dir, 0);
    ArrayResize(g_live_tf, 0);      ArrayResize(g_live_seq, 0);
    FobResetStudy(g_study);
 
@@ -250,14 +265,33 @@ void ActOnNewEvents()
    for(int k = g_seen; k < n; k++)
      {
       FobEvent e = g_events[k];
+
+      //--- (CF_L1_LIMIT) a NEW PBO on the setup TF ends the PARENT cycle -> cancel any
+      //--- still-pending L1 limits from prior cycles (seq < this PBO's) — runaway winners
+      //--- that never pulled back to L1. Filled limits already left the pool (SL/TP own them).
+      if(InpEntryMode == CF_L1_LIMIT && e.label == FOB_PBO && e.setup_tf == g_setup_tf)
+        {
+         CancelPendingsForNewPbo(g_pend, InpMagic, g_setup_tf, e.seq);
+         continue;
+        }
+
       if(e.label != FOB_CF)              continue;
       if(e.setup_tf != g_setup_tf)       continue;
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
 
       double rw = 0.0;
-      long pid = FobOpenMarket(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw);
-      if(pid > 0)
-         StashTrade(g_book, pid, rw, e);
+      if(InpEntryMode == CF_L1_LIMIT)
+        {
+         long tk = FobPlaceLimit(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw);
+         if(tk > 0)
+            StashPending(g_pend, tk, rw, e);
+        }
+      else
+        {
+         long pid = FobOpenMarket(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw);
+         if(pid > 0)
+            StashTrade(g_book, pid, rw, e);
+        }
      }
    g_seen = n;   // every event up to n has now been considered
   }
@@ -581,7 +615,7 @@ void OnDeinit(const int reason)
      }
    if(InpMode == FOB_TRADE)
      {
-      WriteTradeLedger(g_book, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter);
+      WriteTradeLedger(g_book, g_pend, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter);
       return;
      }
 

@@ -52,6 +52,72 @@ double CtxForPos(const FobTradeBook &book, const long pid,
   }
 
 //+------------------------------------------------------------------+
+//| (CF_L1_LIMIT) per-PENDING-ORDER stash, keyed by the order ticket. |
+//| A pending limit carries its cycle context BEFORE it fills; on a   |
+//| fill the ledger recovers it via the IN-deal's DEAL_ORDER. Parallel|
+//| to FobTradeBook (which is keyed by position id, for market fills).|
+//+------------------------------------------------------------------+
+struct FobPendingBook
+  {
+   long   ticket[];   double rw[];
+   int    setuptf[];  int eventtf[];  int cfidx[];  int seq[];  int dir[];
+  };
+
+//--- stash a placed pending limit's context, keyed on its order ticket.
+void StashPending(FobPendingBook &pb, const long ticket, const double rw, const FobEvent &e)
+  {
+   int m = ArraySize(pb.ticket);
+   ArrayResize(pb.ticket, m + 1);   ArrayResize(pb.rw, m + 1);
+   ArrayResize(pb.setuptf, m + 1);  ArrayResize(pb.eventtf, m + 1);
+   ArrayResize(pb.cfidx, m + 1);    ArrayResize(pb.seq, m + 1);  ArrayResize(pb.dir, m + 1);
+   pb.ticket[m] = ticket;      pb.rw[m] = rw;
+   pb.setuptf[m] = e.setup_tf; pb.eventtf[m] = e.event_tf;
+   pb.cfidx[m] = e.cf_idx;     pb.seq[m] = e.seq;   pb.dir[m] = e.dir;
+  }
+
+//--- map a filled pending's originating ORDER ticket -> its stashed context.
+double CtxForPending(const FobPendingBook &pb, const long ticket,
+                     int &setup_tf, int &event_tf, int &cf_idx, int &seq, int &dir)
+  {
+   for(int i = ArraySize(pb.ticket) - 1; i >= 0; i--)
+      if(pb.ticket[i] == ticket)
+        {
+         setup_tf = pb.setuptf[i]; event_tf = pb.eventtf[i]; cf_idx = pb.cfidx[i];
+         seq = pb.seq[i]; dir = pb.dir[i];
+         return pb.rw[i];
+        }
+   setup_tf = -1; event_tf = -1; cf_idx = 0; seq = 0; dir = 0;
+   return 0.0;
+  }
+
+//+------------------------------------------------------------------+
+//| Cancel-on-parent-PBO: a NEW PBO on the setup TF (seq = new_seq)   |
+//| ends the current cycle, so any STILL-PENDING L1 limit from a PRIOR|
+//| cycle (seq < new_seq) is a runaway winner that never pulled back  |
+//| -> delete it. A FILLED limit has left the orders pool (OrderSelect|
+//| fails) -> untouched: its SL/TP own it and its context stays booked|
+//| for the ledger. Only touches this setup TF's pendings.            |
+//+------------------------------------------------------------------+
+void CancelPendingsForNewPbo(const FobPendingBook &pb, const ulong magic,
+                             const int setup_tf, const int new_seq)
+  {
+   for(int i = ArraySize(pb.ticket) - 1; i >= 0; i--)
+     {
+      if(pb.setuptf[i] != setup_tf) continue;
+      if(pb.seq[i] >= new_seq)      continue;
+      long tk = pb.ticket[i];
+      if(!OrderSelect(tk))                                  continue;  // filled/gone -> leave booked
+      if((ulong)OrderGetInteger(ORDER_MAGIC) != magic)      continue;
+      MqlTradeRequest req;  MqlTradeResult res;
+      ZeroMemory(req);  ZeroMemory(res);
+      req.action = TRADE_ACTION_REMOVE;
+      req.order  = (ulong)tk;
+      if(!OrderSend(req, res))
+         continue;                                          // delete failed (already filled/gone) — leave booked
+     }
+  }
+
+//+------------------------------------------------------------------+
 //| Rebuild live_tf/live_seq = the (setup_tf, seq) cycles that still  |
 //| have an OPEN position, so a live cycle's sequence dots survive    |
 //| even after a newer cycle supersedes it.                          |
@@ -100,15 +166,16 @@ string ExitReasonName(const long reason)
 //| outcome — the input for T2 (cf_idx conditioning). Auto-written   |
 //| on deinit. Lands in Common\Files\FOB.                            |
 //+------------------------------------------------------------------+
-void WriteTradeLedger(const FobTradeBook &book, const ulong magic, const int setup_tf,
-                      const double slBufferK, const double rMultTP, const int cfIdxFilter)
+void WriteTradeLedger(const FobTradeBook &book, const FobPendingBook &pbook, const ulong magic,
+                      const int setup_tf, const double slBufferK, const double rMultTP,
+                      const int cfIdxFilter)
   {
    if(!HistorySelect(0, TimeCurrent())) return;
    int total = HistoryDealsTotal();
    if(total <= 0) return;
 
    //--- pass 1: index IN deals by position id
-   long in_pid[];  datetime in_time[];  double in_px[];  double in_lot[];  int in_dir[];
+   long in_pid[];  datetime in_time[];  double in_px[];  double in_lot[];  int in_dir[];  long in_order[];
    for(int i = 0; i < total; i++)
      {
       ulong tk = HistoryDealGetTicket(i);
@@ -116,12 +183,13 @@ void WriteTradeLedger(const FobTradeBook &book, const ulong magic, const int set
       if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(tk, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;
       int n = ArraySize(in_pid);
       ArrayResize(in_pid, n+1); ArrayResize(in_time, n+1); ArrayResize(in_px, n+1);
-      ArrayResize(in_lot, n+1); ArrayResize(in_dir, n+1);
-      in_pid[n]  = (long)HistoryDealGetInteger(tk, DEAL_POSITION_ID);
-      in_time[n] = (datetime)HistoryDealGetInteger(tk, DEAL_TIME);
-      in_px[n]   = HistoryDealGetDouble(tk, DEAL_PRICE);
-      in_lot[n]  = HistoryDealGetDouble(tk, DEAL_VOLUME);
-      in_dir[n]  = (HistoryDealGetInteger(tk, DEAL_TYPE) == DEAL_TYPE_BUY) ? 1 : -1;
+      ArrayResize(in_lot, n+1); ArrayResize(in_dir, n+1); ArrayResize(in_order, n+1);
+      in_pid[n]   = (long)HistoryDealGetInteger(tk, DEAL_POSITION_ID);
+      in_time[n]  = (datetime)HistoryDealGetInteger(tk, DEAL_TIME);
+      in_px[n]    = HistoryDealGetDouble(tk, DEAL_PRICE);
+      in_lot[n]   = HistoryDealGetDouble(tk, DEAL_VOLUME);
+      in_dir[n]   = (HistoryDealGetInteger(tk, DEAL_TYPE) == DEAL_TYPE_BUY) ? 1 : -1;
+      in_order[n] = (long)HistoryDealGetInteger(tk, DEAL_ORDER);   // originating order (pending ticket for a limit fill)
      }
 
    string stamp = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES);
@@ -158,13 +226,18 @@ void WriteTradeLedger(const FobTradeBook &book, const ulong magic, const int set
                          + HistoryDealGetDouble(tk, DEAL_COMMISSION);
       string   reason  = ExitReasonName(HistoryDealGetInteger(tk, DEAL_REASON));
 
-      datetime entry_ts = 0; double entry_px = 0, lots = 0; int dir = 0;
+      datetime entry_ts = 0; double entry_px = 0, lots = 0; int dir = 0; long entry_ord = 0;
       for(int j = ArraySize(in_pid) - 1; j >= 0; j--)
          if(in_pid[j] == pid)
-           { entry_ts = in_time[j]; entry_px = in_px[j]; lots = in_lot[j]; dir = in_dir[j]; break; }
+           { entry_ts = in_time[j]; entry_px = in_px[j]; lots = in_lot[j]; dir = in_dir[j];
+             entry_ord = in_order[j]; break; }
 
       int s_tf, e_tf, cfx, sq, edir;
-      double rw = CtxForPos(book, pid, s_tf, e_tf, cfx, sq, edir);
+      //--- limit fills carry cycle context by their originating ORDER (pending-book);
+      //--- market fills carry it by POSITION_ID (trade-book). Try pending first.
+      double rw = CtxForPending(pbook, entry_ord, s_tf, e_tf, cfx, sq, edir);
+      if(s_tf < 0)
+         rw = CtxForPos(book, pid, s_tf, e_tf, cfx, sq, edir);
       double rR = (rw > 0.0) ? (dir * (exit_px - entry_px) / rw) : 0.0;
       int    win = (rR > 0.0) ? 1 : 0;
       wins += win;
