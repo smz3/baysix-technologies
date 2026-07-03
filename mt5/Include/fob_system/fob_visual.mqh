@@ -49,15 +49,14 @@
 #include "fob_types.mqh"
 #include "fob_lifecycle.mqh"   // FobReplayZoneLife — BRC-parity T-touch + invalidation
 
-//--- master toggle (ACTIVE cycle only — no prior-cycle retention)
-input bool InpVisualize    = true;        // MASTER: draw chart objects
-//--- ONE unified zone layer (sequence + geometry merged, 2026-06-26)
-input bool InpShowZones    = true;        // L1/L2 band + mid + edge labels (role text + [Tn])
-input bool InpShowSwings   = false;       // FOB swing pivots (carets)
-input bool InpShowRawBreaks= false;       // FOB raw breakouts
-input bool InpShowPoints   = false;       // P1/P3 skeleton dots
-input bool InpShowRetests  = true;        // T1/T2/T3 retest touch dots
-input bool InpShowParentPBO= true;        // dimmed HTF parent (E+1) PBO zone — context overlay only
+input group          "══════  VISUAL / DRAWING — chart objects (default OK for EMIT)  ══════"
+input bool InpVisualize    = true;        // VISUAL: MASTER draw toggle (off = no chart objects at all)
+input bool InpShowZones    = true;        // VISUAL: L1/L2 band + mid + edge labels (role text + [Tn])
+input bool InpShowSwings   = false;       // VISUAL: FOB swing pivots (carets)
+input bool InpShowRawBreaks= false;       // VISUAL: FOB raw breakouts
+input bool InpShowPoints   = false;       // VISUAL: P1/P3 swing-skeleton dots
+input bool InpShowRetests  = true;        // VISUAL: T1/T2/T3 retest touch dots (the RT ladder)
+input bool InpShowParentPBO= true;        // VISUAL: dimmed HTF parent (E+1) PBO zone — context overlay only
 
 //--- font sizes (hidden from inputs — tweak in source)
 const int   InpFobBulletSize = 12;

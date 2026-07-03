@@ -44,7 +44,8 @@
 #include <fob_system/fob_ledger.mqh>    // FobTradeBook + Stash/CollectLiveCycles/WriteTradeLedger (TRADE)
 #include <fob_system/fob_study.mqh>     // T-170 forward-excursion study         (STUDY)
 #include <fob_system/fob_csv.mqh>       // event ledger CSV                       (EMIT)
-#include <fob_system/fob_visual.mqh>    // InpVisualize master toggle (default on)
+//--- fob_visual.mqh is #included AFTER the input block below (not here) so the MODE +
+//--- DETECTION inputs render FIRST on the tester Inputs tab and the drawing toggles LAST.
 
 //--- THE MODE SWITCH — one EA, three jobs (merged 2026-07-02).
 enum FOB_MODE
@@ -53,12 +54,13 @@ enum FOB_MODE
    FOB_TRADE = 1,   // the strategy: market entry per CF on the setup TF
    FOB_STUDY = 2    // T-170 forward-excursion measurement, NO orders
   };
-input FOB_MODE InpMode = FOB_EMIT;      // EMIT=oracle CSV · TRADE=orders · STUDY=excursion
+input group          "══════  MODE — pick the job  ══════"
+input FOB_MODE InpMode = FOB_EMIT;      // MODE: EMIT=oracle CSV (no orders) · TRADE=orders · STUDY=excursion
 
-//--- detection (shared by every mode)
-input int    InpSwingWindow   = 3;      // close-based pivot window (odd, >=3; live BRC = 3)
-input int    InpMaxAge        = 0;      // break age filter in bars (<=0 disables)
-input bool   InpPboNewestOnly = true;   // PBO = freshest source near CMP (reject same-dir reach-backs)
+input group          "══════  DETECTION — all modes  ══════"
+input int    InpSwingWindow   = 3;      // DETECT: close-based pivot window (odd, >=3)
+input int    InpMaxAge        = 0;      // DETECT: break age filter in bars (<=0 disables)
+input bool   InpPboNewestOnly = true;   // DETECT: PBO = freshest source near CMP (reject same-dir reach-backs)
 
 //--- setup/CF timeframe pair (TRADE + STUDY only). A PBO on the setup TF is confirmed by a
 //--- CF on the TF one below it; the CF TF is always (setup TF - 1). EMIT ignores this (all 9 TFs).
@@ -71,13 +73,18 @@ enum FOB_TF_PAIR
    FOB_TF_H4_H1   = 4,   // setup H4  -> CF on H1
    FOB_TF_D1_H4   = 5    // setup D1  -> CF on H4
   };
-input FOB_TF_PAIR InpTfPair    = FOB_TF_H1_M30; // [trade/study] setup TF -> CF on the TF one below
-input int      InpCfIdxFilter  = 0;             // [trade/study] CF ordinal to trade (0 = ALL CFs)
-input double   InpSlBufferK    = 0.25;          // [trade] SL beyond zone L2 by k*band, band=|L1-L2| (0 = at L2)
-input double   InpRMultTP       = 1.0;          // [trade] TP = RR * risk (1.0 = 1:1, the coin-flip null)
-input double   InpFixedLot       = 0.01;        // [trade] min lot at $50
-input ulong    InpMagic          = 3001;        // [trade] FOB magic
-input int      InpStudyCapBars  = 48;           // [study] force-close window after this many setup-TF bars
+input group          "══════  TRADE / STUDY — setup pair (EMIT ignores: does all 9 TFs)  ══════"
+input FOB_TF_PAIR InpTfPair    = FOB_TF_H1_M30; // TRADE/STUDY: setup TF -> CF on the TF one below
+input int      InpCfIdxFilter  = 0;             // TRADE/STUDY: CF ordinal to trade (0 = ALL CFs)
+
+input group          "══════  TRADE — orders only  ══════"
+input double   InpSlBufferK    = 0.25;          // TRADE: SL beyond zone L2 by k*band, band=|L1-L2| (0 = at L2)
+input double   InpRMultTP       = 1.0;          // TRADE: TP = RR * risk (1.0 = 1:1, the coin-flip null)
+input double   InpFixedLot       = 0.01;        // TRADE: fixed lot (min lot at $50)
+input ulong    InpMagic          = 3001;        // TRADE: FOB magic number
+
+input group          "══════  STUDY — excursion only  ══════"
+input int      InpStudyCapBars  = 48;           // STUDY: force-close window after this many setup-TF bars
 
 //--- LIVE-chart tick warm-up (v1.31.0, task 223). On a fresh live attach the causal
 //--- accumulator is blind to pre-attach history, so historical zones have empty touch
@@ -85,8 +92,13 @@ input int      InpStudyCapBars  = 48;           // [study] force-close window af
 //--- live == tester (tick-exact WHEN/WHERE) instead of guessing from bar wicks. 0 =
 //--- unbounded (back to the oldest structure bar; slow on EMIT/high-TF attach). Ignored
 //--- in the tester (already tick-causal from test-start). 30d covers M5..H4 fully.
-input int      InpTickWarmDays  = 30;           // [live] days of ticks to warm-up the touch ladder (0=unbounded)
-input bool     InpDebugRt       = false;        // [live] print setup-TF VR t/rt ladder times vs bar_time after warm-up (task 225 verify)
+input group          "══════  LIVE-chart only — ignored in the tester  ══════"
+input int      InpTickWarmDays  = 30;           // LIVE: days of ticks to warm-up the touch ladder (0=unbounded)
+input bool     InpDebugRt       = false;        // LIVE: print setup-TF VR t/rt ladder times vs bar_time after warm-up
+
+//--- VISUAL/DRAWING inputs live in fob_visual.mqh; included HERE (after the block above) so
+//--- MODE + DETECTION render first on the Inputs tab and the drawing toggles render last.
+#include <fob_system/fob_visual.mqh>    // InpVisualize (MASTER draw toggle) + InpShow* toggles
 
 //--- detection state (FobTfState/FobPending/FobIngestBar/FobSortPending/FobPeriods live in fob_engine.mqh)
 FobTfState    g_tf[FOB_N_TF];
