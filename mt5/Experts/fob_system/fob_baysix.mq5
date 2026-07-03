@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.31.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.31.1"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -86,6 +86,7 @@ input int      InpStudyCapBars  = 48;           // [study] force-close window af
 //--- unbounded (back to the oldest structure bar; slow on EMIT/high-TF attach). Ignored
 //--- in the tester (already tick-causal from test-start). 30d covers M5..H4 fully.
 input int      InpTickWarmDays  = 30;           // [live] days of ticks to warm-up the touch ladder (0=unbounded)
+input bool     InpDebugRt       = false;        // [live] print setup-TF VR t/rt ladder times vs bar_time after warm-up (task 225 verify)
 
 //--- detection state (FobTfState/FobPending/FobIngestBar/FobSortPending/FobPeriods live in fob_engine.mqh)
 FobTfState    g_tf[FOB_N_TF];
@@ -393,13 +394,23 @@ void OnTick()
    if(SymbolInfoTick(_Symbol, tk) && tk.bid != g_last_px)
      {
       g_last_px = tk.bid;
-      int nw = ArraySize(g_watch);
-      for(int w = 0; w < nw; w++)
+      //--- (task 225) LIVE stray-dot fix: on a fresh attach this live tick would stamp EVERY
+      //--- historical zone's touch/RT slot at NOW (current price already satisfies the level),
+      //--- BEFORE the §5 warm-up replays the real ticks — and the warm-up is fill-only so it can
+      //--- never overwrite the NOW value. Defer the accumulator loop while a warm-up is still
+      //--- pending (live + visualize + not yet warmed). g_last_px is still updated above for the
+      //--- price line. Tester (live=false) and live-TRADE-visualize-off (no warm-up) always run
+      //--- -> CSV byte-identical, trading unaffected. Once warmed, §4 resumes on genuinely-new ticks.
+      if(!(live && InpVisualize && !g_warmed))
         {
-         int idx = g_watch[w];
-         bool trackRt = (g_events[idx].label == FOB_VR);
-         FobAccOnTick(g_events[idx].zone, g_acc[idx], g_events[idx].dir,
-                      g_events[idx].level, tk.bid, tk.time, trackRt);
+         int nw = ArraySize(g_watch);
+         for(int w = 0; w < nw; w++)
+           {
+            int idx = g_watch[w];
+            bool trackRt = (g_events[idx].label == FOB_VR);
+            FobAccOnTick(g_events[idx].zone, g_acc[idx], g_events[idx].dir,
+                         g_events[idx].level, tk.bid, tk.time, trackRt);
+           }
         }
      }
 
@@ -435,6 +446,28 @@ void OnTick()
             PrintFormat("[FOB %s] tick warm-up complete — %d zones, window=%s",
                         FobModeName(InpMode), ArraySize(g_events),
                         (InpTickWarmDays > 0 ? (string)InpTickWarmDays + "d" : "unbounded"));
+            //--- (task 225 verify) dump the low-TF (M1/M5/M15) VR ladders right after warm-up:
+            //--- every t*/rt* time MUST be historical (< now), never ≈now. A ≈now stamp = the
+            //--- §4 leak this fix closes still firing. Remove once confirmed green.
+            if(InpDebugRt)
+              {
+               int ndbg = ArraySize(g_events);
+               for(int i = 0; i < ndbg; i++)
+                 {
+                  if(g_events[i].label != FOB_VR || g_events[i].event_tf > 2)
+                     continue;                          // VRs on M1/M5/M15 only (event_tf 0/1/2)
+                  PrintFormat("[FOB RT-DBG] VR %s seq=%d bar=%s | t1=%s t2=%s t3=%s | rt1=%s rt2=%s rt3=%s | inval=%s",
+                              FobTfName(g_events[i].event_tf), g_events[i].seq,
+                              TimeToString(g_events[i].bar_time, TIME_DATE | TIME_MINUTES),
+                              TimeToString(g_events[i].zone.t1_time, TIME_DATE | TIME_MINUTES),
+                              TimeToString(g_events[i].zone.t2_time, TIME_DATE | TIME_MINUTES),
+                              TimeToString(g_events[i].zone.t3_time, TIME_DATE | TIME_MINUTES),
+                              TimeToString(g_events[i].zone.rt1_time, TIME_DATE | TIME_MINUTES),
+                              TimeToString(g_events[i].zone.rt2_time, TIME_DATE | TIME_MINUTES),
+                              TimeToString(g_events[i].zone.rt3_time, TIME_DATE | TIME_MINUTES),
+                              TimeToString(g_events[i].zone.invalidation_time, TIME_DATE | TIME_MINUTES));
+                 }
+              }
            }
         }
 
