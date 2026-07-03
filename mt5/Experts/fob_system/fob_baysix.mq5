@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.31.2"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.32.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -106,6 +106,10 @@ int           g_watch[];           // indices into g_events of zones still being
 datetime      g_last_form[FOB_N_TF];// last seen forming-bar open time per TF (new-bar gate)
 double        g_last_px = 0.0;      // last processed tick price (tick decimation)
 bool          g_warmed  = false;    // LIVE: has the one-time historical-tick ladder warm-up run? (task 223)
+//--- (task 226) chart period/type-switch cache: the globals SURVIVE OnDeinit+OnInit, so a switch
+//--- on the SAME symbol can reuse the already-built + warmed state instead of a multi-second rebuild.
+int           g_prev_reason   = -1;  // UninitializeReason() from the last OnDeinit (REASON_CHARTCHANGE => reuse candidate)
+string        g_cached_symbol = "";  // symbol the cached state was built for (guards a symbol swap under CHARTCHANGE)
 
 //--- INGEST set (mode-gated): EMIT = all 9 TFs (full storyline oracle); TRADE/STUDY = only
 //--- {setup_tf-1, setup_tf} (byte-identical to the full classifier for this setup's events —
@@ -131,6 +135,36 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
    g_setup_tf = (int)InpTfPair + 1;   // M5_M1=0->M5=1, ... D1_H4=5->D1=6
 
+   //--- (task 226) CACHE FAST-PATH — a chart PERIOD switch (or template) on the SAME symbol re-fires
+   //--- OnDeinit+OnInit but the globals SURVIVE. g_events is chart-period-INDEPENDENT (EMIT ingests
+   //--- all 9 TFs; TRADE/STUDY key off InpTfPair, an INPUT — never the chart period), so if the
+   //--- warm-up already completed we can REUSE the built + warmed ladder and just repaint the new
+   //--- chart TF — no wipe, no multi-second re-warm. Guards: reason must be REASON_CHARTCHANGE (a
+   //--- recompile=2 / param-change=5 / template=7 all fall through to the full rebuild below), the
+   //--- symbol must be unchanged (CHARTCHANGE also fires on a symbol swap -> stale zones), and the
+   //--- prior warm-up must have finished (g_warmed). Note: a chart TYPE toggle (candles/line) does
+   //--- NOT reinit the EA at all -> it never paid the re-warm cost; only OnChartEvent repaints it.
+   bool reuse = (g_prev_reason == REASON_CHARTCHANGE)
+                && (g_cached_symbol == _Symbol)
+                && g_warmed
+                && (ArraySize(g_events) > 0);
+   if(reuse)
+     {
+      g_vis.SyncChartTF();
+      if(InpVisualize)
+        {
+         bool live = !MQLInfoInteger(MQL_TESTER);
+         int  ci   = g_vis.ChartIdx();
+         g_vis.DrawZones(g_events, ArraySize(g_events), g_live_tf, g_live_seq,
+                         ArraySize(g_live_tf), live, g_last_px);
+         if(ci >= 0)
+            g_vis.DrawStructure(g_tf[ci].swings, g_tf[ci].breaks);
+        }
+      PrintFormat("[FOB %s] v%s CHART-SWITCH reuse — %d zones cached, no re-warm",
+                  FobModeName(InpMode), FOB_VERSION, ArraySize(g_events));
+      return INIT_SUCCEEDED;
+     }
+
    //--- INGEST set by mode. EMIT = the full 9-TF oracle; TRADE/STUDY = the setup pair only.
    if(InpMode == FOB_EMIT)
      {
@@ -154,6 +188,7 @@ int OnInit()
    g_last_px = 0.0;
    g_seen    = 0;
    g_warmed  = false;   // re-warm the ladder from ticks on every (re)attach / period switch (task 223)
+   g_cached_symbol = _Symbol;   // (task 226) stamp the symbol this fresh build is for -> the next CHARTCHANGE can reuse it
    for(int i = 0; i < FOB_N_TF; i++)
      {
       FobResetTfState(g_tf[i]);
@@ -518,7 +553,14 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   g_vis.ClearAll();   // wipe chart objects before any early-return
+   g_prev_reason = reason;   // (task 226) OnInit reads this: REASON_CHARTCHANGE + same symbol -> reuse the cache
+   g_vis.ClearAll();         // wipe chart objects before any early-return
+
+   //--- (task 226) a chart period/template switch keeps the globals alive for OnInit to reuse, so
+   //--- SKIP the ledger dump here — it is the SAME data and dumping it on every switch is the other
+   //--- half of the switch lag. The ledger is still written on a real exit (remove/close/recompile).
+   if(reason == REASON_CHARTCHANGE)
+      return;
 
    if(InpMode == FOB_STUDY)
      {
