@@ -234,6 +234,29 @@ CREATE TABLE IF NOT EXISTS fob_events (
 CREATE INDEX IF NOT EXISTS ix_fob_events_run     ON fob_events(run_id);
 CREATE INDEX IF NOT EXISTS ix_fob_events_cycle   ON fob_events(cycle_id);
 CREATE INDEX IF NOT EXISTS ix_fob_events_run_bar ON fob_events(run_id, bar_time);
+
+-- ── FOB-001 rollup (task 228): one CONCLUSION row per (run_id, setup_tf) so
+-- downstream screens read ~10 rows, not a ~768k raw-payload scan. Round-1 columns
+-- per docs/specs/2026-07-03_fob_payload_dataplane_split.md. Derived by
+-- derive_fob_run_stats() after the Tier-C derivations. research.db keeps this even
+-- once the raw fob_* tables move to Parquet (Lever 2).
+CREATE TABLE IF NOT EXISTS fob_run_stats (
+    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
+    setup_tf          TEXT NOT NULL,
+    n_cycles          INTEGER,
+    n_zones           INTEGER,
+    n_cf              INTEGER,
+    mean_rt_count     REAL,      -- mean # of non-null rt{1,2,3}_time per zone (0-3)
+    mean_n_l2_touches REAL,
+    vr_fresh_pct      REAL,      -- 100 * AVG(vr_fresh) over zones where vr_fresh NOT NULL
+    mean_realized_r   REAL,
+    mean_mfe_r        REAL,
+    mean_mae_r        REAL,
+    win_pct           REAL,      -- 100 * AVG(continued) over resolved CF zones
+    mean_bars_alive   REAL,
+    created_at        DATETIME NOT NULL,
+    PRIMARY KEY (run_id, setup_tf)
+);
 """
 
 
@@ -255,6 +278,32 @@ def init_db() -> Path:
         conn.commit()
     print(f"[tester] tester schema ready in {DB_PATH.name} (tester_runs/trades/zones)")
     return DB_PATH
+
+
+def reset_fob_payload_tables(force: bool = False) -> dict:
+    """Drop + recreate the 3 FOB payload tables (fob_cycles/fob_zones/fob_events) so a
+    stale-schema husk is replaced by the CURRENT _SCHEMA (task 228 caught fob_zones still
+    on the old single-retouch rt_count/rt_time shape vs the EA's 3-level rt1/2/3_time —
+    ingest would column-mismatch on the task-220 re-emit).
+
+    SAFETY: refuses unless every table is EMPTY (0 rows) — pass force=True to override.
+    fob_run_stats is left alone (it is a rollup, keyed to run_id, and re-derived on ingest)."""
+    tables = ["fob_events", "fob_zones", "fob_cycles"]  # child->parent order for the drop
+    with _conn() as conn:
+        counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
+        nonempty = {t: n for t, n in counts.items() if n}
+        if nonempty and not force:
+            raise RuntimeError(
+                f"refusing to drop non-empty FOB payload tables: {nonempty} "
+                f"(pass force=True only if you truly mean to discard rows)")
+        conn.execute("PRAGMA foreign_keys = OFF")
+        for t in tables:
+            conn.execute(f"DROP TABLE IF EXISTS {t}")
+        conn.executescript(_SCHEMA)  # recreates from current schema (IF NOT EXISTS)
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.commit()
+    print(f"[tester] FOB payload tables reset (dropped+recreated): {tables}  prior rows={counts}")
+    return {"dropped": tables, "prior_counts": counts}
 
 
 # ── Run header ────────────────────────────────────────────────────────────────
@@ -698,6 +747,77 @@ def derive_fob_tier_c_outcome(run_id: int, target_r: float = 2.0,
           f"win={n_win} loss={n_loss} censored={n_cens}  hit-rate={hit:.4f}")
     return {"cf_zones": len(updates), "win": n_win, "loss": n_loss,
             "censored": n_cens, "hit_rate": hit, "target_r": target_r}
+
+
+def derive_fob_run_stats(run_id: int) -> dict:
+    """Task 228 — roll the raw fob_* payload up into ONE row per (run_id, setup_tf) in
+    fob_run_stats: a small permanent CONCLUSION so downstream screens (task 182 RT-edge
+    by setup-TF, conditioner sweeps) read ~7-60 rows instead of scanning ~768k raw rows.
+    Round-1 columns per docs/specs/2026-07-03_fob_payload_dataplane_split.md.
+
+    setup_tf lives on the CYCLE, so zone stats join through cycle_id. Aggregates use AVG
+    (SQLite skips NULLs); rt_count = # of non-null rt{1,2,3}_time per zone (0-3);
+    vr_fresh_pct / win_pct average only over zones where the flag is populated.
+    Idempotent (DELETE + re-insert for this run_id)."""
+    if not get_tester_run(run_id):
+        raise ValueError(f"tester run not found: {run_id}")
+    now = _now()
+    with _conn() as conn:
+        # cycle-level (setup_tf is a cycle column): n_cycles, n_cf
+        cyc = conn.execute("""
+            SELECT setup_tf,
+                   COUNT(*)               AS n_cycles,
+                   COALESCE(SUM(n_cf), 0) AS n_cf
+            FROM fob_cycles WHERE run_id = ?
+            GROUP BY setup_tf
+        """, (run_id,)).fetchall()
+        # zone-level (join to cycle for setup_tf)
+        zon = conn.execute("""
+            SELECT c.setup_tf,
+                   COUNT(*) AS n_zones,
+                   AVG( (CASE WHEN z.rt1_time IS NOT NULL THEN 1 ELSE 0 END)
+                      + (CASE WHEN z.rt2_time IS NOT NULL THEN 1 ELSE 0 END)
+                      + (CASE WHEN z.rt3_time IS NOT NULL THEN 1 ELSE 0 END) ) AS mean_rt_count,
+                   AVG(z.n_l2_touches) AS mean_n_l2_touches,
+                   100.0 * AVG(CASE WHEN z.vr_fresh  IS NOT NULL THEN z.vr_fresh  END) AS vr_fresh_pct,
+                   AVG(z.realized_r) AS mean_realized_r,
+                   AVG(z.mfe_r)      AS mean_mfe_r,
+                   AVG(z.mae_r)      AS mean_mae_r,
+                   100.0 * AVG(CASE WHEN z.continued IS NOT NULL THEN z.continued END) AS win_pct,
+                   AVG(z.bars_alive) AS mean_bars_alive
+            FROM fob_zones z JOIN fob_cycles c ON c.cycle_id = z.cycle_id
+            WHERE z.run_id = ?
+            GROUP BY c.setup_tf
+        """, (run_id,)).fetchall()
+        zmap = {r["setup_tf"]: r for r in zon}
+
+        recs = []
+        for cr in cyc:
+            stf = cr["setup_tf"]
+            z = zmap.get(stf)
+            recs.append((
+                run_id, stf, cr["n_cycles"], (z["n_zones"] if z else 0), cr["n_cf"],
+                (z["mean_rt_count"]     if z else None),
+                (z["mean_n_l2_touches"] if z else None),
+                (z["vr_fresh_pct"]      if z else None),
+                (z["mean_realized_r"]   if z else None),
+                (z["mean_mfe_r"]        if z else None),
+                (z["mean_mae_r"]        if z else None),
+                (z["win_pct"]           if z else None),
+                (z["mean_bars_alive"]   if z else None),
+                now,
+            ))
+        conn.execute("DELETE FROM fob_run_stats WHERE run_id = ?", (run_id,))
+        conn.executemany("""
+            INSERT INTO fob_run_stats
+              (run_id, setup_tf, n_cycles, n_zones, n_cf, mean_rt_count, mean_n_l2_touches,
+               vr_fresh_pct, mean_realized_r, mean_mfe_r, mean_mae_r, win_pct, mean_bars_alive,
+               created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, recs)
+        conn.commit()
+    print(f"[tester] run #{run_id} fob_run_stats: {len(recs)} setup_tf rollup row(s)")
+    return {"setup_tf_rows": len(recs)}
 
 
 def _m1_for_outcome(start, end):

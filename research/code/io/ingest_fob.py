@@ -102,6 +102,9 @@ def main():
     tester.derive_fob_confirm_linkage(run_id)
     tester.derive_fob_tier_c_outcome(run_id, target_r=2.0)
 
+    # ── rollup-on-ingest (task 228): per run x setup_tf conclusion table ──────
+    tester.derive_fob_run_stats(run_id)
+
     # ── verify ──────────────────────────────────────────────────────────────
     import sqlite3
     conn = sqlite3.connect(tester.DB_PATH)
@@ -121,6 +124,9 @@ def main():
     orphans = conn.execute(
         "SELECT COUNT(*) FROM fob_events WHERE run_id=? AND (cycle_id IS NULL OR zone_id IS NULL)",
         (run_id,)).fetchone()[0]
+    rollup = conn.execute(
+        "SELECT setup_tf, n_cycles, n_zones, n_cf, win_pct, mean_realized_r "
+        "FROM fob_run_stats WHERE run_id=? ORDER BY n_cycles DESC", (run_id,)).fetchall()
     conn.close()
 
     print(f"\n=== VERIFY run #{run_id} (FOB-001, emitter) ===")
@@ -131,6 +137,11 @@ def main():
     print(f"cycle status   : " + ", ".join(f"{s}={c}" for s, c in status))
     print(f"zones: valid={zstats[0]}  alive@end={zstats[1]}  vr_fresh={zstats[2]}  invalidated={zstats[3]}")
     print(f"orphan events (no cycle/zone): {orphans}   git={sha}-{'DIRTY' if dirty else 'clean'}")
+    print(f"rollup fob_run_stats ({len(rollup)} rows):")
+    for stf, nc, nz, ncf, win, rr in rollup:
+        win_s = f"{win:.1f}%" if win is not None else "  n/a"
+        rr_s  = f"{rr:+.3f}"  if rr  is not None else "  n/a"
+        print(f"   {stf:>7} : cycles={nc:<5} zones={nz:<5} cf={ncf:<5} win={win_s:>6} meanR={rr_s}")
 
 
 if __name__ == "__main__":
