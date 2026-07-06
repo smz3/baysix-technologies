@@ -930,5 +930,35 @@ def delete_run(run_id: int, drop_run_row: bool = True) -> dict:
     return out
 
 
+def clear_fob_payload_run(run_id: int) -> dict:
+    """Task 229 (Lever 2) — clear ONE run's raw FOB payload rows (fob_cycles/
+    fob_zones/fob_events) from research.db after they have been exported to Parquet
+    (research.code.io.fob_payload.export_run). Keeps the run header (tester_runs) and
+    the rollup (fob_run_stats) — those are the CONCLUSIONS research.db retains.
+    Reversible: re-export from the Parquet, or re-ingest the emit CSV. Children
+    (events/zones reference cycles) are deleted first."""
+    with _conn() as conn:
+        fe = conn.execute("DELETE FROM fob_events WHERE run_id=?", (run_id,)).rowcount
+        fz = conn.execute("DELETE FROM fob_zones  WHERE run_id=?", (run_id,)).rowcount
+        fc = conn.execute("DELETE FROM fob_cycles WHERE run_id=?", (run_id,)).rowcount
+        conn.commit()
+    print(f"[tester] clear_fob_payload_run {run_id}: cleared fob(c/z/e)={fc}/{fz}/{fe} "
+          f"(header + fob_run_stats kept)")
+    return {"run_id": run_id, "fob_cycles_cleared": fc,
+            "fob_zones_cleared": fz, "fob_events_cleared": fe}
+
+
+def vacuum() -> Path:
+    """VACUUM research.db — rebuilds the file so freed pages (e.g. after
+    clear_fob_payload_run) are reclaimed to the OS. Must run outside a transaction."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("VACUUM")
+    finally:
+        conn.close()
+    print(f"[tester] VACUUM {DB_PATH.name} done")
+    return DB_PATH
+
+
 if __name__ == "__main__":
     init_db()

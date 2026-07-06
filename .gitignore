@@ -114,6 +114,9 @@ security_alerts.log
 data/arctic/
 *.lmdb
 
+# FOB raw payload (task 229 data-plane split — Parquet-per-run, derivable from emit CSV)
+data/fob_payload/
+
 # Secrets scanner output
 Sandbox/
 

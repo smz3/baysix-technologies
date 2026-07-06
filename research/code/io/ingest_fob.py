@@ -65,6 +65,9 @@ def main():
     ap.add_argument("--period-start", default=None)
     ap.add_argument("--period-end", default=None)
     ap.add_argument("--notes", default=None)
+    ap.add_argument("--keep-raw", action="store_true",
+                    help="skip the Parquet export + DB-row clear; leave raw fob_* rows in "
+                         "research.db (debugging only — bloats the file, task 229)")
     args = ap.parse_args()
 
     csv_path = Path(args.csv)
@@ -142,6 +145,23 @@ def main():
         win_s = f"{win:.1f}%" if win is not None else "  n/a"
         rr_s  = f"{rr:+.3f}"  if rr  is not None else "  n/a"
         print(f"   {stf:>7} : cycles={nc:<5} zones={nz:<5} cf={ncf:<5} win={win_s:>6} meanR={rr_s}")
+
+    # ── data-plane split (task 229): raw payload -> Parquet-per-run, clear DB rows ──
+    # research.db keeps only headers + fob_run_stats (the conclusions); the raw
+    # storyline lives in data/fob_payload/run_<id>/ (derivable, gitignored). Verify
+    # Parquet == DB before clearing so an unverified export never deletes rows.
+    if args.keep_raw:
+        print("--keep-raw: leaving raw fob_* rows in research.db (file will be large)")
+    else:
+        from research.code.io import fob_payload
+        pq = fob_payload.export_run(run_id)
+        db = {"cycles": counts["cycles"], "zones": counts["zones"], "events": counts["events"]}
+        if pq != db:
+            raise SystemExit(f"payload export mismatch (Parquet {pq} != DB {db}) — "
+                             "raw rows NOT cleared; investigate.")
+        print(f"payload -> Parquet {pq} @ {fob_payload.run_dir(run_id)} (verified)")
+        tester.clear_fob_payload_run(run_id)
+        tester.vacuum()
 
 
 if __name__ == "__main__":
