@@ -615,7 +615,7 @@ void OnDeinit(const int reason)
      }
    if(InpMode == FOB_TRADE)
      {
-      WriteTradeLedger(g_book, g_pend, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter);
+      WriteTradeLedger(g_book, g_pend, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter, (int)InpEntryMode);
       return;
      }
 
