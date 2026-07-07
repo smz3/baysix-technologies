@@ -168,7 +168,7 @@ string ExitReasonName(const long reason)
 //+------------------------------------------------------------------+
 void WriteTradeLedger(const FobTradeBook &book, const FobPendingBook &pbook, const ulong magic,
                       const int setup_tf, const double slBufferK, const double rMultTP,
-                      const int cfIdxFilter, const int entryMode)
+                      const int cfIdxFilter, const int entryMode, const int pboLevel = -1)
   {
    if(!HistorySelect(0, TimeCurrent())) return;
    int total = HistoryDealsTotal();
@@ -200,8 +200,12 @@ void WriteTradeLedger(const FobTradeBook &book, const FobPendingBook &pbook, con
    //    (else every pass clobbers the same file). k025=SLbuf 0.25, rr200=RR 2.00.
    string ktok  = StringFormat("k%03d",  (int)MathRound(slBufferK * 100));
    string rrtok = StringFormat("rr%03d", (int)MathRound(rMultTP  * 100));
-   //--- entry mechanic in the name so CF_MARKET vs CF_L1_LIMIT never clobber each other
-   string emtok = (entryMode == 1) ? "l1" : "cf";   // 1==CF_L1_LIMIT, 0==CF_MARKET
+   //--- entry mechanic in the name so CF_MARKET / CF_L1_LIMIT / PBO_LIMIT (per depth)
+   //--- never clobber each other. 2==PBO_LIMIT -> pbot1/pbot2/pbot3 by pboLevel.
+   string emtok;
+   if(entryMode == 2)      emtok = StringFormat("pbot%d", pboLevel + 1);  // 0->t1,1->t2,2->t3
+   else if(entryMode == 1) emtok = "l1";
+   else                    emtok = "cf";
    string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_%s_%s_%s_cf%d_%s.csv",
                                _Symbol, ver, FobTfName(setup_tf), rmode,
                                emtok, ktok, rrtok, cfIdxFilter, stamp);

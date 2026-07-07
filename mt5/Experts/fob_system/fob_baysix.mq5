@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.33.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.34.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -87,12 +87,24 @@ input ulong    InpMagic          = 3001;        // TRADE: FOB magic number
 //--- CF_L1_LIMIT = pending LIMIT at the CF zone L1 (T1): fills only on a pullback to
 //--- L1 (premium price, tighter R), SL unchanged (l2±k*band); a runaway winner that
 //--- never pulls back is cancelled when the SETUP TF makes a new PBO (parent cycle end).
+//--- PBO_LIMIT = pending LIMIT into the PARENT PBO zone at a chosen depth (T1/T2/T3),
+//--- ARMED on VR-confirm (pre-CF pullback-then-continue). Depth picked by InpPboEntryLevel.
 enum FOB_ENTRY_MODE
   {
    CF_MARKET   = 0,   // market on CF confirmation (Ask/Bid) — the A/B baseline
-   CF_L1_LIMIT = 1    // pending limit at CF zone L1 (pullback entry), cancel at parent PBO
+   CF_L1_LIMIT = 1,   // pending limit at CF zone L1 (pullback entry), cancel at parent PBO
+   PBO_LIMIT   = 2    // pending limit into the PBO zone (T1/T2/T3), armed on VR, cancel at new PBO
   };
-input FOB_ENTRY_MODE InpEntryMode = CF_MARKET;  // TRADE: CF entry mechanic (market vs L1 pullback limit)
+input FOB_ENTRY_MODE InpEntryMode = CF_MARKET;  // TRADE: entry mechanic (CF market / CF-L1 limit / PBO-zone limit)
+
+//--- PBO_LIMIT depth: which edge of the PBO zone the pullback limit sits at.
+enum FOB_PBO_LEVEL
+  {
+   PBO_T1 = 0,   // L1 (near/trigger edge)  — shallowest, widest risk = band*(1+k)
+   PBO_T2 = 1,   // mid (50% line)
+   PBO_T3 = 2    // L2 (far edge)           — deepest, risk = buffer only
+  };
+input FOB_PBO_LEVEL InpPboEntryLevel = PBO_T1;  // TRADE (PBO_LIMIT): PBO-zone depth to enter at
 
 input group          "══════  STUDY — excursion only  ══════"
 input int      InpStudyCapBars  = 48;           // STUDY: force-close window after this many setup-TF bars
@@ -142,9 +154,13 @@ int           g_setup_tf = 4;       // setup TF index, derived from InpTfPair (T
 
 //--- trade + study bookkeeping (only active in the matching mode)
 FobTradeBook  g_book;
-FobPendingBook g_pend;              // (CF_L1_LIMIT) pending L1 limits keyed by order ticket
+FobPendingBook g_pend;              // (CF_L1_LIMIT / PBO_LIMIT) pending limits keyed by order ticket
 FobStudyState g_study;
 int           g_seen = 0;           // # events already acted on (watermark into g_events)
+//--- (PBO_LIMIT) the current setup-TF cycle's PBO event, cached as the pullback-limit
+//--- anchor: set when a PBO streams by, consumed when THIS cycle's VR confirms.
+FobEvent      g_cur_pbo;
+bool          g_cur_pbo_set = false;
 int           g_live_tf[];  int g_live_seq[];   // (setup_tf, seq) cycles with an OPEN position
 
 //--- mode label for logs
@@ -211,6 +227,7 @@ int OnInit()
    ArrayResize(g_watch,  0);
    g_last_px = 0.0;
    g_seen    = 0;
+   g_cur_pbo_set = false;   // (PBO_LIMIT) drop any stale PBO anchor from a prior attach
    g_warmed  = false;   // re-warm the ladder from ticks on every (re)attach / period switch (task 223)
    g_cached_symbol = _Symbol;   // (task 226) stamp the symbol this fresh build is for -> the next CHARTCHANGE can reuse it
    for(int i = 0; i < FOB_N_TF; i++)
@@ -266,15 +283,34 @@ void ActOnNewEvents()
      {
       FobEvent e = g_events[k];
 
-      //--- (CF_L1_LIMIT) a NEW PBO on the setup TF ends the PARENT cycle -> cancel any
-      //--- still-pending L1 limits from prior cycles (seq < this PBO's) — runaway winners
-      //--- that never pulled back to L1. Filled limits already left the pool (SL/TP own them).
-      if(InpEntryMode == CF_L1_LIMIT && e.label == FOB_PBO && e.setup_tf == g_setup_tf)
+      //--- A NEW PBO on the setup TF ends the PARENT cycle. Both limit modes cancel any
+      //--- still-pending limits from prior cycles (seq < this PBO's) — runaway winners
+      //--- that never pulled back. Filled limits already left the pool (SL/TP own them).
+      //--- PBO_LIMIT additionally caches this PBO as the anchor for its upcoming VR.
+      if(e.label == FOB_PBO && e.setup_tf == g_setup_tf)
         {
-         CancelPendingsForNewPbo(g_pend, InpMagic, g_setup_tf, e.seq);
+         if(InpEntryMode == CF_L1_LIMIT || InpEntryMode == PBO_LIMIT)
+            CancelPendingsForNewPbo(g_pend, InpMagic, g_setup_tf, e.seq);
+         if(InpEntryMode == PBO_LIMIT)
+           { g_cur_pbo = e; g_cur_pbo_set = true; }
          continue;
         }
 
+      //--- PBO_LIMIT: arm the pullback limit into the cached PBO zone when THIS cycle's VR
+      //--- confirms (pre-CF). One VR per cycle -> one placement. CFs are ignored in this mode.
+      if(InpEntryMode == PBO_LIMIT)
+        {
+         if(e.label != FOB_VR || e.setup_tf != g_setup_tf) continue;
+         if(!g_cur_pbo_set || g_cur_pbo.seq != e.seq)      continue;  // VR must match the cached PBO's cycle
+         double rw = 0.0;
+         long tk = FobPlacePboLimit(g_cur_pbo, (int)InpPboEntryLevel, InpFixedLot,
+                                    InpSlBufferK, InpRMultTP, InpMagic, rw);
+         if(tk > 0)
+            StashPending(g_pend, tk, rw, g_cur_pbo);
+         continue;
+        }
+
+      //--- CF modes (CF_MARKET / CF_L1_LIMIT): enter on the CF.
       if(e.label != FOB_CF)              continue;
       if(e.setup_tf != g_setup_tf)       continue;
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
@@ -615,7 +651,7 @@ void OnDeinit(const int reason)
      }
    if(InpMode == FOB_TRADE)
      {
-      WriteTradeLedger(g_book, g_pend, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter, (int)InpEntryMode);
+      WriteTradeLedger(g_book, g_pend, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter, (int)InpEntryMode, (int)InpPboEntryLevel);
       return;
      }
 

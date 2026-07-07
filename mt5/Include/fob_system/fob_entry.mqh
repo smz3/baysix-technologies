@@ -145,4 +145,73 @@ long FobPlaceLimit(const FobEvent &e, const double lot, const double slBufferK,
    return (long)res.order;                                // the pending order ticket
   }
 
+//+------------------------------------------------------------------+
+//| PBO_LIMIT entry (v1.34.0): a pending LIMIT into the PARENT PBO's   |
+//| zone at a chosen depth, ARMED when the cycle's VR confirms (pre-CF |
+//| — the pullback-then-continue thesis). Anchored to the PBO zone,    |
+//| NOT the CF zone: T1 = L1 (near/trigger edge), T2 = mid, T3 = L2    |
+//| (far). SL = beyond the PBO's L2 by slBufferK*band (band=|L1-L2|),  |
+//| identical formula to the CF path but on the PBO geometry. Risk     |
+//| SHRINKS as entry deepens (T1 = band*(1+k), T3 = buffer only) — so  |
+//| rank the depth sweep on $/trade + survival, never R-multiple.      |
+//| Fills ONLY on a pullback into the zone (BUY LIMIT below Ask / SELL |
+//| LIMIT above Bid); a level price already passed is skipped (missed  |
+//| fill = realistic, the tester measures it). Runaway (no pullback)   |
+//| cancelled by the parent cycle's next PBO (CancelPendingsForNewPbo).|
+//| `p` is the cached PBO event; `level` 0=T1 1=T2 2=T3. GTC, no time  |
+//| expiry. Returns the PENDING ticket (0 on failure); out_rw = risk.  |
+//+------------------------------------------------------------------+
+long FobPlacePboLimit(const FobEvent &p, const int level, const double lot,
+                      const double slBufferK, const double rMultTP,
+                      const ulong magic, double &out_rw)
+  {
+   out_rw = 0.0;
+   if(!p.zone.valid) return 0;                            // no measurable band -> no trade
+   bool   is_long = (p.dir == FOB_BULL);
+   double l1     = p.level;                               // near edge (T1)
+   double l2     = p.zone.l2;                             // far/invalidation edge (T3)
+   double mid    = p.zone.mid;                            // 50% line (T2)
+   double entry  = (level <= 0) ? l1 : (level == 1) ? mid : l2;   // T1 / T2 / T3
+   double band   = MathAbs(l1 - l2);                      // zone height (scale-free)
+   double buffer = slBufferK * band;
+   double sl     = is_long ? l2 - buffer : l2 + buffer;
+   double risk   = MathAbs(entry - sl);
+   if(risk <= 0.0)
+      return 0;
+
+   //--- pullback INTO the zone: BUY LIMIT must sit BELOW the Ask, SELL LIMIT ABOVE
+   //--- the Bid, both >= STOPS_LEVEL away. If price already dipped past this depth
+   //--- the level is a missed fill -> skip (don't turn it into a stop order).
+   double ask     = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid     = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
+                    * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   if(is_long)  { if(entry >= ask - minstop) return 0; }
+   else         { if(entry <= bid + minstop) return 0; }
+   if(risk < minstop || risk * rMultTP < minstop)
+      return 0;                                          // bracket too tight for the broker
+
+   double tp = is_long ? entry + risk * rMultTP : entry - risk * rMultTP;
+
+   MqlTradeRequest req;  MqlTradeResult res;
+   ZeroMemory(req);  ZeroMemory(res);
+   req.action       = TRADE_ACTION_PENDING;
+   req.symbol       = _Symbol;
+   req.magic        = magic;
+   req.type         = is_long ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+   req.volume       = lot;
+   req.price        = NormalizeDouble(entry, _Digits);
+   req.sl           = NormalizeDouble(sl, _Digits);
+   req.tp           = NormalizeDouble(tp, _Digits);
+   req.type_time    = ORDER_TIME_GTC;                     // cancelled by a new setup-TF PBO, not time
+   req.type_filling = FobFilling();
+   if(!OrderSend(req, res))
+      return 0;
+   if(res.retcode != TRADE_RETCODE_DONE && res.retcode != TRADE_RETCODE_PLACED)
+      return 0;
+
+   out_rw = risk;
+   return (long)res.order;                                // the pending order ticket
+  }
+
 #endif // FOB_ENTRY_MQH
