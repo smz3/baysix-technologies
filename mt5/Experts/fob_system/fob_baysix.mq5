@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.38.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.39.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -91,6 +91,16 @@ enum FOB_DIRFILT
    FOB_DF_MN1  = 8     // align to Monthly last-PBO direction
   };
 input FOB_DIRFILT InpDirFilterTf = FOB_DF_NONE; // TRADE: align entries to this higher TF's last-PBO dir (NONE=off)
+
+//--- SESSION-OF-DAY FILTER (TRADE only, task 257). Selection lever: the H4-CF3 fat tail
+//--- concentrates in the London-PM/NY window; the Asia/rollover window (00-05 broker) is a
+//--- clean loser (pop t-5.33). Gate a CF entry on the HOUR OF ITS CF BREAK BAR (e.bar_time —
+//--- the signal's own session, causal + known at decision time, matching the IS screen
+//--- result_id 47). Window [start,end] INCLUSIVE in broker/server hours; start>end WRAPS past
+//--- midnight. OFF = take every hour (baseline A untouched).
+input bool     InpSessionFilter   = false;      // TRADE: gate CF entries to a broker-hour window (false=off)
+input int      InpSessionStartHr  = 12;         // TRADE: session start hour (broker/server, inclusive)
+input int      InpSessionEndHr    = 23;         // TRADE: session end hour   (broker/server, inclusive)
 
 input group          "══════  TRADE — orders only  ══════"
 input double   InpSlBufferK    = 0.25;          // TRADE: SL beyond zone L2 by k*band, band=|L1-L2| (0 = at L2)
@@ -317,6 +327,16 @@ int OnInit()
                   FobTfName(g_ingest[0]), FobTfName(g_ingest[ArraySize(g_ingest) - 1]), ArraySize(g_ingest),
                   InpCfIdxFilter, InpSlBufferK, InpRMultTP, InpFixedLot, InpMagic,
                   (InpMode == FOB_STUDY ? " | *** STUDY: NO ORDERS ***" : " | MULTI-POSITION"));
+   if(InpMode == FOB_TRADE)
+     {
+      if(InpSessionFilter)
+         PrintFormat("[FOB TRADE] session filter ON — take CF only in broker hours [%02d..%02d]%s | dir_filter=%s",
+                     InpSessionStartHr, InpSessionEndHr,
+                     (InpSessionStartHr <= InpSessionEndHr ? "" : " (wraps midnight)"),
+                     EnumToString(InpDirFilterTf));
+      else
+         PrintFormat("[FOB TRADE] session filter off (all 24h) | dir_filter=%s", EnumToString(InpDirFilterTf));
+     }
    return INIT_SUCCEEDED;
   }
 
@@ -372,6 +392,17 @@ void ActOnNewEvents()
         {
          int fi = (int)InpDirFilterTf;
          if(g_setup[fi].active && e.dir != g_setup[fi].pbo_dir) continue;
+        }
+      //--- (task 257) session-of-day filter: skip a CF whose break-bar hour is outside the
+      //--- broker-hour window. Wrap-aware (start>end spans midnight). e.bar_time = the CF
+      //--- signal's session (causal), the same clock the IS screen partitioned on.
+      if(InpSessionFilter)
+        {
+         MqlDateTime dt; TimeToStruct(e.bar_time, dt);
+         bool in_sess = (InpSessionStartHr <= InpSessionEndHr)
+                        ? (dt.hour >= InpSessionStartHr && dt.hour <= InpSessionEndHr)
+                        : (dt.hour >= InpSessionStartHr || dt.hour <= InpSessionEndHr);
+         if(!in_sess) continue;
         }
 
       double rw = 0.0;
