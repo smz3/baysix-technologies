@@ -119,6 +119,27 @@ bool InvalCtxForPos(const FobTradeBook &book, const FobPendingBook &pbook, const
   }
 
 //+------------------------------------------------------------------+
+//| (task 236) Market-close ONE position by ticket. Shared by the    |
+//| CF-invalidation exit and the opposite-PBO exit. Best-effort —    |
+//| returns the OrderSend result so the caller can log a failure.    |
+//+------------------------------------------------------------------+
+bool FobMarketClose(const ulong ticket, const bool is_long, const ulong magic)
+  {
+   if(!PositionSelectByTicket(ticket)) return false;
+   MqlTradeRequest req;  MqlTradeResult res;  ZeroMemory(req);  ZeroMemory(res);
+   req.action    = TRADE_ACTION_DEAL;
+   req.position  = ticket;
+   req.symbol    = _Symbol;
+   req.volume    = PositionGetDouble(POSITION_VOLUME);
+   req.type      = is_long ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+   req.price     = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                           : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   req.deviation = 20;
+   req.magic     = magic;
+   return OrderSend(req, res);
+  }
+
+//+------------------------------------------------------------------+
 //| Cancel-on-parent-PBO: a NEW PBO on the setup TF (seq = new_seq)   |
 //| ends the current cycle, so any STILL-PENDING L1 limit from a PRIOR|
 //| cycle (seq < new_seq) is a runaway winner that never pulled back  |

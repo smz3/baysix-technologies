@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.36.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.37.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -105,6 +105,12 @@ input ulong    InpMagic          = 3001;        // TRADE: FOB magic number
 //--- broker-SL touch, so it only ever cuts a loss shorter; broker SL/TP stay as the gap
 //--- backstop. Default off -> baseline byte-identical (A/B on the tester arbiter).
 input bool     InpExitOnCfInval = false;         // TRADE: close position on CF invalidation (close beyond L2)
+
+//--- OPPOSITE-PBO EXIT (TRADE only, task 236). Close open positions when a NEW PBO prints on
+//--- the SETUP TF in the OPPOSITE direction (the setup-TF storyline flipped — a new opposite
+//--- cycle just anchored). Coarser than CF-invalidation (a whole new cycle vs one zone failing);
+//--- the two are independent toggles. Default off -> baseline byte-identical.
+input bool     InpExitOnOppPbo  = false;         // TRADE: close positions on an opposite-dir PBO on the setup TF
 
 //--- ENTRY MECHANIC (TRADE only). CF_MARKET = market at CF confirmation (baseline).
 //--- CF_L1_LIMIT = pending LIMIT at the CF zone L1 (T1): fills only on a pullback to
@@ -324,6 +330,7 @@ void ActOnNewEvents()
       //--- PBO_LIMIT additionally caches this PBO as the anchor for its upcoming VR.
       if(e.label == FOB_PBO && e.setup_tf == g_setup_tf)
         {
+         if(InpExitOnOppPbo) CloseOnOppositePbo(e.dir);   // (task 236) close positions fighting the new PBO
          if(InpEntryMode == CF_L1_LIMIT || InpEntryMode == PBO_LIMIT)
             CancelPendingsForNewPbo(g_pend, InpMagic, g_setup_tf, e.seq);
          if(InpEntryMode == PBO_LIMIT)
@@ -408,19 +415,34 @@ void CloseInvalidatedCFs()
       bool invalidated = is_long ? (c < l2) : (c > l2);
       if(!invalidated)                                        continue;
 
-      MqlTradeRequest req;  MqlTradeResult res;  ZeroMemory(req);  ZeroMemory(res);
-      req.action    = TRADE_ACTION_DEAL;
-      req.position  = tk;
-      req.symbol    = _Symbol;
-      req.volume    = PositionGetDouble(POSITION_VOLUME);
-      req.type      = is_long ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-      req.price     = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
-                              : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      req.deviation = 20;
-      req.magic     = InpMagic;
       //--- best-effort; a failed close retries next tick (the bar close is still beyond L2).
-      if(!OrderSend(req, res))
+      if(!FobMarketClose(tk, is_long, InpMagic))
          PrintFormat("[FOB TRADE] CF-inval close failed pos=%I64u err=%d", tk, GetLastError());
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| OPPOSITE-PBO EXIT (TRADE, task 236). A NEW PBO on the setup TF in |
+//| the OPPOSITE direction to an open position = the setup-TF story   |
+//| just flipped (a new opposite cycle anchored). Close every open    |
+//| FOB position whose direction fights the new PBO's dir; same-dir   |
+//| positions (a hedge in the PBO's favour) are kept. Broker SL/TP    |
+//| stay as the backstop. Called from the setup-TF PBO branch.        |
+//+------------------------------------------------------------------+
+void CloseOnOppositePbo(const int pbo_dir)
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong tk = PositionGetTicket(i);
+      if(tk == 0)                                             continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol)       continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+
+      bool is_long = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      int  pdir    = is_long ? 1 : -1;
+      if(pdir == pbo_dir)                                     continue;   // same dir as the new PBO -> keep
+      if(!FobMarketClose(tk, is_long, InpMagic))
+         PrintFormat("[FOB TRADE] opp-PBO close failed pos=%I64u err=%d", tk, GetLastError());
      }
   }
 
