@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.34.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.35.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -76,6 +76,21 @@ enum FOB_TF_PAIR
 input group          "══════  TRADE / STUDY — setup pair (EMIT ignores: does all 9 TFs)  ══════"
 input FOB_TF_PAIR InpTfPair    = FOB_TF_H1_M30; // TRADE/STUDY: setup TF -> CF on the TF one below
 input int      InpCfIdxFilter  = 0;             // TRADE/STUDY: CF ordinal to trade (0 = ALL CFs)
+
+//--- HIGHER-TF DIRECTION FILTER (TRADE only, State-Engine slice 1, task 251). OPTIONAL align
+//--- gate: only take a setup-TF CF entry if its direction agrees with the LAST PBO direction of
+//--- a chosen higher TF (D1/W1/MN1). The enum value IS the g_setup TF index (D1=6,W1=7,MN1=8), so
+//--- the filter reads the SAME causal state the emitter stamps into htf_state — no Python, no drift.
+//--- pbo_dir persists as the last break (never cleared between cycles), so a filter TF is blank
+//--- ONLY before its first-ever PBO (warm-up) -> default TAKE. NONE = off (baseline A untouched).
+enum FOB_DIRFILT
+  {
+   FOB_DF_NONE = -1,   // off — take every CF (baseline)
+   FOB_DF_D1   = 6,    // align to Daily last-PBO direction
+   FOB_DF_W1   = 7,    // align to Weekly last-PBO direction
+   FOB_DF_MN1  = 8     // align to Monthly last-PBO direction
+  };
+input FOB_DIRFILT InpDirFilterTf = FOB_DF_NONE; // TRADE: align entries to this higher TF's last-PBO dir (NONE=off)
 
 input group          "══════  TRADE — orders only  ══════"
 input double   InpSlBufferK    = 0.25;          // TRADE: SL beyond zone L2 by k*band, band=|L1-L2| (0 = at L2)
@@ -217,6 +232,18 @@ int OnInit()
       ArrayResize(g_ingest, 2);
       g_ingest[0] = g_setup_tf - 1;
       g_ingest[1] = g_setup_tf;
+      //--- (task 251) direction filter: also ingest the higher aligner TF so its causal
+      //--- g_setup[].pbo_dir is maintained at entry-decision time (dedup if it's the pair).
+      if(InpMode == FOB_TRADE && InpDirFilterTf != FOB_DF_NONE)
+        {
+         int fi = (int)InpDirFilterTf;
+         if(fi != g_ingest[0] && fi != g_ingest[1])
+           {
+            int n = ArraySize(g_ingest);
+            ArrayResize(g_ingest, n + 1);
+            g_ingest[n] = fi;
+           }
+        }
      }
 
    //--- FULL reset (HARD): MT5 calls OnDeinit+OnInit on every chart period switch / recompile /
@@ -314,6 +341,14 @@ void ActOnNewEvents()
       if(e.label != FOB_CF)              continue;
       if(e.setup_tf != g_setup_tf)       continue;
       if(InpCfIdxFilter > 0 && e.cf_idx != InpCfIdxFilter) continue;
+      //--- (task 251) higher-TF direction filter: skip a CF that fights the aligner TF's last
+      //--- PBO. pbo_dir persists as the last break, so `active` is false ONLY pre-first-PBO
+      //--- (warm-up) -> take. NONE -> no gate. Reads the same causal state EMIT stamps.
+      if(InpDirFilterTf != FOB_DF_NONE)
+        {
+         int fi = (int)InpDirFilterTf;
+         if(g_setup[fi].active && e.dir != g_setup[fi].pbo_dir) continue;
+        }
 
       double rw = 0.0;
       if(InpEntryMode == CF_L1_LIMIT)
