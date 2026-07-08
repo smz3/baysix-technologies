@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.37.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.38.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -111,6 +111,15 @@ input bool     InpExitOnCfInval = false;         // TRADE: close position on CF 
 //--- cycle just anchored). Coarser than CF-invalidation (a whole new cycle vs one zone failing);
 //--- the two are independent toggles. Default off -> baseline byte-identical.
 input bool     InpExitOnOppPbo  = false;         // TRADE: close positions on an opposite-dir PBO on the setup TF
+
+//--- TRAILING-STOP EXIT (TRADE only, v1.38.0, right-tail / C-lever). One toggle that BOTH
+//--- disables the fixed RR TP (no_tp entries -> winners uncapped) AND ratchets the SL toward
+//--- profit: once a position's profit >= InpTrailActivateR * risk, trail its SL to
+//--- (price -/+ InpTrailDistR * risk), tightening ONLY. Tests "do winners run?" the simplest
+//--- way before the structural E4 VR-touch TP. Default off -> baseline byte-identical.
+input bool     InpTrailStop       = false;       // TRADE: R-based trailing stop (disables fixed TP; sole profit exit)
+input double   InpTrailActivateR  = 1.0;         // TRADE: start trailing once profit >= this * risk (R)
+input double   InpTrailDistR       = 1.5;        // TRADE: trail SL this * risk behind the peak (R)
 
 //--- ENTRY MECHANIC (TRADE only). CF_MARKET = market at CF confirmation (baseline).
 //--- CF_L1_LIMIT = pending LIMIT at the CF zone L1 (T1): fills only on a pullback to
@@ -346,7 +355,7 @@ void ActOnNewEvents()
          if(!g_cur_pbo_set || g_cur_pbo.seq != e.seq)      continue;  // VR must match the cached PBO's cycle
          double rw = 0.0;
          long tk = FobPlacePboLimit(g_cur_pbo, (int)InpPboEntryLevel, InpFixedLot,
-                                    InpSlBufferK, InpRMultTP, InpMagic, rw);
+                                    InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop);
          if(tk > 0)
             StashPending(g_pend, tk, rw, g_cur_pbo);
          continue;
@@ -368,13 +377,13 @@ void ActOnNewEvents()
       double rw = 0.0;
       if(InpEntryMode == CF_L1_LIMIT)
         {
-         long tk = FobPlaceLimit(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw);
+         long tk = FobPlaceLimit(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop);
          if(tk > 0)
             StashPending(g_pend, tk, rw, e);
         }
       else
         {
-         long pid = FobOpenMarket(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw);
+         long pid = FobOpenMarket(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop);
          if(pid > 0)
             StashTrade(g_book, pid, rw, e);
         }
@@ -443,6 +452,53 @@ void CloseOnOppositePbo(const int pbo_dir)
       if(pdir == pbo_dir)                                     continue;   // same dir as the new PBO -> keep
       if(!FobMarketClose(tk, is_long, InpMagic))
          PrintFormat("[FOB TRADE] opp-PBO close failed pos=%I64u err=%d", tk, GetLastError());
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| TRAILING-STOP EXIT (TRADE, v1.38.0 — right-tail / C-lever). The   |
+//| simplest "let winners run" test: once a position's profit reaches |
+//| InpTrailActivateR * risk, trail its SL to (price -/+ InpTrailDistR|
+//| * risk), ratcheting TOWARD PROFIT ONLY. The running peak is        |
+//| captured IMPLICITLY by never loosening the live SL (max/min vs the |
+//| current SL), so no per-position peak store is needed. Paired with  |
+//| no_tp entries (InpTrailStop disables the fixed RR TP) so the trail |
+//| is the sole profit exit -> winners uncapped. Risk per position is  |
+//| recovered by POSITION_IDENTIFIER via RiskForPos (fob_ledger). The  |
+//| broker SL stays as the catastrophic/gap backstop.                 |
+//+------------------------------------------------------------------+
+void TrailStops()
+  {
+   double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
+                    * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong tk = PositionGetTicket(i);
+      if(tk == 0)                                              continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol)        continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+
+      long   ident = (long)PositionGetInteger(POSITION_IDENTIFIER);
+      double rw    = RiskForPos(g_book, g_pend, ident);
+      if(rw <= 0.0)                                            continue;   // no risk context -> leave to SL
+
+      bool   is_long = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      double entry   = PositionGetDouble(POSITION_PRICE_OPEN);
+      double cur_sl  = PositionGetDouble(POSITION_SL);
+      double px      = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                               : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double profit  = is_long ? (px - entry) : (entry - px);
+      if(profit < InpTrailActivateR * rw)                      continue;   // not yet activated
+
+      //--- candidate trail SL, InpTrailDistR behind the current price. Ratchet toward
+      //--- profit ONLY (never loosen a set SL) -> the max/min against cur_sl is the peak.
+      double cand    = is_long ? (px - InpTrailDistR * rw) : (px + InpTrailDistR * rw);
+      bool   tighter = is_long ? (cand > cur_sl) : (cand < cur_sl);
+      if(!tighter)                                             continue;
+      if(MathAbs(px - cand) < minstop)                         continue;   // broker would reject
+
+      if(!FobModifySL(tk, cand))
+         PrintFormat("[FOB TRADE] trail-SL modify failed pos=%I64u err=%d", tk, GetLastError());
      }
   }
 
@@ -661,6 +717,7 @@ void OnTick()
      {
       ActOnNewEvents();
       if(InpExitOnCfInval) CloseInvalidatedCFs();   // (task 236) close-on-CF-invalidation exit
+      if(InpTrailStop)     TrailStops();             // (v1.38.0) R-based trailing-stop exit
      }
 
    //--- (5) VISUAL (live only in practice; OFF in the capture tester). Zones are already

@@ -36,7 +36,8 @@ ENUM_ORDER_TYPE_FILLING FobFilling()
 //| position is keyed uniquely.                                       |
 //+------------------------------------------------------------------+
 long FobOpenMarket(const FobEvent &e, const double lot, const double slBufferK,
-                   const double rMultTP, const ulong magic, double &out_rw)
+                   const double rMultTP, const ulong magic, double &out_rw,
+                   const bool no_tp = false)
   {
    out_rw = 0.0;
    if(!e.zone.valid) return 0;                            // no measurable band -> no trade
@@ -54,10 +55,11 @@ long FobOpenMarket(const FobEvent &e, const double lot, const double slBufferK,
       return 0;
    double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
                     * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   if(risk < minstop || risk * rMultTP < minstop)
+   if(risk < minstop || (!no_tp && risk * rMultTP < minstop))
       return 0;                                          // bracket too tight for the broker
 
-   double tp = is_long ? entry + risk * rMultTP : entry - risk * rMultTP;
+   //--- no_tp (trail-only): no fixed TP -> the trailing stop is the sole profit exit.
+   double tp = no_tp ? 0.0 : (is_long ? entry + risk * rMultTP : entry - risk * rMultTP);
 
    MqlTradeRequest req;  MqlTradeResult res;
    ZeroMemory(req);  ZeroMemory(res);
@@ -95,7 +97,8 @@ long FobOpenMarket(const FobEvent &e, const double lot, const double slBufferK,
 //| new setup-TF PBO. GTC -> no time expiry.                           |
 //+------------------------------------------------------------------+
 long FobPlaceLimit(const FobEvent &e, const double lot, const double slBufferK,
-                   const double rMultTP, const ulong magic, double &out_rw)
+                   const double rMultTP, const ulong magic, double &out_rw,
+                   const bool no_tp = false)
   {
    out_rw = 0.0;
    if(!e.zone.valid) return 0;                            // no measurable band -> no trade
@@ -119,10 +122,11 @@ long FobPlaceLimit(const FobEvent &e, const double lot, const double slBufferK,
                     * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    if(is_long)  { if(entry >= ask - minstop) return 0; }
    else         { if(entry <= bid + minstop) return 0; }
-   if(risk < minstop || risk * rMultTP < minstop)
+   if(risk < minstop || (!no_tp && risk * rMultTP < minstop))
       return 0;                                          // bracket too tight for the broker
 
-   double tp = is_long ? entry + risk * rMultTP : entry - risk * rMultTP;
+   //--- no_tp (trail-only): no fixed TP -> the trailing stop is the sole profit exit.
+   double tp = no_tp ? 0.0 : (is_long ? entry + risk * rMultTP : entry - risk * rMultTP);
 
    MqlTradeRequest req;  MqlTradeResult res;
    ZeroMemory(req);  ZeroMemory(res);
@@ -163,7 +167,7 @@ long FobPlaceLimit(const FobEvent &e, const double lot, const double slBufferK,
 //+------------------------------------------------------------------+
 long FobPlacePboLimit(const FobEvent &p, const int level, const double lot,
                       const double slBufferK, const double rMultTP,
-                      const ulong magic, double &out_rw)
+                      const ulong magic, double &out_rw, const bool no_tp = false)
   {
    out_rw = 0.0;
    if(!p.zone.valid) return 0;                            // no measurable band -> no trade
@@ -188,10 +192,11 @@ long FobPlacePboLimit(const FobEvent &p, const int level, const double lot,
                     * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    if(is_long)  { if(entry >= ask - minstop) return 0; }
    else         { if(entry <= bid + minstop) return 0; }
-   if(risk < minstop || risk * rMultTP < minstop)
+   if(risk < minstop || (!no_tp && risk * rMultTP < minstop))
       return 0;                                          // bracket too tight for the broker
 
-   double tp = is_long ? entry + risk * rMultTP : entry - risk * rMultTP;
+   //--- no_tp (trail-only): no fixed TP -> the trailing stop is the sole profit exit.
+   double tp = no_tp ? 0.0 : (is_long ? entry + risk * rMultTP : entry - risk * rMultTP);
 
    MqlTradeRequest req;  MqlTradeResult res;
    ZeroMemory(req);  ZeroMemory(res);

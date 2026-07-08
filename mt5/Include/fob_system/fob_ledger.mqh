@@ -140,6 +140,39 @@ bool FobMarketClose(const ulong ticket, const bool is_long, const ulong magic)
   }
 
 //+------------------------------------------------------------------+
+//| (v1.38.0) Recover a LIVE position's initial risk (rw) by its      |
+//| POSITION_IDENTIFIER — pending-book first (limit fill: identifier  |
+//| == originating order ticket), then trade-book (market fill:       |
+//| identifier == position id). Returns 0.0 if not ours -> caller     |
+//| leaves that position to its broker SL. Feeds the R-based trail.   |
+//+------------------------------------------------------------------+
+double RiskForPos(const FobTradeBook &book, const FobPendingBook &pbook, const long ident)
+  {
+   for(int i = ArraySize(pbook.ticket) - 1; i >= 0; i--)
+      if(pbook.ticket[i] == ident) return pbook.rw[i];
+   for(int i = ArraySize(book.pid) - 1; i >= 0; i--)
+      if(book.pid[i] == ident)     return book.rw[i];
+   return 0.0;
+  }
+
+//+------------------------------------------------------------------+
+//| (v1.38.0) Modify ONE position's SL, keeping its current TP. Used |
+//| by the trailing-stop exit to ratchet the SL toward profit. Best- |
+//| effort; returns the OrderSend result so the caller can log.      |
+//+------------------------------------------------------------------+
+bool FobModifySL(const ulong ticket, const double new_sl)
+  {
+   if(!PositionSelectByTicket(ticket)) return false;
+   MqlTradeRequest req;  MqlTradeResult res;  ZeroMemory(req);  ZeroMemory(res);
+   req.action   = TRADE_ACTION_SLTP;
+   req.position = ticket;
+   req.symbol   = _Symbol;
+   req.sl       = NormalizeDouble(new_sl, _Digits);
+   req.tp       = PositionGetDouble(POSITION_TP);   // keep existing TP (0 when trail-only)
+   return OrderSend(req, res);
+  }
+
+//+------------------------------------------------------------------+
 //| Cancel-on-parent-PBO: a NEW PBO on the setup TF (seq = new_seq)   |
 //| ends the current cycle, so any STILL-PENDING L1 limit from a PRIOR|
 //| cycle (seq < new_seq) is a runaway winner that never pulled back  |
