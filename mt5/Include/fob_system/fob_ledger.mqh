@@ -18,6 +18,7 @@ struct FobTradeBook
   {
    long   pid[];      double rw[];
    int    setuptf[];  int eventtf[];  int cfidx[];  int seq[];  int dir[];
+   double l2[];       // CF zone far/invalidation edge — for close-on-CF-invalidation (task 236)
   };
 
 //+------------------------------------------------------------------+
@@ -29,9 +30,11 @@ void StashTrade(FobTradeBook &book, const long pid, const double rw, const FobEv
    ArrayResize(book.pid, m + 1);     ArrayResize(book.rw, m + 1);
    ArrayResize(book.setuptf, m + 1); ArrayResize(book.eventtf, m + 1);
    ArrayResize(book.cfidx, m + 1);   ArrayResize(book.seq, m + 1);  ArrayResize(book.dir, m + 1);
+   ArrayResize(book.l2, m + 1);
    book.pid[m] = pid;       book.rw[m] = rw;
    book.setuptf[m] = e.setup_tf;  book.eventtf[m] = e.event_tf;
    book.cfidx[m] = e.cf_idx;      book.seq[m] = e.seq;   book.dir[m] = e.dir;
+   book.l2[m] = e.zone.l2;
   }
 
 //+------------------------------------------------------------------+
@@ -61,6 +64,7 @@ struct FobPendingBook
   {
    long   ticket[];   double rw[];
    int    setuptf[];  int eventtf[];  int cfidx[];  int seq[];  int dir[];
+   double l2[];       // CF zone far/invalidation edge — carried to the fill (task 236)
   };
 
 //--- stash a placed pending limit's context, keyed on its order ticket.
@@ -70,9 +74,11 @@ void StashPending(FobPendingBook &pb, const long ticket, const double rw, const 
    ArrayResize(pb.ticket, m + 1);   ArrayResize(pb.rw, m + 1);
    ArrayResize(pb.setuptf, m + 1);  ArrayResize(pb.eventtf, m + 1);
    ArrayResize(pb.cfidx, m + 1);    ArrayResize(pb.seq, m + 1);  ArrayResize(pb.dir, m + 1);
+   ArrayResize(pb.l2, m + 1);
    pb.ticket[m] = ticket;      pb.rw[m] = rw;
    pb.setuptf[m] = e.setup_tf; pb.eventtf[m] = e.event_tf;
    pb.cfidx[m] = e.cf_idx;     pb.seq[m] = e.seq;   pb.dir[m] = e.dir;
+   pb.l2[m] = e.zone.l2;
   }
 
 //--- map a filled pending's originating ORDER ticket -> its stashed context.
@@ -88,6 +94,28 @@ double CtxForPending(const FobPendingBook &pb, const long ticket,
         }
    setup_tf = -1; event_tf = -1; cf_idx = 0; seq = 0; dir = 0;
    return 0.0;
+  }
+
+//+------------------------------------------------------------------+
+//| (task 236) Recover a LIVE position's CF-invalidation context —   |
+//| the CF's own TF (event_tf), its far/invalidation edge L2 and dir |
+//| — from its POSITION_IDENTIFIER. A limit fill's identifier == the |
+//| originating pending-order ticket (pending-book); a market fill's |
+//| == the position id (trade-book) — the same duality the ledger    |
+//| resolves. Returns false if the id isn't ours (no context) -> the |
+//| caller leaves that position to its broker SL/TP.                 |
+//+------------------------------------------------------------------+
+bool InvalCtxForPos(const FobTradeBook &book, const FobPendingBook &pbook, const long ident,
+                    int &event_tf, int &dir, double &l2)
+  {
+   for(int i = ArraySize(pbook.ticket) - 1; i >= 0; i--)
+      if(pbook.ticket[i] == ident)
+        { event_tf = pbook.eventtf[i]; dir = pbook.dir[i]; l2 = pbook.l2[i]; return true; }
+   for(int i = ArraySize(book.pid) - 1; i >= 0; i--)
+      if(book.pid[i] == ident)
+        { event_tf = book.eventtf[i]; dir = book.dir[i]; l2 = book.l2[i]; return true; }
+   event_tf = -1; dir = 0; l2 = 0.0;
+   return false;
   }
 
 //+------------------------------------------------------------------+

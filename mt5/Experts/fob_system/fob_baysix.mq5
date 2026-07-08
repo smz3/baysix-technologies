@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.35.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.36.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -97,6 +97,14 @@ input double   InpSlBufferK    = 0.25;          // TRADE: SL beyond zone L2 by k
 input double   InpRMultTP       = 1.0;          // TRADE: TP = RR * risk (1.0 = 1:1, the coin-flip null)
 input double   InpFixedLot       = 0.01;        // TRADE: fixed lot (min lot at $50)
 input ulong    InpMagic          = 3001;        // TRADE: FOB magic number
+
+//--- CF-INVALIDATION EXIT (TRADE only, task 236). Close an open position the moment its CF
+//--- zone is STRUCTURALLY invalidated — a CLOSED bar on the CF's own TF (event_tf) closes
+//--- beyond the zone far edge L2 in the anti-break dir (close-only, wick != count = the SAME
+//--- rule the accumulator invalidates a zone with). Fires at L2, earlier than the L2±k*band
+//--- broker-SL touch, so it only ever cuts a loss shorter; broker SL/TP stay as the gap
+//--- backstop. Default off -> baseline byte-identical (A/B on the tester arbiter).
+input bool     InpExitOnCfInval = false;         // TRADE: close position on CF invalidation (close beyond L2)
 
 //--- ENTRY MECHANIC (TRADE only). CF_MARKET = market at CF confirmation (baseline).
 //--- CF_L1_LIMIT = pending LIMIT at the CF zone L1 (T1): fills only on a pullback to
@@ -368,6 +376,55 @@ void ActOnNewEvents()
   }
 
 //+------------------------------------------------------------------+
+//| CF-INVALIDATION EXIT (TRADE, task 236). Close every open FOB      |
+//| position whose CF zone has invalidated — a CLOSED bar on the CF's |
+//| own TF (event_tf) closed beyond the zone far edge L2 in the anti- |
+//| break direction. Close-only (matches the accumulator; wick != a   |
+//| count). L2 + event_tf are recovered per position by its           |
+//| POSITION_IDENTIFIER (market == order ticket / limit == pending    |
+//| ticket) via InvalCtxForPos. The broker SL/TP stay as the gap      |
+//| backstop; this only ever fires EARLIER, so it cuts a loss short.  |
+//| A failed close retries next tick (the bar close is still beyond   |
+//| L2). Idempotent — a closed position leaves PositionsTotal().      |
+//+------------------------------------------------------------------+
+void CloseInvalidatedCFs()
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong tk = PositionGetTicket(i);
+      if(tk == 0)                                             continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol)       continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+
+      long ident = (long)PositionGetInteger(POSITION_IDENTIFIER);
+      int etf, bdir; double l2;
+      if(!InvalCtxForPos(g_book, g_pend, ident, etf, bdir, l2)) continue;  // no context -> leave to SL/TP
+      if(etf < 0 || etf >= FOB_N_TF)                            continue;
+
+      bool is_long = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      //--- close-only invalidation on the CF's own TF: last CLOSED bar closed beyond L2.
+      double c = iClose(_Symbol, FobPeriods[etf], 1);
+      if(c == 0.0)                                             continue;   // bar not ready
+      bool invalidated = is_long ? (c < l2) : (c > l2);
+      if(!invalidated)                                        continue;
+
+      MqlTradeRequest req;  MqlTradeResult res;  ZeroMemory(req);  ZeroMemory(res);
+      req.action    = TRADE_ACTION_DEAL;
+      req.position  = tk;
+      req.symbol    = _Symbol;
+      req.volume    = PositionGetDouble(POSITION_VOLUME);
+      req.type      = is_long ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+      req.price     = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                              : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      req.deviation = 20;
+      req.magic     = InpMagic;
+      //--- best-effort; a failed close retries next tick (the bar close is still beyond L2).
+      if(!OrderSend(req, res))
+         PrintFormat("[FOB TRADE] CF-inval close failed pos=%I64u err=%d", tk, GetLastError());
+     }
+  }
+
+//+------------------------------------------------------------------+
 //| ONE-TIME LIVE TICK WARM-UP (v1.31.0, task 223). Replaces the       |
 //| deleted bar-wick backfills. After the first tick has built the     |
 //| historical zone STRUCTURE (structure is bar-close-correct), replay |
@@ -579,7 +636,10 @@ void OnTick()
       StudyOnNewEvents(g_study, g_events, g_seen, g_setup_tf, InpCfIdxFilter, InpStudyCapBars);
      }
    else if(InpMode == FOB_TRADE)
+     {
       ActOnNewEvents();
+      if(InpExitOnCfInval) CloseInvalidatedCFs();   // (task 236) close-on-CF-invalidation exit
+     }
 
    //--- (5) VISUAL (live only in practice; OFF in the capture tester). Zones are already
    //--- stamped by the accumulator across all ingested TFs — just redraw on a state change,
