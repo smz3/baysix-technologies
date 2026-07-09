@@ -38,6 +38,28 @@ _EXPORT_SQL = {
 }
 TABLES = tuple(_EXPORT_SQL)
 
+# Columns quarantined by task 261. Reading one is a bug, so raise loudly rather than hand
+# back a NULL column that silently collapses a screen to n=0. {table: {col: why}}
+_QUARANTINED = {
+    "zones": {
+        "mfe_r": "producer had no fill gate — 95% of rows were unfilled or insta-stopped. "
+                 "NULL in the payload; task 202 rebuilds it.",
+        "mae_r": "producer had no fill gate — 95% of rows were unfilled or insta-stopped. "
+                 "NULL in the payload; task 202 rebuilds it.",
+        "confirm_time": "renamed to next_cf_time (it is a forward pointer, not a fill time).",
+        "confirm_price": "renamed to next_cf_price.",
+    },
+}
+
+
+def _check_quarantine(table: str, cols) -> None:
+    q = _QUARANTINED.get(table, {})
+    hit = [c for c in (cols or ()) if c in q]
+    if hit:
+        why = "\n".join(f"  - {c}: {q[c]}" for c in hit)
+        raise ValueError(
+            f"quarantined column(s) requested from fob payload {table!r} (task 261):\n{why}")
+
 
 def run_dir(run_id: int) -> Path:
     return PAYLOAD_DIR / f"run_{run_id}"
@@ -77,7 +99,10 @@ def export_run(run_id: int, db_path=None) -> dict:
 def read_fob_payload(run_id: int, table: str, setup_tf=None, cols=None) -> pd.DataFrame:
     """Pull a run's raw payload frame back from Parquet. `setup_tf` filters to one
     setup-TF (cycles/zones/events all carry the column); `cols` selects columns
-    (predicate/projection pushdown). Small frames only — do not dump to context."""
+    (predicate/projection pushdown). Small frames only — do not dump to context.
+
+    Raises if `cols` names a column quarantined by task 261 (see _QUARANTINED)."""
+    _check_quarantine(table, cols)
     path = parquet_path(run_id, table)
     if not path.exists():
         raise FileNotFoundError(

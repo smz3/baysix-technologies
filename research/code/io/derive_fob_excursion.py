@@ -31,7 +31,29 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 
+QUARANTINE = """\
+QUARANTINED (task 261) — this producer has no FILL GATE and its output is invalid.
+
+It assumes a limit fill at l1 on the CF bar unconditionally. Measured on run_19 (278,592
+CF zones):
+  * 39% of zones had price ALREADY PAST l1 at the CF bar -> the fill never happens, the
+    stop is never reached, and the sweep runs to end-of-data. 98.8% of the mfe_r > 100
+    rows are these. Max mfe_r = 32,120 R: that is the 2016-24 gold bull, not a trade.
+  * 56% had price ALREADY BEYOND l2 -> stopped on bar 0, so mae_r <= -1 by construction.
+  * No censoring guard: a sweep that never resolves writes a number instead of NaN.
+
+Task 202 owns the correct rebuild: gate on an actual touch of l1 after the CF bar_time,
+NaN out unfilled + unresolved zones, floor R, and use SL = l2 -/+ 0.5*band (this script
+used SL = l2). Until then mfe_r/mae_r are NULL in the payload and nothing may repopulate
+them. Do not "just re-run" this to get numbers.
+"""
+
+
 def derive_excursion(run_id: int, idea_id: str = "FOB-001") -> dict:
+    raise RuntimeError(QUARANTINE)
+
+
+def _derive_excursion_QUARANTINED(run_id: int, idea_id: str = "FOB-001") -> dict:
     import numpy as np
     import pandas as pd
     from numba import njit

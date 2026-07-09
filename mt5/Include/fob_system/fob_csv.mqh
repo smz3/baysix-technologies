@@ -62,8 +62,10 @@ int FobCsvOpen(const string symbol, const string runid)
       //--- TIER B — cheap behaviour adds (same replay walk + label-derived)
       "bars_alive,n_l1_touches,n_mid_touches,n_l2_touches,"
       "body_clears,risk_class,vr_zone_broken,vr_fresh,vr_made_first_tf,htf_state,"
-      //--- TIER C — header emitted, VALUE deferred to phase-2 / ingest-derived
-      "confirm_time,confirm_price,continued,mfe_r,mae_r,realized_r,"
+      //--- TIER C — header emitted, VALUE deferred to phase-2 / ingest-derived.
+      //--- next_cf_* is a FORWARD POINTER (the next same-cycle CF), never an entry
+      //--- anchor — it is non-null iff a later CF exists. Anchor on the CF bar_time.
+      "next_cf_time,next_cf_price,continued,mfe_r,mae_r,realized_r,"
       "zone_key,is_primary,superseded_by\r\n");
    return fh;
   }

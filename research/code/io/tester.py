@@ -202,7 +202,9 @@ CREATE TABLE IF NOT EXISTS fob_zones (
     n_l1_touches INTEGER, n_mid_touches INTEGER, n_l2_touches INTEGER,
     rt1_time DATETIME, rt2_time DATETIME, rt3_time DATETIME,
     vr_fresh INTEGER,
-    confirm_time DATETIME, confirm_price REAL,
+    -- FORWARD POINTER to the next same-cycle CF. Non-null iff a later CF exists, so it can
+    -- never anchor an entry or gate a filter (task 261). Anchor on fob_events.bar_time.
+    next_cf_time DATETIME, next_cf_price REAL,
     invalidation_time DATETIME, continued INTEGER, alive_at_end INTEGER, bars_alive INTEGER,
     mfe_r REAL, mae_r REAL, realized_r REAL,
     zone_key TEXT, is_primary INTEGER, superseded_by TEXT, zone_valid INTEGER,
@@ -211,7 +213,7 @@ CREATE TABLE IF NOT EXISTS fob_zones (
 );
 CREATE INDEX IF NOT EXISTS ix_fob_zones_run     ON fob_zones(run_id);
 CREATE INDEX IF NOT EXISTS ix_fob_zones_cycle   ON fob_zones(cycle_id);
-CREATE INDEX IF NOT EXISTS ix_fob_zones_confirm ON fob_zones(run_id, confirm_time);
+CREATE INDEX IF NOT EXISTS ix_fob_zones_next_cf ON fob_zones(run_id, next_cf_time);
 
 CREATE TABLE IF NOT EXISTS fob_events (
     event_id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -485,6 +487,29 @@ def ingest_brc_zones(run_id: int, csv_path) -> int:
 # ── FOB ingest: one wide capture CSV -> fob_cycles / fob_zones / fob_events ────
 _RISK_MAP = {"LR": "LOW", "HR": "HIGH", "": None}
 
+# Tier-C columns the EA emits as HEADER ONLY — every value is derived downstream. The
+# emitter is a pristine causal oracle; the moment it starts writing an outcome column it
+# has seen the future. `confirm_*` are the pre-task-261 names, still present in archived
+# CSVs. (task 261)
+_TIER_C_DERIVED = ("next_cf_time", "next_cf_price", "confirm_time", "confirm_price",
+                   "continued", "mfe_r", "mae_r", "realized_r")
+
+
+def _assert_tier_c_unpopulated(rows, csv_path):
+    """Fail ingest if the emit CSV carries a value in any Tier-C outcome column.
+
+    These are ingest-derived by definition. A populated one means the EA is emitting a
+    forward-looking outcome, which would silently poison every screen built on the run."""
+    if not rows:
+        return
+    present = [c for c in _TIER_C_DERIVED if c in rows[0]]
+    dirty = {c: sum(1 for r in rows if str(r.get(c) or "").strip()) for c in present}
+    bad = {c: n for c, n in dirty.items() if n}
+    if bad:
+        raise ValueError(
+            f"emit CSV {Path(csv_path).name} populates Tier-C derived column(s) {bad} — "
+            f"the EA must emit these header-only (task 261). A value here is look-ahead.")
+
 
 def ingest_fob(run_id: int, csv_path) -> dict:
     """Derive fob_cycles / fob_zones / fob_events from a fob_capture_*.csv.
@@ -522,6 +547,7 @@ def ingest_fob(run_id: int, csv_path) -> dict:
             raise ValueError(f"CSV missing expected columns: {sorted(miss)}")
         rows = list(reader)
 
+    _assert_tier_c_unpopulated(rows, csv_path)
     now = _now()
 
     # ── 1. reconstruct cycles by (setup_tf, seq), insertion order = chronological ─
@@ -563,7 +589,7 @@ def ingest_fob(run_id: int, csv_path) -> dict:
     zone_cols = ["run_id", "cycle_id", "source_label", "event_tf", "direction", "l1", "l2",
                  "mid", "p1_time", "p1_price", "p3_time", "p3_price", "t1_time", "t2_time",
                  "t3_time", "n_l1_touches", "n_mid_touches", "n_l2_touches", "rt1_time",
-                 "rt2_time", "rt3_time", "vr_fresh", "confirm_time", "confirm_price", "invalidation_time",
+                 "rt2_time", "rt3_time", "vr_fresh", "next_cf_time", "next_cf_price", "invalidation_time",
                  "continued", "alive_at_end", "bars_alive", "mfe_r", "mae_r", "realized_r",
                  "zone_key", "is_primary", "superseded_by", "zone_valid", "meta", "created_at"]
     evt_cols = ["run_id", "cycle_id", "zone_id", "event_tf", "label", "cf_idx", "risk_class",
@@ -598,12 +624,13 @@ def ingest_fob(run_id: int, csv_path) -> dict:
                 "n_mid_touches": _i(r["n_mid_touches"]), "n_l2_touches": _i(r["n_l2_touches"]),
                 "rt1_time": _norm_ts(r["rt1_time"]), "rt2_time": _norm_ts(r["rt2_time"]),
                 "rt3_time": _norm_ts(r["rt3_time"]),
-                "vr_fresh": _i(r["vr_fresh"]), "confirm_time": _norm_ts(r["confirm_time"]),
-                "confirm_price": _f(r["confirm_price"]),
+                "vr_fresh": _i(r["vr_fresh"]),
+                # Tier-C: header-only in the CSV (asserted empty above), derived downstream.
+                "next_cf_time": None, "next_cf_price": None,
                 "invalidation_time": _norm_ts(r["invalidation_time"]),
-                "continued": _i(r["continued"]), "alive_at_end": _i(r["alive_at_end"]),
-                "bars_alive": _i(r["bars_alive"]), "mfe_r": _f(r["mfe_r"]),
-                "mae_r": _f(r["mae_r"]), "realized_r": _f(r["realized_r"]),
+                "continued": None, "alive_at_end": _i(r["alive_at_end"]),
+                "bars_alive": _i(r["bars_alive"]),
+                "mfe_r": None, "mae_r": None, "realized_r": None,
                 "zone_key": _s(r["zone_key"]), "is_primary": _i(r["is_primary"]),
                 "superseded_by": _s(r["superseded_by"]), "zone_valid": _i(r["zone_valid"]),
                 "meta": None, "created_at": now,
@@ -629,12 +656,18 @@ def ingest_fob(run_id: int, csv_path) -> dict:
 
 
 def derive_fob_confirm_linkage(run_id: int) -> dict:
-    """Phase-2 Part A (task 200) — set zone.confirm_time / confirm_price for CF zones from
+    """Phase-2 Part A (task 200) — set zone.next_cf_time / next_cf_price for CF zones from
     NEXT-CF LINKAGE within each cycle (the next same-cycle CF that the storyline printed).
     Deterministic, no external data. NOTE: this is ONLY the linkage pointer — it does NOT
     decide win/loss. The outcome (continued / realized_r) is a forward PRICE result owned by
     derive_fob_tier_c_outcome() (next-CF linkage alone is degenerate ~99% 'continued').
-    Idempotent."""
+    Idempotent.
+
+    LOOK-AHEAD WARNING (task 261) — these fields are non-null iff a later CF exists in the
+    cycle, i.e. exactly `cf_idx < max_cf`. Selecting or filtering on them conditions on the
+    future and manufactures survivorship. Renamed from confirm_time/confirm_price, whose name
+    invited exactly that: a screen anchored entries on `confirm_time` and produced a fake
+    t+7.72. Any entry anchor MUST be the CF event's own bar_time."""
     if not get_tester_run(run_id):
         raise ValueError(f"tester run not found: {run_id}")
     with _conn() as conn:
@@ -655,9 +688,9 @@ def derive_fob_confirm_linkage(run_id: int) -> dict:
                 nxt = cfs[i + 1] if i + 1 < len(cfs) else None
                 updates.append((nxt[1] if nxt else None, nxt[2] if nxt else None, zid))
         conn.executemany(
-            "UPDATE fob_zones SET confirm_time=?, confirm_price=? WHERE zone_id=?", updates)
+            "UPDATE fob_zones SET next_cf_time=?, next_cf_price=? WHERE zone_id=?", updates)
         conn.commit()
-    print(f"[tester] run #{run_id} Tier-C(confirm linkage): {len(updates)} CF zones linked")
+    print(f"[tester] run #{run_id} Tier-C(next-CF linkage): {len(updates)} CF zones linked")
     return {"cf_zones": len(updates)}
 
 
