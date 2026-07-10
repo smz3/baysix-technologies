@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.40.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.41.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -135,6 +135,10 @@ input bool     InpExitOnOppPbo  = false;         // TRADE: close positions on an
 //--- profit: once a position's profit >= InpTrailActivateR * risk, trail its SL to
 //--- (price -/+ InpTrailDistR * risk), tightening ONLY. Tests "do winners run?" the simplest
 //--- way before the structural E4 VR-touch TP. Default off -> baseline byte-identical.
+//--- (v1.41.0, task 267) The trailed SL is FLOORED AT ENTRY: with InpTrailDistR >
+//--- InpTrailActivateR the raw candidate lands BELOW entry at activation (a "trailing stop"
+//--- that locks nothing until peak > InpTrailDistR). The floor makes the invariant hold for
+//--- any (activate, dist) pair: once armed, the position can never book a loss.
 input bool     InpTrailStop       = false;       // TRADE: R-based trailing stop (disables fixed TP; sole profit exit)
 input double   InpTrailActivateR  = 1.0;         // TRADE: start trailing once profit >= this * risk (R)
 input double   InpTrailDistR       = 1.5;        // TRADE: trail SL this * risk behind the peak (R)
@@ -534,7 +538,16 @@ void TrailStops()
       //--- candidate trail SL, InpTrailDistR behind the current price. Ratchet toward
       //--- profit ONLY (never loosen a set SL) -> the max/min against cur_sl is the peak.
       double cand    = is_long ? (px - InpTrailDistR * rw) : (px + InpTrailDistR * rw);
-      bool   tighter = is_long ? (cand > cur_sl) : (cand < cur_sl);
+
+      //--- (v1.41.0) floor at entry: an armed trail never sits on the losing side.
+      cand = is_long ? MathMax(cand, entry) : MathMin(cand, entry);
+
+      //--- Compare on the NORMALIZED price the broker will actually store, else a sub-point
+      //--- drift makes `tighter` true every tick while req.sl rounds to the SAME level ->
+      //--- the modify is re-issued forever and rejected (161k `Invalid stops` in one run).
+      cand = NormalizeDouble(cand, _Digits);
+      double point   = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+      bool   tighter = is_long ? (cand > cur_sl + point * 0.5) : (cand < cur_sl - point * 0.5);
       if(!tighter)                                             continue;
       if(MathAbs(px - cand) < minstop)                         continue;   // broker would reject
 
