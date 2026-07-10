@@ -1,13 +1,17 @@
 ; ==========================================================================
-; FOB-001 - direction A/B, ARM A (BASELINE / continuation)
+; FOB-001 - direction A/B, ARM B (INVERTED / mirror fade)
 ; Setup M30 -> CF on M15 | ALL CFs | no filters | trail-only exit
 ;
-; Paired with ARM B (inverted) which differs by InpInvertDir ONLY.
-; FREEZE THIS FILE. If any value below changes between arms, the A/B is
-; contaminated and the result must be discarded.
+; IDENTICAL to fob_m30m15_cfALL_trail_k050_A_baseline.set except InpInvertDir.
+; Diff the two files: exactly one value line must change. If anything else
+; differs, the A/B is contaminated and the result must be discarded.
 ;
-; Tester: Model=4 (every tick based on real ticks), 2016-06-01 -> present,
-;         XAUUSD, UTC offset set, InpVisualize off.
+; EA: fob_baysix v1.40.0, git 46216a0 (CLEAN — init line must print no -DIRTY)
+; Tester: Model=4 (every tick based on real ticks), XAUUSD_dukas, UTC offset set,
+;         IS window 2016.06.01 -> 2024.06.30. The 2024.07.01 -> 2026.05.01 block
+;         stays SEALED for the winning arm.
+; Init line must read:  DIR=INVERTED(mirror-fade)
+; Ledger lands as ..._cf_inv_k050_...  (arm A is ..._cf_nrm_k050_...)
 ; ==========================================================================
 
 ; ---- MODE -----------------------------------------------------------------
@@ -36,8 +40,8 @@ InpFixedLot=0.01
 InpMagic=3001
 
 ; ---- DIRECTION: this is the ONLY line that differs between arm A and arm B ----
-InpInvertDir=false
-; false = NORMAL (continuation, trade WITH the CF)
+InpInvertDir=true
+; true = INVERTED (mirror fade, trade AGAINST the CF; stop reflected, |risk| unchanged)
 
 ; ---- structural exits: OFF ------------------------------------------------
 InpExitOnCfInval=false
@@ -51,6 +55,9 @@ InpTrailDistR=1.5
 ; ---- entry mechanic -------------------------------------------------------
 InpEntryMode=0
 ; 0=CF_MARKET 1=CF_L1_LIMIT 2=PBO_LIMIT
+; NOTE: CF_L1_LIMIT / PBO_LIMIT under InpInvertDir=true are near-empty BY
+; CONSTRUCTION (the inverted pending sits on the wrong side of price and is
+; skipped). The direction A/B must run on CF_MARKET.
 InpPboEntryLevel=0
 ; inert under CF_MARKET
 
