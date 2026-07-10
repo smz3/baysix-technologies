@@ -75,3 +75,39 @@ Two effects the table does **not** capture:
 
 Falsification: arm B ≤ 0 net $/trade ⇒ the CF carries no exploitable directional information in either
 sense at M30-M15, and arm A's loss is spread, not signal.
+
+---
+
+# VERDICT — 2026-07-10, same day: **PREDICTION FALSIFIED. BOTH DIRECTIONS LOSE.**
+
+Both arms re-run on ONE clean binary (**v1.40.0, git `46216a0`, `FOB_GIT_DIRTY=false`**), presets differing by
+`InpInvertDir` **only**. `strategy_log` **112** (FALSIFIED). Ledgers archived to
+`research/outputs/fob_ab_direction/armA_normal_*.csv` / `armB_inverted_*.csv`.
+
+| arm | n | net $/trade | SE | t | R/trade | win-rate | maxDD |
+|---|---|---|---|---|---|---|---|
+| A normal (full-span) | 8,284 | −0.6188 | 0.130 | −4.76 | −0.180 | 29.79% | $5,372 |
+| B inverted (full-span) | 8,052 | −0.5721 | 0.130 | −4.39 | −0.208 | 29.00% | $5,244 |
+
+IS slice (2016-06-16 → 2024-06-30), `is_run='IS-DIR-M30M15'`:
+**result_id 52** normal −0.5504 (n 6,688, t−7.74) · **result_id 53** inverted −0.4944 (n 6,473, t−7.25) ·
+**result_id 54** paired diff **+0.0552, t +0.46**. Full-span paired diff +0.0390, t +0.18.
+
+## Why the flip fails — the finding
+
+Paired on the same 8,049 CF events: A wins 29.8%, B wins 29.0%, **both lose 40.7%**, both win **0.0%**.
+`corr(R_A, R_B) = −0.360`, **not −1** ⇒ the flip is *not* a mirror. The 40.7% both-lose bucket is
+**spread + trail whipsaw**: price runs against A and stops it, reverses, and stops B. Inverting direction
+cannot recover money the structure never paid to either side. Arm A's loss is **not invertible signal**.
+
+The pre-registered claim that path-dependence "favours the flip" was **wrong** — it cuts the other way.
+
+## What this does and does not touch
+
+- **Scope: M30-M15, ALL CFs, trail-only, k=0.50.** It does **not** touch the live H4-CF3 config (result_id 50).
+- Sanity: clean arm A reproduced the earlier DIRTY v1.39.0 run **exactly** (−0.6188, n=8,284) ⇒ the
+  `invert=false` algebraic identity holds and the baseline is byte-identical, as designed.
+- The full-span window consumed the held-out OOS block for M30-M15. **Moot** — there is no winning arm to validate.
+
+Follow-up: **task 268** — is the 40.7% both-lose bucket smaller at H4 (where the live edge lives), and does a
+fixed-RR TP shrink it? That bucket, not direction, may be the real TF-selection criterion.
