@@ -34,14 +34,24 @@ ENUM_ORDER_TYPE_FILLING FobFilling()
 //| position id (0 on failure); sets out_rw = risk. HEDGING-safe id   |
 //| capture: read POSITION_ID off the entry deal so each concurrent   |
 //| position is keyed uniquely.                                       |
+//|                                                                    |
+//| `invert` (task 265) = MIRROR FADE: trade AGAINST the CF direction. |
+//| The stop is REFLECTED to the opposite side of entry at IDENTICAL   |
+//| |risk|, so n and R are held constant and the A/B isolates          |
+//| direction alone. A naive dir-flip is INVALID: sl = l2 -/+ buffer   |
+//| would land on the WRONG SIDE of entry (broker reject), because L2  |
+//| is the far edge *in the CF's own direction*.                       |
+//| invert=false -> sl collapses to l2 -/+ buffer exactly (byte-       |
+//| identical baseline; see the algebra in the risk line below).       |
 //+------------------------------------------------------------------+
 long FobOpenMarket(const FobEvent &e, const double lot, const double slBufferK,
                    const double rMultTP, const ulong magic, double &out_rw,
-                   const bool no_tp = false)
+                   const bool no_tp = false, const bool invert = false)
   {
    out_rw = 0.0;
    if(!e.zone.valid) return 0;                            // no measurable band -> no trade
-   bool   is_long = (e.dir == FOB_BULL);
+   bool   orig_long = (e.dir == FOB_BULL);                // the CF's own direction
+   bool   is_long   = invert ? !orig_long : orig_long;    // what we actually trade
    double entry   = is_long ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                             : SymbolInfoDouble(_Symbol, SYMBOL_BID);
    //--- SL = beyond the zone FAR edge (L2) by slBufferK * band height.
@@ -49,8 +59,12 @@ long FobOpenMarket(const FobEvent &e, const double lot, const double slBufferK,
    double l2     = e.zone.l2;                             // far/invalidation edge
    double band   = MathAbs(l1 - l2);                      // zone height (scale-free)
    double buffer = slBufferK * band;
-   double sl     = is_long ? l2 - buffer : l2 + buffer;
-   double risk   = MathAbs(entry - sl);
+   //--- structural stop on the CF's OWN side; risk is measured off it, then the stop is
+   //--- placed |risk| away on whichever side we are actually trading. When invert=false
+   //--- this is an identity: sl = entry -/+ |entry - sl_struct| == sl_struct.
+   double sl_struct = orig_long ? l2 - buffer : l2 + buffer;
+   double risk      = MathAbs(entry - sl_struct);
+   double sl        = is_long ? entry - risk : entry + risk;
    if(risk <= 0.0)
       return 0;
    double minstop = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)
@@ -95,21 +109,30 @@ long FobOpenMarket(const FobEvent &e, const double lot, const double slBufferK,
 //| PENDING ORDER ticket (0 on failure); out_rw = risk. Cancellation   |
 //| of a runaway winner (never pulled back) is the caller's job on a    |
 //| new setup-TF PBO. GTC -> no time expiry.                           |
+//|                                                                    |
+//| `invert` (task 265): mirror fade, stop reflected at identical      |
+//| |risk| (see FobOpenMarket). NOTE the limit-side check below then   |
+//| rejects almost every setup — price sits BEYOND L1 in the CF's      |
+//| direction, so the inverted order is a limit on the wrong side.     |
+//| CF_L1_LIMIT + invert is therefore near-empty BY CONSTRUCTION; the  |
+//| direction A/B runs on CF_MARKET. Kept correct, not useful.         |
 //+------------------------------------------------------------------+
 long FobPlaceLimit(const FobEvent &e, const double lot, const double slBufferK,
                    const double rMultTP, const ulong magic, double &out_rw,
-                   const bool no_tp = false)
+                   const bool no_tp = false, const bool invert = false)
   {
    out_rw = 0.0;
    if(!e.zone.valid) return 0;                            // no measurable band -> no trade
-   bool   is_long = (e.dir == FOB_BULL);
+   bool   orig_long = (e.dir == FOB_BULL);
+   bool   is_long   = invert ? !orig_long : orig_long;
    double l1     = e.level;                               // near edge = the limit price (T1)
    double l2     = e.zone.l2;                             // far/invalidation edge
    double band   = MathAbs(l1 - l2);                      // zone height (scale-free)
    double buffer = slBufferK * band;
    double entry  = l1;
-   double sl     = is_long ? l2 - buffer : l2 + buffer;
-   double risk   = MathAbs(entry - sl);
+   double sl_struct = orig_long ? l2 - buffer : l2 + buffer;
+   double risk      = MathAbs(entry - sl_struct);         // = band*(1+slBufferK)
+   double sl        = is_long ? entry - risk : entry + risk;
    if(risk <= 0.0)
       return 0;
 
@@ -167,19 +190,22 @@ long FobPlaceLimit(const FobEvent &e, const double lot, const double slBufferK,
 //+------------------------------------------------------------------+
 long FobPlacePboLimit(const FobEvent &p, const int level, const double lot,
                       const double slBufferK, const double rMultTP,
-                      const ulong magic, double &out_rw, const bool no_tp = false)
+                      const ulong magic, double &out_rw, const bool no_tp = false,
+                      const bool invert = false)
   {
    out_rw = 0.0;
    if(!p.zone.valid) return 0;                            // no measurable band -> no trade
-   bool   is_long = (p.dir == FOB_BULL);
+   bool   orig_long = (p.dir == FOB_BULL);
+   bool   is_long   = invert ? !orig_long : orig_long;    // mirror fade (task 265)
    double l1     = p.level;                               // near edge (T1)
    double l2     = p.zone.l2;                             // far/invalidation edge (T3)
    double mid    = p.zone.mid;                            // 50% line (T2)
    double entry  = (level <= 0) ? l1 : (level == 1) ? mid : l2;   // T1 / T2 / T3
    double band   = MathAbs(l1 - l2);                      // zone height (scale-free)
    double buffer = slBufferK * band;
-   double sl     = is_long ? l2 - buffer : l2 + buffer;
-   double risk   = MathAbs(entry - sl);
+   double sl_struct = orig_long ? l2 - buffer : l2 + buffer;
+   double risk      = MathAbs(entry - sl_struct);
+   double sl        = is_long ? entry - risk : entry + risk;
    if(risk <= 0.0)
       return 0;
 

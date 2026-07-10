@@ -32,7 +32,7 @@
 //|    fob_study · fob_csv · fob_visual                                 |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "1.39.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
+#property version   "1.40.0"        // MUST match FOB_VERSION (fob_types.mqh) — bump both together
 #property strict
 
 #include <fob_system/fob_types.mqh>
@@ -107,6 +107,14 @@ input double   InpSlBufferK    = 0.25;          // TRADE: SL beyond zone L2 by k
 input double   InpRMultTP       = 1.0;          // TRADE: TP = RR * risk (1.0 = 1:1, the coin-flip null)
 input double   InpFixedLot       = 0.01;        // TRADE: fixed lot (min lot at $50)
 input ulong    InpMagic          = 3001;        // TRADE: FOB magic number
+
+//--- MIRROR FADE (task 265). Trade AGAINST the CF direction: a bull CF sells, a bear CF buys.
+//--- The stop is REFLECTED to the opposite side of entry at IDENTICAL |risk| (never re-derived
+//--- from L2, which is the far edge in the CF's OWN direction and would land on the wrong side
+//--- of entry -> broker reject). n and R are therefore held constant and the A/B isolates
+//--- direction alone. false = baseline byte-identical. CF_MARKET only in practice: under
+//--- CF_L1_LIMIT / PBO_LIMIT the inverted pending sits on the wrong side of price and is skipped.
+input bool     InpInvertDir      = false;       // TRADE: mirror fade — trade AGAINST the CF dir
 
 //--- CF-INVALIDATION EXIT (TRADE only, task 236). Close an open position the moment its CF
 //--- zone is STRUCTURALLY invalidated — a CLOSED bar on the CF's own TF (event_tf) closes
@@ -322,10 +330,11 @@ int OnInit()
       PrintFormat("[FOB EMIT] v%s init OK — %d TFs, swing_window=%d radius=%d runid=%s visualize=%s",
                   FOB_VERSION, FOB_N_TF, InpSwingWindow, g_radius, g_runid, (InpVisualize ? "ON" : "off"));
    else
-      PrintFormat("[FOB %s] v%s init OK — setup_tf=%s -> CF on %s (ingest %s..%s, %d TF) | cf_filter=%d | SLbuf=%.2f TP=%.2fR | lot=%.2f magic=%I64u%s",
+      PrintFormat("[FOB %s] v%s init OK — setup_tf=%s -> CF on %s (ingest %s..%s, %d TF) | cf_filter=%d | SLbuf=%.2f TP=%.2fR | lot=%.2f magic=%I64u | DIR=%s%s",
                   FobModeName(InpMode), FOB_VERSION, FobTfName(g_setup_tf), FobTfName(g_setup_tf - 1),
                   FobTfName(g_ingest[0]), FobTfName(g_ingest[ArraySize(g_ingest) - 1]), ArraySize(g_ingest),
                   InpCfIdxFilter, InpSlBufferK, InpRMultTP, InpFixedLot, InpMagic,
+                  (InpInvertDir ? "INVERTED(mirror-fade)" : "NORMAL(continuation)"),
                   (InpMode == FOB_STUDY ? " | *** STUDY: NO ORDERS ***" : " | MULTI-POSITION"));
    if(InpMode == FOB_TRADE)
      {
@@ -375,7 +384,8 @@ void ActOnNewEvents()
          if(!g_cur_pbo_set || g_cur_pbo.seq != e.seq)      continue;  // VR must match the cached PBO's cycle
          double rw = 0.0;
          long tk = FobPlacePboLimit(g_cur_pbo, (int)InpPboEntryLevel, InpFixedLot,
-                                    InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop);
+                                    InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop,
+                                    InpInvertDir);
          if(tk > 0)
             StashPending(g_pend, tk, rw, g_cur_pbo);
          continue;
@@ -408,13 +418,13 @@ void ActOnNewEvents()
       double rw = 0.0;
       if(InpEntryMode == CF_L1_LIMIT)
         {
-         long tk = FobPlaceLimit(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop);
+         long tk = FobPlaceLimit(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop, InpInvertDir);
          if(tk > 0)
             StashPending(g_pend, tk, rw, e);
         }
       else
         {
-         long pid = FobOpenMarket(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop);
+         long pid = FobOpenMarket(e, InpFixedLot, InpSlBufferK, InpRMultTP, InpMagic, rw, InpTrailStop, InpInvertDir);
          if(pid > 0)
             StashTrade(g_book, pid, rw, e);
         }
@@ -856,7 +866,7 @@ void OnDeinit(const int reason)
      }
    if(InpMode == FOB_TRADE)
      {
-      WriteTradeLedger(g_book, g_pend, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter, (int)InpEntryMode, (int)InpPboEntryLevel);
+      WriteTradeLedger(g_book, g_pend, InpMagic, g_setup_tf, InpSlBufferK, InpRMultTP, InpCfIdxFilter, (int)InpEntryMode, (int)InpPboEntryLevel, InpInvertDir);
       return;
      }
 

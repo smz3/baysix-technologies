@@ -250,7 +250,8 @@ string ExitReasonName(const long reason)
 //+------------------------------------------------------------------+
 void WriteTradeLedger(const FobTradeBook &book, const FobPendingBook &pbook, const ulong magic,
                       const int setup_tf, const double slBufferK, const double rMultTP,
-                      const int cfIdxFilter, const int entryMode, const int pboLevel = -1)
+                      const int cfIdxFilter, const int entryMode, const int pboLevel = -1,
+                      const bool invert = false)
   {
    if(!HistorySelect(0, TimeCurrent())) return;
    int total = HistoryDealsTotal();
@@ -288,9 +289,12 @@ void WriteTradeLedger(const FobTradeBook &book, const FobPendingBook &pbook, con
    if(entryMode == 2)      emtok = StringFormat("pbot%d", pboLevel + 1);  // 0->t1,1->t2,2->t3
    else if(entryMode == 1) emtok = "l1";
    else                    emtok = "cf";
-   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_%s_%s_%s_cf%d_%s.csv",
+   //--- direction arm in the name (task 265): without it the inverted arm B OVERWRITES the
+   //--- continuation arm A of the same sweep, silently destroying the baseline.
+   string dirtok = invert ? "inv" : "nrm";
+   string fname = StringFormat("FOB\\fob_trades_%s_v%s_%s_%s_%s_%s_%s_%s_cf%d_%s.csv",
                                _Symbol, ver, FobTfName(setup_tf), rmode,
-                               emtok, ktok, rrtok, cfIdxFilter, stamp);
+                               emtok, dirtok, ktok, rrtok, cfIdxFilter, stamp);
    int h = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h == INVALID_HANDLE)
      { PrintFormat("[FOB TRADER] ledger FileOpen failed (%d) for %s", GetLastError(), fname); return; }
