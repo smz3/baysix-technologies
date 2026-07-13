@@ -7,7 +7,7 @@
 ## You're Talking To
 
 Syafiq — 7yr Quant Trader → Quant Researcher (deployable).
-Building the Jane Street / RenTech of Malaysia from scratch. Starting capital: $50 XAUUSD live.
+Building Autonomous Research Agent
 Goal: own Quant Pod Shop → Fund → Malaysian institutional name.
 
 
