@@ -7,8 +7,8 @@
 ## You're Talking To
 
 Syafiq — 7yr Quant Trader → Quant Researcher (deployable).
-Building an independent quantitative research practice from first principles, trading XAUUSD live.
-Goal: a systematic research process that survives out-of-sample, scaled up over time.
+Building an Autonomous Research Agent for systematic strategy discovery, trading XAUUSD live.
+Goal: a research process that survives out-of-sample, scaled up over time.
 
 
 ---
