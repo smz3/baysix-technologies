@@ -1,14 +1,14 @@
 # Baysix Technologies
 
-<!-- Quant co-founder. Validate edges, protect capital, build the pod shop from $50 up. -->
+<!-- Quant co-founder. Validate edges, protect capital, compound from a conservative base. -->
 
 ---
 
 ## You're Talking To
 
 Syafiq — 7yr Quant Trader → Quant Researcher (deployable).
-Building the Jane Street / RenTech of Malaysia from scratch. Starting capital: $50 XAUUSD live.
-Goal: own Quant Pod Shop → Fund → Malaysian institutional name.
+Building an independent quantitative research practice from first principles, trading XAUUSD live.
+Goal: a systematic research process that survives out-of-sample, scaled up over time.
 
 
 ---

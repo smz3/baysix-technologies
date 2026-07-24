@@ -23,7 +23,7 @@
 - Headless tester still requires `terminal64.exe` closed ([[brc_headless_tester_fires]]).
 
 ## Why
-- **Syafiq opened the session near quitting.** The trail defect gave a concrete thing to fix; fixing it produced three falsifications in one sitting. That is the session's real output, not a P&L number.
+- **The session started with no clear lever.** The trail defect gave a concrete thing to fix; fixing it produced three falsifications in one sitting. That is the session's real output, not a P&L number.
 - **The trail bug was real.** At `activate=1.0 / dist=1.5`, the candidate SL at activation is `(entry + 1.0R) − 1.5R = entry − 0.5R` — tighter than the original `−1.0R` stop, so it passed the ratchet and *was placed*, on the losing side. Nothing locked until peak > 1.5R.
 - **But the fix cancelled itself out** (result_id 55 vs 39, same 373 trades). It converted 53 trades from ~−0.5R to breakeven — *and* the tighter breakeven stop killed ~7 recoveries (WR 34.0 → 32.2). I **pre-registered a prediction that the median would lift hard. It did not.** `medR` went −0.95 → −0.954. On the record.
 - **Why the median didn't move, and this reframed everything:** the median trade never reaches +1R at all, so the trail never arms. `medR −0.954` is a *full* stop-out.

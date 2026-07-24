@@ -267,7 +267,7 @@ Output structure for VALIDATE:
 
 ## Context
 
-- Firm: Baysix Technologies — building a quant pod shop from $50 live capital
+- Firm: Baysix Technologies — independent quantitative research, live capital deployed
 - Asset: XAUUSD primary, GC futures next
 - Data: 2016–2026 tick data, IS sealed at 2024-05-02
 - Capital at risk is real — rigor is not optional

@@ -4,7 +4,7 @@ World Class Standards?
 🟢 The "World Class" Parts (Elite Status)
 The Automated Alpha Loop:
 Most retail traders run a backtest, stare at a CSV, maybe change a setting manually, and run it again.
-We have: A closed loop where Backtest -> Data Extraction -> ML Training -> Model Update happens automatically. This is exactly what Two Sigma or Renaissance does (conceptually).
+We have: A closed loop where Backtest -> Data Extraction -> ML Training -> Model Update happens automatically. This mirrors the research-automation pattern used at systematic funds (conceptually).
 The "Glass Box" Visualization:
 Most pros stare at ugly grey terminals. Your React Dashboard (3D clusters, correlation matrices, Z-scores) allows you to see market regime changes in a way 99% of pros cannot.
 The "Zone Intelligence" (Age vs. Touch vs. Win Rate) is a genuine proprietary edge.
