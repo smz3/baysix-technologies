@@ -1,5 +1,7 @@
 # FOB Storyline-Alignment — Empirical Findings (exploratory screens)
 
+> ⚠️ **VOID — DO NOT CITE THESE NUMBERS (banner added 2026-07-25).** Every figure here was computed on **`tester_zones` run_id 5, which is BRC-contaminated** (not FOB's own zones), so it is invalid for FOB pending a re-screen on FOB zones (task 192). Separately, §2's "real directional-alignment edge" was subsequently shown to be a **circularity / look-ahead artifact**: a guarded, independent re-screen (results 20/21) collapsed the lift to ~0, and Setup↔Direction is **not** a usable conditioner. Retained for lineage only.
+
 **Date:** 2026-06-27 · **Idea:** FOB-001 · **Status:** Exploratory selection screens on emitter event log (`tester_zones` run_id 5, 100,034 confirmed zones, 8 TFs, one chronological pass). **NOT MT5-netted — MT5 tester remains the money arbiter.** Companion to [2026-06-27_fob_cmp_storyline_model.md](2026-06-27_fob_cmp_storyline_model.md).
 
 Outcome metrics = emitter proxies: `continued` (did the zone continue, ~hit-rate) and `realized_r` (continuation magnitude in R). Method is **causal/reactive**: condition each execution-TF CF on the higher-TF **bias stack already confirmed and alive at entry**; measure the CF's own continuation **forward**. No look-ahead.

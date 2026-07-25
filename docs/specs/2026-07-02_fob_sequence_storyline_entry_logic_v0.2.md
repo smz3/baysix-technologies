@@ -1,5 +1,7 @@
 # FOB Sequence-Storyline Entry Logic (Spec v0.2 — LOGIC ONLY, STATE-MACHINE REFRAME)
 
+> ⚠️ **STALE FILE REFERENCE (banner added 2026-07-25).** §6 (and other links) point at `fob_trader.mq5`, which is **RETIRED**. The FOB emitter and trader were merged into a **single EA, [fob_baysix.mq5](../../mt5/Experts/fob_system/fob_baysix.mq5)** (`InpMode` EMIT/TRADE/STUDY, v1.28.0+). "Trader ingest" now means the EA's **TRADE mode**. The v0.2 *logic* below still stands — only the file path is out of date.
+
 **Date:** 2026-07-02
 **Status:** PROPOSED — logic locked for review; NOT built, NOT measured. Cost/measurement deliberately excluded (discovery is cost-free; logic must be correct before any test).
 **Supersedes:** [v0.1](2026-07-01_fob_sequence_storyline_entry_logic.md) — replaces its structural-containment recursion (§2/§3/§7) with a live-state-machine model derived from Syafiq walking through a real 2026-07-02 XAUUSD entry. v0.1 is retained for lineage; **v0.2 governs.**
