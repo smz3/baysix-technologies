@@ -50,7 +50,7 @@ The system is built around one principle: **a strategy is only as trustworthy as
 - **ArcticDB** — canonical tick store: **511M XAUUSD ticks (2016–2026), sorted + sealed** to eliminate look-ahead at the data layer.
 - **SQLite** — two-database design: a research ledger (ideas, papers, gates, results, lineage) and a live-deployment twin.
 - **Streamlit** — research dashboard for exploring runs and results.
-- **Agentic workflow** — a CLI research agent (paper-find on one model, deep-dissect on another) with the operating protocol version-controlled as `CLAUDE.md`.
+- **Agentic workflow** — a CLI research agent (paper-find on one model, deep-dissect on another) with the operating protocol version-controlled as `CLAUDE.md`. Cross-session continuity is maintained through a structured **handover / memory file system**, so the agent resumes each session with full research state and prior decisions intact.
 
 ---
 

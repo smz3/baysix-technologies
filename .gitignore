@@ -32,9 +32,9 @@ env/
 Thumbs.db
 .obsidian/
 
-# Memory — runtime data, not source of truth
-Memory/inbox/
-Memory/consolidated/
+# Memory / handovers — local AI-context state, kept private (untracked 2026-07-25)
+Memory/
+memory/
 memory.db
 *.sqlite3
 
