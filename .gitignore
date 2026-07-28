@@ -154,3 +154,13 @@ mt5/Include/fob_system/fob_version.mqh
 
 # transient tester sentinels
 mt5/tester/_*.done
+
+# personal / job-hunt artifacts — NEVER in this public repo (task 19)
+*.docx
+*CV*.md
+*CV*.txt
+*CV*.pdf
+*[Cc]over[Ll]etter*
+*[Rr]esume*
+cv_text.txt
+!research/papers/**/*.docx
