@@ -120,12 +120,32 @@ async def handle_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     context.application.stop_running()
 
 
+async def post_init(application: Application) -> None:
+    """Drop any messages queued while the bridge was offline (PC off/asleep,
+    internet down) and send one notice instead of replaying them one-by-one
+    with full tool access on restart."""
+    pending = await application.bot.get_updates(timeout=0)
+    if pending:
+        last_id = pending[-1].update_id
+        await application.bot.get_updates(offset=last_id + 1, timeout=0)
+        log.info("Dropped %d message(s) queued while offline.", len(pending))
+        await application.bot.send_message(
+            chat_id=ALLOWED_CHAT_ID,
+            text=(
+                f"Back online. {len(pending)} message(s) sent while I was "
+                "offline were dropped — resend if still relevant."
+            ),
+        )
+    else:
+        await application.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="Back online.")
+
+
 def main() -> None:
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("stop", handle_stop))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     log.info("Bridge starting (long-poll, chat_id=%s).", ALLOWED_CHAT_ID)
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
