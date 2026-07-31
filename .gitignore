@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Telegram bridge runtime state (machine-specific, not source)
+telegram_bridge/session_id.txt
+
 # Embedded repos (have their own .git — manage separately)
 
 # Credentials & Keys
