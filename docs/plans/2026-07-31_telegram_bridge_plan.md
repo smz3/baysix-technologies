@@ -1,6 +1,6 @@
 # Telegram-to-Claude Bridge — Build Plan
 
-Status: **PLANNED, not built.** Written 2026-07-31 after a research pass (Agent tool, general-purpose, background). No code exists yet — this is the spec the next session builds against.
+Status: **DECISIONS LOCKED 2026-07-31, not built.** Written 2026-07-31 after a research pass (Agent tool, general-purpose, background). Section 7 open questions resolved same day (see below). No code exists yet — this is the spec the next session builds against.
 
 ---
 
@@ -30,16 +30,16 @@ Fallback if SDK proves awkward under Windows PowerShell: CLI subprocess with `--
 
 ---
 
-## 3. Safety / permission design (do not skip this)
+## 3. Safety / permission design
 
-**The phone-triggered session MUST run a stricter permission profile than his interactive desktop session. This is the one part of the plan that is non-negotiable, not a nice-to-have.**
+**DECIDED 2026-07-31 — Syafiq explicitly chose full-run, no restriction, overriding the original recommendation below of a stricter phone profile.** Original reasoning (kept for the record, not followed): a phone text is a lower-trust input surface and there's no human physically present to click "allow" on a risky-action permission prompt over Telegram, so the safe default would have been read-only/plan mode with a hard block on Bash/Edit/Write/live-order tools. Syafiq's call: the phone session runs with the **same tool access as the interactive desktop session** — no separate restrictive `--settings` profile, no `--disallowedTools`.
 
-- Give the bot process its own `--settings` profile, separate from `~/.claude/settings.json` (his permissive interactive profile). Never point the bot at the same one.
-- Default mode: `plan` (read-only, propose-only) or an explicit allowlist `--allowedTools "Read,Grep,Glob"`.
-- Explicitly `--disallowedTools` for `Bash`, `Edit`, `Write`, and anything MCP/live-order-related, so a permission-mode drift can't silently re-open them.
-- Anything that would need a real write/trade action gets surfaced back to Syafiq as a proposal he approves from his PC session — never auto-executed from a phone text.
+Practical consequence to build against: since nothing is held back for manual approval, **any permission prompt the SDK would normally raise must auto-approve** (equivalent to `--dangerously-skip-permissions` / a permission profile that allows everything), because there is no one watching Telegram in real time to answer it. Build this deliberately, not as a default that happened to fall out of an unset config — the auto-approve behavior should be explicit in the bot's settings file so it's visible and auditable, not implicit.
+
+Still non-negotiable regardless of the above:
 - Bot token, and any secrets: `.env` only, gitignored, never printed/logged/committed. SDK/CLI can echo prompts/config in verbose or `stream-json` output modes — scrub before any logging.
 - Telegram side: hard allowlist on `chat_id` — single-user bot, drop/ignore any other sender, no auth flow needed beyond that check.
+- `/stop` kill-switch (Section 4) stays in v1 — it's the one safety control that still makes sense once permissions are unrestricted.
 
 ---
 
@@ -56,7 +56,7 @@ Fallback if SDK proves awkward under Windows PowerShell: CLI subprocess with `--
 
 ## 5. Hosting (Windows 10, this PC)
 
-- **v1:** plain Python process in a dedicated `Start-Process` PowerShell window — matches his existing long-running-command convention ([[feedback_long_run_terminal]]: never `run_in_background`, always a visible window), log-visible, manual restart on crash.
+- **DECIDED 2026-07-31: v1 = PC-local, confirmed.** Plain Python process in a dedicated `Start-Process` PowerShell window — matches his existing long-running-command convention ([[feedback_long_run_terminal]]: never `run_in_background`, always a visible window), log-visible, manual restart on crash.
 - **v2** (once proven stable): wrap as a **Windows service via NSSM** (Non-Sucking Service Manager) — auto-restart on crash, stdout/stderr redirected to log files, survives without an interactive login session ([NSSM scenarios](https://nssm.cc/scenarios)).
 - **Accepted limitation for v1:** if the PC sleeps or is off, the bot stops responding — "away from PC" only means away-from-desk-but-PC-awake, not fully remote. Fixing that needs a cloud host, which then loses direct access to `research.db` / ArcticDB / the MT5 terminal (all Windows-desktop-resident) — **not recommended for v1**, revisit only if the desktop-tethered version proves genuinely limiting in practice.
 
@@ -66,7 +66,7 @@ Fallback if SDK proves awkward under Windows PowerShell: CLI subprocess with `--
 
 1. BotFather → token → `.env`.
 2. Minimal `python-telegram-bot` long-poll echo script, chat_id allowlist only — **prove the Telegram round-trip before touching Claude at all.**
-3. Wire in `ClaudeSDKClient`: `cwd` = repo root, restrictive permission profile (Section 3).
+3. Wire in `ClaudeSDKClient`: `cwd` = repo root, full/unrestricted permission profile with explicit auto-approve (Section 3 — deliberate, not default-fallthrough).
 4. Message chunking for long replies.
 5. Persist last session id to a small local file (not `.env`) so the bot can resume its Claude session after a process restart.
 6. "Thinking…" typing indicator.
@@ -76,11 +76,11 @@ Fallback if SDK proves awkward under Windows PowerShell: CLI subprocess with `--
 
 ---
 
-## 7. Open decisions for Syafiq (ask before/at start of build session — do not assume)
+## 7. Open decisions — RESOLVED 2026-07-31
 
-- Confirm: PC-local v1 acceptable, or is 24/7-reachable-even-when-PC-off a hard requirement from day one? (Changes the whole hosting/data-access answer — Section 5.)
-- Confirm: `plan`/read-only-allowlist default for the phone session is acceptable, or does he want a specific narrow exception (e.g. allowed to log backlog tasks / read DB but nothing else) carved out immediately?
-- Where should this code live — new decoupled repo (sibling to `sigma-linkedin`, `sigma-quant`, e.g. `sigma-telegram`) matching his existing pattern of decoupled Desktop-level repos, or inside `baysix-technologies` itself since it needs direct repo/DB access? **Recommend decoupled repo that has this repo as a working directory reference (cwd), consistent with existing repo-separation convention** — but confirm, don't assume.
+- **Hosting:** PC-local v1, confirmed. No 24/7-off-PC requirement.
+- **Permission profile:** Full run, no restriction — same tool access as the desktop session, auto-approved (overrides the plan's original stricter-profile recommendation; see Section 3 for the record).
+- **Repo location:** Inside `baysix-technologies` (not a new decoupled repo) — direct access to `research.db`/ArcticDB/MT5 terminal without a cross-repo cwd reference. Suggested home: a new top-level folder, e.g. `telegram_bridge/` (bot script, `.env`, session-id file), sibling to `mt5/`, `b2b/`, `research/`.
 
 ---
 
