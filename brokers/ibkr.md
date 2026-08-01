@@ -20,7 +20,7 @@ No MT5 involved. No DWX Connect. Pure Python end-to-end.
 
 ## Connection Method
 
-**ib_insync** (Python library, community-maintained wrapper for IBKR TWS API)
+**ib_async** (maintained fork — ib_insync is stale/unmaintained) — Python library, community-maintained wrapper for IBKR TWS API
 - Clean async Python interface
 - Supports: stocks, ETFs, options, futures, forex
 - Requires TWS or IB Gateway running locally or on VPS
@@ -52,7 +52,7 @@ All of these are LOW frequency (daily/weekly). IKBR API latency is irrelevant.
 ## Account Structure Recommendation
 
 1. Open IBKR paper account first (free, no approval needed)
-2. Test full Python → IBKR API → order execution pipeline
+2. Test full Python → IBKR API → order execution pipeline (done — task 283, see ibkr/Documentation/paper_trading_pipeline.md)
 3. Open live account with small capital (5-10K USD)
 4. Scale as track record develops
 
@@ -60,10 +60,23 @@ All of these are LOW frequency (daily/weekly). IKBR API latency is irrelevant.
 
 1. ARE equities adapter must be built and validated (alpha-engine)
 2. LEAN backtest must pass OOS validation (sigma-lean)
-3. ib_insync execution adapter built and paper-tested
+3. ib_async execution adapter built and paper-tested
 4. Portfolio construction layer built (signal weighting, rebalancing)
 5. Go live with small capital
 
 ## Status
 
-FUTURE STATE. Build after equities ARE is complete.
+**PARTIALLY BUILT, DECOUPLED FROM THE ROADMAP ABOVE.** A basic connectivity +
+paper-trading test pipeline (connect, historical data, delayed quotes, limit +
+market order round-trip on GLD) was built under backlog task 283 (2026-08) —
+driven by a job application (CP Global Innovations, task 285) wanting
+demonstrable IBKR TWS + Claude-workflow experience, NOT by the equities-alpha
+roadmap below being ready.
+
+The original use case (cross-sectional momentum / stat-arb equities
+execution) is UNCHANGED and still gated behind:
+1. ARE equities adapter (not built)
+2. LEAN OOS validation (not built)
+
+See ibkr/Documentation/paper_trading_pipeline.md for exactly what's
+built/verified.

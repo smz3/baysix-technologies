@@ -1,0 +1,4 @@
+# IBKR TWS test pipeline dependency (no top-level manifest exists — see
+# research/requirements.txt for the sibling pattern this mirrors).
+ib_async==2.1.0   # maintained fork of ib_insync (brokers/ibkr.md previously
+                  # referenced the old, unmaintained name — corrected there too).
