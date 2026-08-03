@@ -22,7 +22,12 @@ There are three loops:
 |---|---|---|
 | **A — Claim Verification** | Is what the agent just said *true*? | Every claim, always |
 | **B — Promotion Ladder** | Is what the factory just found *real*? | Every batch |
-| **C — Nightly Driver** | What is the ONE next legal action? | Every cycle |
+| **C — Session Driver** | What is the ONE next legal action? | Every cycle, **supervised** |
+
+**Autonomy here means "Claude sequences the work without being told each step."
+It does NOT mean unattended.** CLAUDE.md rule 12 stands: runs go in a visible
+PowerShell window, never backgrounded, because Syafiq needs live output. There is
+no cron, no overnight batch, no nightly loop.
 
 Loop A guards the agent. Loop B guards the research. Loop C sequences both.
 
@@ -179,7 +184,18 @@ to grade its own homework.**
 
 ---
 
-## 3. LOOP C — Nightly Driver
+## 3. LOOP C — Session Driver
+
+### 3.0 Scale: small-n, hypothesis-driven — NOT a genetic sweep
+
+One 8-year real-tick backtest is **5–8 minutes** (`CITED`: Syafiq, 2026-08-03).
+A batch is therefore **10–20 pre-registered configs — about 1–2 hours, supervised.**
+
+Rejected: the ~5,000-pass/night genetic sweep proposed earlier. It manufactured a
+multiplicity problem in order to justify machinery to defend against it. Small-n
+does not make pre-registration less important — it makes it **cheaper**, and you
+can still fool yourself with 20 trials. The trial counter stays; the brute force
+goes. The generator is Syafiq's trading hypothesis, not a genetic algorithm.
 
 ### 3.1 Built on what already exists
 
