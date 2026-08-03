@@ -2,12 +2,12 @@
 Smoke test for execution.py / execution.db — runs against a TEMP DB (never touches
 research/db/execution.db). Points EXECUTION_DB_PATH at a tempfile before importing
 execution, then monkeypatches the three research.db-facing calls (get_idea,
-tester.gate7_passed, strategy_log.get_live_config) so the test is fully isolated and
+tester.gate4_passed, strategy_log.get_live_config) so the test is fully isolated and
 can drive both the blocked and happy paths deterministically.
 
 Asserts the headline guardrails of the re-locked 12-table schema:
-  - register_deployment REFUSES until research Gate 7 (FIDELITY) is passed
-  - open FORWARD REFUSES until Gate 7 passed
+  - register_deployment REFUSES until research G4 (Live/FIDELITY) is passed
+  - open FORWARD REFUSES until G4 passed
   - pass FORWARD REFUSES until d5_recon_results exist
   - FORWARD/live REFUSES until FORWARD/demo passed
 
@@ -30,9 +30,9 @@ FAIL = "\033[91mFAIL\033[0m"
 _failures = []
 
 # ── isolate the research.db reads (keep the smoke test self-contained) ──────────
-_STATE = {"gate7": False}
+_STATE = {"gate4": False}
 execution.pipeline.get_idea = lambda idea_id: {"idea_id": idea_id} if idea_id.startswith("ORB-") else {}
-execution.tester.gate7_passed = lambda idea_id: _STATE["gate7"]
+execution.tester.gate4_passed = lambda idea_id: _STATE["gate4"]
 execution.strategy_log.get_live_config = lambda idea_id: {"anchor": {"log_id": 99, "value": "09:00 UTC"}}
 
 
@@ -74,17 +74,17 @@ def main():
     )
     check("instrument XAUUSD.s registered", bool(execution.get_instrument("XAUUSD.s")))
 
-    # --- Gate 7 guardrail: deployment REFUSED until FIDELITY passed (headline) ---
-    print("\n[Gate 7 guardrail]")
-    _STATE["gate7"] = False
+    # --- G4 guardrail: deployment REFUSED until FIDELITY passed (headline) ---
+    print("\n[G4 guardrail]")
+    _STATE["gate4"] = False
     try:
         execution.register_deployment("ORB-001", "jm-demo-01", "XAUUSD.s")
-        check("register_deployment BLOCKED until Gate 7 passed", False)
+        check("register_deployment BLOCKED until G4 passed", False)
     except ValueError as e:
-        check("register_deployment BLOCKED until Gate 7 passed", "Gate 7" in str(e))
+        check("register_deployment BLOCKED until G4 passed", "G4" in str(e))
 
-    # flip Gate 7 -> passed, now it should succeed
-    _STATE["gate7"] = True
+    # flip G4 -> passed, now it should succeed
+    _STATE["gate4"] = True
     deploy_id = execution.register_deployment("ORB-001", "jm-demo-01", "XAUUSD.s")
     dep = execution.get_deploy_config(deploy_id)
     check("deploy_id == 'ORB-001@jm-demo-01'", deploy_id == "ORB-001@jm-demo-01")
@@ -127,7 +127,7 @@ def main():
 
     # --- live sub_stage needs demo passed (we just passed demo, so a fresh deploy tests the block) ---
     print("\n[demo-before-live]")
-    _STATE["gate7"] = True
+    _STATE["gate4"] = True
     execution.register_account("jm-demo-02", venue="mt5", broker="justmarkets",
                                account_type="retail_highlev", mode="demo")
     d2 = execution.register_deployment("ORB-002", "jm-demo-02", "XAUUSD.s")

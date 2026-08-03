@@ -1,23 +1,24 @@
 """
-Gate 7 — FIDELITY writers for research.db.
+G4 (Live) — FIDELITY writers for research.db.
 
-The MT5 Strategy-Tester evidence is NOT a separate database: port-fidelity is the
-*last research gate* (Gate 7 — FIDELITY), so tester_runs + tester_trades live inside
-research.db next to step4_results. This module owns their schema and all writes
-(CLAUDE.md rule 10), mirroring pipeline.py conventions (_conn/_now/VALID_* tuples).
+The MT5 Strategy-Tester evidence is NOT a separate database: port-fidelity is
+Protocol 4.0's *last gate* (G4 — Live: MT5 tester -> demo -> live parity), so
+tester_runs + tester_trades live inside research.db next to step4_results. This
+module owns their schema and all writes (CLAUDE.md rule 10), mirroring
+pipeline.py conventions (_conn/_now/VALID_* tuples).
 
 Flow:
     ingest_tester_run(...)        -> run_id  (run header + config provenance)
     ingest_tester_trade(run_id, ...) per closed tester round-trip (join key = ticket + entry_ts)
     log_fidelity_diff(run_id, ...) -> writes the diff vs the Python research result,
                                       sets fidelity_verdict, and on 'pass' calls
-                                      pipeline.pass_gate(idea_id, 7, ...).
+                                      pipeline.pass_gate(idea_id, 4, ...).
 
-Gate 7 is what execution.register_deployment() / open_deploy_gate('FORWARD') read
+G4 is what execution.register_deployment() / open_deploy_gate('FORWARD') read
 before a deployment may touch a broker account.
 
-Spec: docs/reference/execution_schema.md (§research.db — Gate 7 evidence) +
-docs/reference/research_protocol.md (Gate 7 — Fidelity).
+Spec: docs/reference/execution_schema.md (§research.db — G4 FIDELITY evidence) +
+docs/reference/research_protocol.md (G4 — Live).
 """
 
 import json
@@ -40,7 +41,7 @@ VALID_FIDELITY       = ("pass", "fail", "pending")
 
 
 _SCHEMA = """
--- Gate 7 (FIDELITY) evidence — lives in research.db next to step4_results.
+-- G4 (Live/FIDELITY) evidence — lives in research.db next to step4_results.
 CREATE TABLE IF NOT EXISTS tester_runs (
     run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
     idea_id         TEXT NOT NULL,                 -- soft FK into step1_ideas (same DB)
@@ -874,9 +875,9 @@ def log_fidelity_diff(
 ) -> None:
     """Write the FIDELITY diff against the Python research result and set the verdict.
 
-    On verdict='pass' this calls pipeline.pass_gate(idea_id, 7, ...) — the precondition
+    On verdict='pass' this calls pipeline.pass_gate(idea_id, 4, ...) — the precondition
     execution.register_deployment() / open_deploy_gate('FORWARD') read. On 'fail' it
-    blocks Gate 7 (the port is not the validated strategy). Pre-commit the equivalence
+    blocks G4 (the port is not the validated strategy). Pre-commit the equivalence
     thresholds before computing the diff (gate_answer should record them + the numbers)."""
     if verdict not in VALID_FIDELITY:
         raise ValueError(f"verdict must be one of {VALID_FIDELITY}")
@@ -902,21 +903,21 @@ def log_fidelity_diff(
           f"(overlap={trade_overlap_pct}%, ER_delta={ER_delta_vs_research}, R_corr={R_corr})")
     # Drive the research gate from the verdict.
     if verdict == "pass":
-        if not _gate7_open(idea_id):
-            pipeline.open_gate(idea_id, 7,
+        if not _g4_open(idea_id):
+            pipeline.open_gate(idea_id, 4,
                                pass_criteria="overlap>=95%, E[R]/win/$per-t in research 95% CI, high R_corr")
-        pipeline.pass_gate(idea_id, 7, answer, answered_by=answered_by,
+        pipeline.pass_gate(idea_id, 4, answer, answered_by=answered_by,
                            allow_incomplete=allow_incomplete)
     elif verdict == "fail":
-        if not _gate7_open(idea_id):
-            pipeline.open_gate(idea_id, 7,
+        if not _g4_open(idea_id):
+            pipeline.open_gate(idea_id, 4,
                                pass_criteria="overlap>=95%, E[R]/win/$per-t in research 95% CI, high R_corr")
-        pipeline.block_gate(idea_id, 7, answer, answered_by=answered_by)
+        pipeline.block_gate(idea_id, 4, answer, answered_by=answered_by)
 
 
-def _gate7_open(idea_id: str) -> bool:
-    """True if a Gate-7 row already exists for this idea (any status)."""
-    return any(g["gate_number"] == 7 for g in pipeline.get_gates(idea_id))
+def _g4_open(idea_id: str) -> bool:
+    """True if a G4 gate row already exists for this idea (any status)."""
+    return any(g["gate_number"] == 4 for g in pipeline.get_gates(idea_id))
 
 
 def get_tester_run(run_id: int) -> dict:
@@ -926,11 +927,11 @@ def get_tester_run(run_id: int) -> dict:
     return dict(row) if row else {}
 
 
-def gate7_passed(idea_id: str) -> bool:
-    """True iff Gate 7 (FIDELITY) is 'passed' for this idea — the live-side gate that
+def gate4_passed(idea_id: str) -> bool:
+    """True iff G4 (Live/FIDELITY) is 'passed' for this idea — the live-side gate that
     execution.py checks before a deployment may exist."""
     gates = pipeline.get_gates(idea_id)
-    return any(g["gate_number"] == 7 and g["status"] == "passed" for g in gates)
+    return any(g["gate_number"] == 4 and g["status"] == "passed" for g in gates)
 
 
 def delete_run(run_id: int, drop_run_row: bool = True) -> dict:

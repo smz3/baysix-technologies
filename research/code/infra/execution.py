@@ -4,14 +4,14 @@ All writes go through here — no raw SQL elsewhere (CLAUDE.md rule 10).
 
 execution.db tracks the LIFE OF A DEPLOYED STRATEGY in six layers (12 tables):
     1. REGISTER   — d1_accounts, d1_instruments, d1_deployments (what's deployed)
-    2. GATE       — d2_deploy_gates (FORWARD checkpoint; FIDELITY is research Gate 7)
+    2. GATE       — d2_deploy_gates (FORWARD checkpoint; FIDELITY is research G4)
     3. OBSERVE    — d3_signals -> d3_orders -> d3_fills -> d3_trades (LIVE d1_accounts only)
     4. STATE      — d4_equity_snapshots (trailing-DD + kill-switch audit)
     5. RECONCILE  — d5_recon_results (live vs model; the lie-detector)
     6. RECORD     — log_deploy, log_incidents
 
 TWO-DATABASE design (re-locked 2026-06-11): the MT5 Strategy-Tester evidence is NOT
-here — port-fidelity is the last *research* gate (Gate 7 — FIDELITY) and lives in
+here — port-fidelity is the last *research* gate (Protocol 4.0 G4 — Live) and lives in
 research.db (research.code.tester). A deployment cannot be registered until that gate
 is 'passed'. Spec: docs/reference/execution_schema.md (what) + execution_protocol.md (why).
 
@@ -24,12 +24,12 @@ Locked decisions baked in:
   - venue = PROTOCOL ('mt5'/'ibkr', the adapter/code path), NOT the broker. The broker
     is d1_accounts.broker ('justmarkets'/'darwinex'/'ftmo') — all three are venue='mt5'.
   - idea_id is a SOFT key into research.db (no FK); register_deployment() validates it
-    AND that its Gate 7 (FIDELITY) is 'passed'.
+    AND that its G4 (Live/FIDELITY) is 'passed'.
   - magic_number: readable deterministic map owned here (ORB-001 -> 1001).
   - redeploy = singleton: one d1_deployments row per (idea x account); relaunch flips status.
 
 DB path is env-overridable via EXECUTION_DB_PATH (the smoke test points it at a temp
-file). research.db reads (idea validation, Gate 7, live config) always hit the real
+file). research.db reads (idea validation, G4, live config) always hit the real
 research.db regardless.
 """
 
@@ -67,7 +67,7 @@ VALID_DD_BASIS       = ("static", "trailing")
 VALID_ACCOUNT_STATUS = ("active", "breached", "closed")
 VALID_STAGE          = ("FORWARD", "STEADY", "RETIRED")
 VALID_DEPLOY_STATUS  = ("pending", "active", "paused", "killed", "retired")
-VALID_GATE_NAME      = ("FORWARD",)                    # FIDELITY is research Gate 7
+VALID_GATE_NAME      = ("FORWARD",)                    # FIDELITY is research G4
 VALID_SUB_STAGE      = ("demo", "live")
 VALID_GATE_STATUS    = ("open", "passed", "blocked", "killed")
 VALID_DIRECTION      = ("long", "short", "flat")
@@ -463,7 +463,7 @@ def register_deployment(
     """Register a deployment of a research idea onto an account+instrument.
 
     GUARDRAILS (cross-DB, soft-key): (1) idea_id must exist in research.db; (2) its
-    Gate 7 (FIDELITY) must be 'passed' — a failing port never reaches an account.
+    G4 (Live/FIDELITY) must be 'passed' — a failing port never reaches an account.
     Derives venue from the account, assigns the readable magic number, and snapshots
     the frozen live config via strategy_log.get_live_config(). Returns deploy_id.
     """
@@ -473,10 +473,10 @@ def register_deployment(
             f"idea_id '{idea_id}' not found in research.db — register the idea first "
             f"(execution.db keys it as a soft key, code-validated)"
         )
-    # 2) Gate 7 (FIDELITY) must be passed upstream — the bridge between the two DBs
-    if not tester.gate7_passed(idea_id):
+    # 2) G4 (Live/FIDELITY) must be passed upstream — the bridge between the two DBs
+    if not tester.gate4_passed(idea_id):
         raise ValueError(
-            f"Gate 7 (FIDELITY) is not 'passed' for {idea_id} — the MQL5 port has not "
+            f"G4 (Live/FIDELITY) is not 'passed' for {idea_id} — the MQL5 port has not "
             f"been verified against the research backtest. No deployment until it passes "
             f"(tester.log_fidelity_diff)."
         )
@@ -516,7 +516,7 @@ def register_deployment(
         conn.commit()
     print(f"[execution] deployment registered: {deploy_id} (magic={magic_number}, venue={venue})")
     log_deploy_change(deploy_id, verdict="CREATED", to_stage="FORWARD",
-                      rationale=f"registered {idea_id} on {account_id} (Gate 7 passed)")
+                      rationale=f"registered {idea_id} on {account_id} (G4 passed)")
     return deploy_id
 
 
@@ -547,12 +547,12 @@ def get_instrument(symbol: str) -> dict:
     return dict(row) if row else {}
 
 
-# ── Layer 2 — GATE (FORWARD only; FIDELITY is research Gate 7) ───────────────────
+# ── Layer 2 — GATE (FORWARD only; FIDELITY is research G4) ───────────────────
 def open_deploy_gate(deploy_id: str, pass_criteria: str, sub_stage: str = None,
                      attempt: int = 1) -> int:
     """Open the FORWARD gate with a pre-committed pass criterion. Returns gate_id.
 
-    GUARDRAIL: refuses to open unless research Gate 7 (FIDELITY) is 'passed' for the
+    GUARDRAIL: refuses to open unless research G4 (Live/FIDELITY) is 'passed' for the
     deployment's idea_id — a failing port never reaches a forward gate. demo sub_stage
     is the normal first leg before live (enforced at pass time)."""
     if sub_stage is not None and sub_stage not in VALID_SUB_STAGE:
@@ -560,9 +560,9 @@ def open_deploy_gate(deploy_id: str, pass_criteria: str, sub_stage: str = None,
     dep = get_deploy_config(deploy_id)
     if not dep:
         raise ValueError(f"deployment not found: {deploy_id}")
-    if not tester.gate7_passed(dep["idea_id"]):
+    if not tester.gate4_passed(dep["idea_id"]):
         raise ValueError(
-            f"Cannot open FORWARD for {deploy_id}: research Gate 7 (FIDELITY) not passed "
+            f"Cannot open FORWARD for {deploy_id}: research G4 (Live/FIDELITY) not passed "
             f"for {dep['idea_id']}."
         )
     now = _now()

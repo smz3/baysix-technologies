@@ -286,7 +286,7 @@ step1_ideas (spine)
   │     └── result_id  → ties a lineage event to its result
   └── log_tasks          idea_id → backlog (nullable for cross-cutting)
 
-tester_runs (soft idea_id)     → Gate-7 fidelity run + diff verdict
+tester_runs (soft idea_id)     → MT5 tester ledger (G2 edge read + G4 live-parity evidence)
   └── tester_trades  run_id    → per-trade tester ledger
 
 Views:
@@ -295,27 +295,23 @@ Views:
 
 ---
 
-## Gate Reference (mirror of protocol — fixed in `pipeline.GATE_QUESTIONS`)
+## Gate Reference (Protocol 4.0 — mirror of `pipeline.GATE_QUESTIONS` / [research_protocol.md](research_protocol.md))
 
-| Gate | Name | Question to answer |
-|------|------|--------------------|
-| 0 | Understand | Do we know the model's mathematical truth from the literature? |
-| 1 | Frame | What is the simple human-readable rule and null hypothesis? |
-| 2 | Foundation | Does the simplest possible implementation produce sane output? |
-| 3 | Baseline | Does the dumb rule from Gate 1 have any edge, raw and after costs? |
-| 4 | Model | Does the sophisticated model confirm or challenge the baseline? |
-| 5 | Signal | Is there a tradeable signal with positive net edge? |
-| 6 | Validate | Does the edge survive walk-forward and out-of-sample? |
-| 7 | Fidelity | Does the deployed artifact reproduce the validated backtest on the same data? |
+| Gate | Name | Question to answer | Code wall |
+|------|------|--------------------|-----------|
+| G1 | Premise | Idea + one simple rule + thesis + a linked paper. Why should this edge exist? | `idea_kind`+`output_type` tagged **and** ≥1 `step2_papers` row |
+| G2 | Edge & Survival | Does the IS net-of-cost ledger show a smooth curve and acceptable drawdown? | ≥1 `step4_results` row, `cost_adjusted=1` |
+| G3 | Robustness | Does the IS edge survive walk-forward + Monte Carlo? | human read (OOS-freeze chokepoint on `open_gate(3)`) |
+| G4 | Live | Does the MT5 tester / demo / live ledger match within tolerance? | human read |
 
-Gate semantics (from `protocol.py`): **evidence gates** = 3 (t>1.0), 5 (t>2.0), 6 (OOS) require a logged `step4_results` row; **fidelity gate** = 7 requires a `tester_runs` pass; the rest (0,1,2,4) are sense/structure gates needing no metric.
+`idea_kind` picks which gates apply (`protocol.GATE_APPLICABILITY`): strategy/overlay/classifier run the full G1–G4 ladder; primitives are correctness-only ({G1, G2}). t-stat is **reported**, never an auto-kill — OOS/WF persistence at G3 is the luck-test. Supersedes the old 8-gate (0–7) scheme; full rationale in [docs/specs/2026-06-22-protocol-4.0-lean-gates.md](../specs/2026-06-22-protocol-4.0-lean-gates.md).
 
 ---
 
 ## Design Rules
 
 1. Everything traces back to `idea_id` — no orphan rows.
-2. Gate N cannot pass unless Gate N-1 is passed — enforced in `pipeline._check_previous_gate_passed`.
+2. Gate N cannot pass unless the highest **applicable** gate below N is passed (idea_kind-aware skip, not literally N-1) — enforced in `pipeline._check_previous_gate_passed`.
 3. Results without `git_sha`, `n_obs` are rejected by `pipeline.log_result`; `data_hash` mandatory on OOS.
 4. Kill reason mandatory when `status=killed`. Kill needs ≥2 FALSIFIED hypotheses in `log_strategy` (rule 8b) unless `force=True`.
 5. `cost_adjusted=0` (raw) and `cost_adjusted=1` (net); G2 needs a net (cost_adjusted=1) result to pass.
