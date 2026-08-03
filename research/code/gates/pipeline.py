@@ -324,6 +324,8 @@ def log_result(
     seed: int = None,
     notes: str = None,
     allow_unfrozen: bool = False,
+    trial_family_id: str = None,
+    n_trials: int = None,
 ) -> int:
     """Log a metric result. Returns result_id.
 
@@ -365,13 +367,15 @@ def log_result(
                 (idea_id, gate_number, stage, metric_key, metric_value,
                  cost_adjusted, period, n_obs, is_run, what_changed,
                  instrument, data_start, data_end, parameters,
-                 git_sha, data_hash, seed, code_path, notes, logged_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 git_sha, data_hash, seed, code_path, notes, logged_at,
+                 trial_family_id, n_trials)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             idea_id, gate_number, stage, metric_key, metric_value,
             cost_adjusted, period, n_obs, is_run, what_changed,
             instrument, data_start, data_end, parameters,
             git_sha, data_hash, seed, code_path, notes, now,
+            trial_family_id, n_trials,
         ))
         conn.commit()
         result_id = cur.lastrowid
