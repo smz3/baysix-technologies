@@ -82,9 +82,13 @@ string GrwConfigHash(const string json)
 //| Run tag used in both filenames. Symbol + version + window start,  |
 //| so two passes of the same batch never collide.                    |
 //+------------------------------------------------------------------+
-string GrwRunTag(const string suffix)
+string GrwRunTag(const string suffix, const datetime window_start)
   {
-   datetime t0 = (datetime)SeriesInfoInteger(_Symbol, PERIOD_M1, SERIES_FIRSTDATE);
+   //--- window_start is the FIRST TICK this run processed. SERIES_FIRSTDATE (used until
+   //--- v0.2.0) is the symbol's entire downloaded history, so it labelled every pass with
+   //--- a date the run never tested — the M1 smoke wore "20160613" for a 2017.01.01 window.
+   datetime t0 = (window_start > 0) ? window_start
+                 : (datetime)SeriesInfoInteger(_Symbol, PERIOD_M1, SERIES_FIRSTDATE);
    string   ts = TimeToString(t0, TIME_DATE);
    StringReplace(ts, ".", "");
    string tail = (StringLen(suffix) > 0) ? ("_" + suffix) : "";
@@ -136,7 +140,7 @@ bool GrwWriteRunSummary(const string tag, const GrwCfg &c, const GrwStats &st,
       "fitness","growth","unrankable","n_trades","net_usd","max_dd_pct",
       "profit_factor","win_rate","initial_deposit","final_equity",
       "n_signals","n_gated","n_skipped","n_orders","n_clamp_up","n_clamp_down",
-      "n_sl_too_tight",
+      "n_sl_too_tight","n_days","trades_per_day","signals_per_day",
       "clamp_up_frac","mean_risk_pct","max_risk_pct","sizing_valid",
       "config_hash","params_file");
 
@@ -144,7 +148,7 @@ bool GrwWriteRunSummary(const string tag, const GrwCfg &c, const GrwStats &st,
       batch_id, "grw_meta", GRW_VERSION, GRW_FITNESS_VERSION,
       GRW_GIT_SHA, (GRW_GIT_DIRTY ? "1" : "0"),
       _Symbol, EnumToString(c.tf),
-      TimeToString((datetime)SeriesInfoInteger(_Symbol, PERIOD_M1, SERIES_FIRSTDATE), TIME_DATE),
+      TimeToString(st.first_seen, TIME_DATE),   // TRUE window start (first tick processed)
       TimeToString(TimeCurrent(), TIME_DATE),
       DoubleToString(f.fitness, 8), DoubleToString(f.growth, 8),
       (f.unrankable ? "1" : "0"), (string)f.n_trades,
@@ -153,7 +157,8 @@ bool GrwWriteRunSummary(const string tag, const GrwCfg &c, const GrwStats &st,
       DoubleToString(f.initial_deposit, 2), DoubleToString(f.final_equity, 2),
       (string)st.n_signals, (string)st.n_gated, (string)st.n_skipped,
       (string)st.n_orders, (string)st.n_clamp_up, (string)st.n_clamp_down,
-      (string)st.n_sl_too_tight,
+      (string)st.n_sl_too_tight, (string)f.n_days,
+      DoubleToString(f.trades_per_day, 3), DoubleToString(f.signals_per_day, 3),
       DoubleToString(f.clamp_up_frac, 6), DoubleToString(f.mean_risk_pct, 4),
       DoubleToString(f.max_risk_pct, 4), (f.sizing_valid ? "1" : "0"),
       GrwConfigHash(cfg_json), "grw_params_" + tag + ".json");

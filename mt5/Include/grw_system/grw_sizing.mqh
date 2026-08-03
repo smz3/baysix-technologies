@@ -101,6 +101,15 @@ double GrwSizeLots(const double risk_price, const double risk_frac,
    double want     = risk_usd / (risk_price * mpu);  // the lot the fraction actually asks for
    double lots     = GrwFloorToStep(want, step);
 
+   //--- Clamps are FLAGGED here and only COUNTED on the way out, after we know an order is
+   //--- actually being sent. Counting them inline double-counts every signal that clamps and
+   //--- is then refused by the margin check below — which is not hypothetical: the first M1
+   //--- scalp smoke reported n_clamp_up=9815 against n_orders=16, i.e. clamp_up_frac=613,
+   //--- because a $20 account at 1:100 leverage clamped up and then could not afford the
+   //--- position. A "fraction" above 1.0 silently voids the sizing_valid flag it feeds.
+   bool clamped_up   = false;
+   bool clamped_down = false;
+
    //--- BELOW the broker minimum: the declared fraction is not expressible on this account.
    if(lots < vmin)
      {
@@ -110,14 +119,14 @@ double GrwSizeLots(const double risk_price, const double risk_frac,
          return 0.0;
         }
       lots = vmin;
-      st.n_clamp_up++;                               // over-risk, counted and later reported
+      clamped_up = true;                             // over-risk, counted on the way out
      }
 
    //--- ABOVE the broker maximum.
    if(lots > vmax)
      {
       lots = GrwFloorToStep(vmax, step);
-      st.n_clamp_down++;
+      clamped_down = true;
      }
 
    //--- FREE MARGIN: shrink until it fits, never send an order we know will be rejected.
@@ -135,8 +144,12 @@ double GrwSizeLots(const double risk_price, const double risk_frac,
          return 0.0;                                 // cannot afford even the minimum
         }
       lots = scaled;
-      st.n_clamp_down++;
+      clamped_down = true;
      }
+
+   //--- Order is going out — now the clamps are real and get counted.
+   if(clamped_up)   st.n_clamp_up++;
+   if(clamped_down) st.n_clamp_down++;
 
    //--- The truth about this trade, whatever the input said.
    out_risk_pct = 100.0 * (lots * risk_price * mpu) / equity;

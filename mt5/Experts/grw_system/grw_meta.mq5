@@ -223,6 +223,9 @@ void OnTick()
   {
    if(!g_ready) return;
 
+   GrwStatsMarkDay(g_stats, TimeCurrent());   // trading-day counter -> trades/day, the
+                                              // mandate's own unit (reported, not optimised)
+
    GrwExitManageAll(g_cfg);
 
    datetime bt = iTime(_Symbol, g_cfg.tf, 0);
@@ -283,7 +286,7 @@ double OnTester()
                   "compounding claim at risk_frac=%.4f.",
                   100.0 * f.clamp_up_frac, g_cfg.risk_frac);
 
-   string tag = GrwRunTag(InpBatchId);
+   string tag = GrwRunTag(InpBatchId, g_stats.first_seen);
    GrwWriteRunSummary(tag, g_cfg, g_stats, f, InpBatchId);
    GrwWriteTrades(tag, g_cfg.magic);
 

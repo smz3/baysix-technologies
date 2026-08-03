@@ -246,6 +246,17 @@ struct GrwStats
                             // telling anyone, so it is counted and the trade is skipped.
    double   sum_risk_pct; // sum of realised risk-as-%-of-equity, for the mean
    double   max_risk_pct; // worst single-trade risk as % of equity
+   //--- TRADING DAYS actually seen (distinct dates with ticks), so trades-per-day is
+   //--- computed against real sessions rather than calendar span. It is the mandate's
+   //--- own unit — "hundreds of trades a day" is unfalsifiable without it — and it is
+   //--- REPORTED, never optimised: the objective stays pure log-growth.
+   int      n_days;
+   datetime cur_day;      // last date bucket seen, for the day-change edge
+   datetime first_seen;   // FIRST tick the EA actually processed = the true window start.
+                          // SeriesInfoInteger(SERIES_FIRSTDATE) is the symbol's whole
+                          // history, not this run's window, and reporting it as
+                          // period_start mislabels every pass (v0.2.0 smoke claimed
+                          // 2016.06.13 for a window that began 2017.01.01).
   };
 
 void GrwStatsClear(GrwStats &st)
@@ -259,6 +270,25 @@ void GrwStatsClear(GrwStats &st)
    st.n_sl_too_tight = 0;
    st.sum_risk_pct = 0.0;
    st.max_risk_pct = 0.0;
+   st.n_days       = 0;
+   st.cur_day      = 0;
+   st.first_seen   = 0;
+  }
+
+//+------------------------------------------------------------------+
+//| Count a distinct trading DAY. Called from OnTick with the current |
+//| server time; cheap integer-divide, no date parsing per tick.      |
+//+------------------------------------------------------------------+
+void GrwStatsMarkDay(GrwStats &st, const datetime now)
+  {
+   if(st.first_seen == 0)
+      st.first_seen = now;                    // true window start, for period_start
+   datetime day = (datetime)((long)now / 86400);
+   if(day != st.cur_day)
+     {
+      st.cur_day = day;
+      st.n_days++;
+     }
   }
 
 //+------------------------------------------------------------------+

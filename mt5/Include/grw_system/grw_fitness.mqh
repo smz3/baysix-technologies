@@ -66,6 +66,13 @@ struct GrwFitness
    double profit_factor;
    double win_rate;
    bool   unrankable;     // the min-trades guard fired
+   //--- MANDATE UNIT. "Hundreds of trades a day" is unfalsifiable without these, and
+   //--- n_trades alone hides whether a run traded evenly or emptied the account on day
+   //--- one and then sat out the window. REPORTED, never optimised.
+   int    n_days;
+   double trades_per_day;
+   double signals_per_day;  // the SUBSTRATE's raw firing rate, before max-open serialisation
+                            // and margin refusals — the ceiling frequency can ever reach
    //--- sizing validity (grw_sizing.mqh) — decides whether "growth" is even a
    //--- compounding claim for this pass.
    double clamp_up_frac;  // share of orders forced UP to the broker minimum
@@ -94,6 +101,10 @@ void GrwFitnessCompute(const GrwStats &st, GrwFitness &f)
 
    double won = TesterStatistics(STAT_PROFIT_TRADES);
    f.win_rate = (f.n_trades > 0) ? (100.0 * won / f.n_trades) : 0.0;
+
+   f.n_days          = st.n_days;
+   f.trades_per_day  = (st.n_days > 0) ? ((double)f.n_trades   / st.n_days) : 0.0;
+   f.signals_per_day = (st.n_days > 0) ? ((double)st.n_signals / st.n_days) : 0.0;
 
    f.clamp_up_frac = (st.n_orders > 0) ? ((double)st.n_clamp_up / st.n_orders) : 0.0;
    f.mean_risk_pct = (st.n_orders > 0) ? (st.sum_risk_pct / st.n_orders) : 0.0;
@@ -125,11 +136,14 @@ void GrwFitnessCompute(const GrwStats &st, GrwFitness &f)
 string GrwFitnessLine(const GrwFitness &f)
   {
    if(f.unrankable)
-      return StringFormat("[GRW] UNRANKABLE n=%d (<%d) net=%.2f — no growth claim possible",
-                          f.n_trades, GRW_FITNESS_MIN_TRADES, f.net_usd);
-   return StringFormat("[GRW] fit=%.5f growth=%.5f n=%d net=%.2f dd=%.2f%% "
-                       "| sizing %s clamp_up=%.1f%% mean_risk=%.2f%% max_risk=%.2f%%",
-                       f.fitness, f.growth, f.n_trades, f.net_usd, f.max_dd_pct,
+      return StringFormat("[GRW] UNRANKABLE n=%d (<%d) net=%.2f | %.1f trades/day over %d days "
+                          "(substrate fired %.1f signals/day) — no growth claim possible",
+                          f.n_trades, GRW_FITNESS_MIN_TRADES, f.net_usd,
+                          f.trades_per_day, f.n_days, f.signals_per_day);
+   return StringFormat("[GRW] fit=%.5f growth=%.5f n=%d (%.1f/day over %d days, %.1f signals/day) "
+                       "net=%.2f dd=%.2f%% | sizing %s clamp_up=%.1f%% mean_risk=%.2f%% max_risk=%.2f%%",
+                       f.fitness, f.growth, f.n_trades, f.trades_per_day, f.n_days,
+                       f.signals_per_day, f.net_usd, f.max_dd_pct,
                        (f.sizing_valid ? "VALID" : "INVALID(fixed-lot)"),
                        100.0 * f.clamp_up_frac, f.mean_risk_pct, f.max_risk_pct);
   }
