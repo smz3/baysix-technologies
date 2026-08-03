@@ -195,7 +195,16 @@ Rejected: the ~5,000-pass/night genetic sweep proposed earlier. It manufactured 
 multiplicity problem in order to justify machinery to defend against it. Small-n
 does not make pre-registration less important — it makes it **cheaper**, and you
 can still fool yourself with 20 trials. The trial counter stays; the brute force
-goes. The generator is Syafiq's trading hypothesis, not a genetic algorithm.
+goes.
+
+**The generator is Claude, mechanism-first** (set 2026-08-03 — Syafiq explicitly
+declined to supply hypotheses: "let you loose... figure shit out for the
+mission"). This is not a licence to sweep blindly. Every pre-registered config
+must state **why the edge should exist** before it runs — a microstructure or
+behavioural mechanism, in one sentence. A candidate with no mechanism is a
+lottery ticket and does not get a slot in the batch. Mechanism-first is what
+keeps small-n honest once the human hypothesis is removed from the loop: it makes
+a failure *informative* rather than merely disappointing.
 
 ### 3.1 Built on what already exists
 
