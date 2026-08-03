@@ -172,3 +172,4 @@ docs/job-hunt/
 *[Rr]esume*
 cv_text.txt
 !research/papers/**/*.docx
+mt5/Include/grw_system/grw_version.mqh

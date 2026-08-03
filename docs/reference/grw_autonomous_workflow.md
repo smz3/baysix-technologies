@@ -303,18 +303,40 @@ missing tables, zero missing columns**; `research/tests` 24 passed.
 - ✅ **`journal_mode=WAL`** (was `delete`) — Loop C writes on a timer while the
   dashboard reads; rollback journaling would have thrown `database is locked`.
 
+### CLOSED 2026-08-03 by task 290 — the adjudicator
+
+- ✅ **`prereg.json` schema + mechanical adjudicator** in
+  [grw.py](../../research/code/gates/grw.py) (S0→S4), with the code-layer writers for
+  `grw_*` that rule 10 requires. `promote_if`/`kill_if` run through a restricted-AST
+  evaluator, not `eval()`: an unknown variable or a NULL input RAISES, because a typo'd
+  threshold that quietly returns False is indistinguishable from a clean falsification.
+
+### CLOSED 2026-08-03 by task 292 — the engine
+
+- ✅ **[grw_meta.mq5](../../mt5/Experts/grw_system/grw_meta.mq5)** — the meta-EA substrate.
+  Four orthogonal axes (`InpEntryType` / `InpFilterMask` / `InpExitType` / `InpRiskFrac`)
+  over 8 modules in `mt5/Include/grw_system/`. Compiles 0 errors; the one warning is the
+  benign MQL5-Market version-format note.
+- ✅ **`OnTester()` log-growth fitness**, with the objective declared as a versioned
+  artifact at [grw_fitness.json](../../research/config/grw_fitness.json) v1.0.0 — the
+  §1.3(2) guard is now real rather than aspirational.
+- ✅ **Sizing module** ([grw_sizing.mqh](../../mt5/Include/grw_system/grw_sizing.mqh)) —
+  equity-fraction lots, floor-rounded so a trade can never over-risk by a volume step.
+  `MEASURED` on the $10k smoke run: requested 1.00%, realised mean 0.986% / max 1.000%,
+  clamp rate 0.
+- ✅ **Ingest path** ([ingest_grw.py](../../research/code/io/ingest_grw.py)) — the EA's
+  three artifacts → `tester_runs` / `tester_trades` / `grw_passes`, and it REFUSES to write
+  a pass row without a registered batch.
+
 ### STILL OPEN — autonomy remains blocked
 
 - `claim_lint.py` not written (task 291)
-- `prereg.json` schema + mechanical adjudicator not written (task 290)
-- `grw_meta.mq5` + `OnTester` fitness not written (task 292)
-- **no code-layer writer for `grw_*`** — the tables exist but CLAUDE.md rule 10 forbids
-  raw `sqlite3` writes, so the adjudicator in task 290 must ship the writer functions
-  alongside the prereg schema
+- **no batch has ever run.** `grw_batches` / `grw_passes` are still empty; every part of
+  Loop B has been exercised only on synthetic fixtures. Task 293 is the first real test.
 
-**The loop must not run autonomously until the adjudicator exists.** The trial-family
-key is now built, but without a mechanical adjudicator Loop B still has no teeth and
-the factory grades its own homework.
+**The loop must not run autonomously until `claim_lint.py` exists.** Loop B now has teeth —
+the adjudicator is mechanical and the engine feeds it — but Loop A is still prose, so the
+agent can still assert a false thing and build on it.
 
 ---
 

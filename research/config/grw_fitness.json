@@ -1,0 +1,50 @@
+{
+  "version": "1.0.0",
+  "name": "log_growth",
+  "objective": "log(final_equity / initial_deposit)",
+  "direction": "maximize",
+  "declared_on": "2026-08-03",
+  "implemented_by": "mt5/Include/grw_system/grw_fitness.mqh (GrwFitnessCompute)",
+  "cite_as": "grw_fitness.json@<git_sha>",
+
+  "why_this_objective": [
+    "The account compounds: every trade is sized off live equity, so wealth evolves multiplicatively.",
+    "Log-wealth is additive across sequential bets, so maximising summed log-growth maximises terminal wealth.",
+    "It needs no bolted-on risk term. Ruin is log(0) = -inf, so the objective already flees it.",
+    "A blended objective (growth minus a drawdown penalty, Sharpe, profit factor) is how the thing actually optimised silently stops being the thing that was asked for. That substitution is the origin failure behind Loop A, spec 1.3(2)."
+  ],
+
+  "guards": [
+    {
+      "name": "min_trades",
+      "value": 30,
+      "behaviour": "fitness = -1e9 (UNRANKABLE)",
+      "why": "A handful of trades has no growth rate, only an anecdote. Scoring it merely 'poorly' would let it outrank a real strategy that had a bad window."
+    },
+    {
+      "name": "ruin_floor_frac",
+      "value": 0.01,
+      "behaviour": "equity is floored at 1% of the deposit before the log",
+      "why": "Ruin must return a finite, correctly-ordered worst score. -inf and NaN are ranked unpredictably by the tester."
+    }
+  ],
+
+  "reported_not_optimised": [
+    "max_dd_pct — reported on every pass, never a constraint and never in the objective (spec section 2).",
+    "profit_factor",
+    "win_rate",
+    "n_trades"
+  ],
+
+  "validity_flags": [
+    {
+      "name": "sizing_valid",
+      "rule": "clamp_up_frac <= 0.20",
+      "clamp_up_frac": "share of orders whose risk-fraction lot fell below the broker minimum and was forced up",
+      "why": "A small account cannot express a small risk fraction. XAUUSD min lot 0.01 = $1 per $1 of gold, so a $10 stop risks $10 whatever risk_frac says — on a $20 deposit that is 50% of equity per trade. Above the threshold the pass measured a FIXED-LOT strategy and its growth is not a compounding claim.",
+      "status": "REPORTED, not penalised. A prereg may cite it in promote_if; the fitness itself stays a pure objective."
+    }
+  ],
+
+  "change_policy": "Changing this file is never automated (spec 3.4). A change bumps the version and starts a new trial family — old passes were judged against a different objective and cannot be pooled with new ones."
+}
