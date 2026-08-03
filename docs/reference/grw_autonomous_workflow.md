@@ -279,18 +279,42 @@ isolation is achieved by `grw_*` prefixes per CLAUDE.md rule 4a — not by a new
 
 ## 5. Known gaps (blocking full autonomy)
 
-Verified absent 2026-08-03, `MEASURED` by `PRAGMA table_info` + `sqlite_master`:
+### CLOSED 2026-08-03 by migration 037 (tasks 287 + 289)
 
-- `is_runs` table does not exist, though CLAUDE.md references it
-- no `trial_family_id` column anywhere — the multiplicity ledger is unbuilt
-- `tester_runs` DDL drift between [db_init.py](../../research/code/infra/db_init.py)
-  and `tester.py` (open task 287) — a rebuild from stale DDL silently drops `run_role`
-- `claim_lint.py` not written
-- `prereg.json` schema + adjudicator not written
+`MEASURED` — schema diff of a from-scratch `db_init` rebuild vs the live DB: **zero
+missing tables, zero missing columns**; `research/tests` 24 passed.
 
-**The loop must not run autonomously until the trial-family key and the
-adjudicator exist.** Without them Loop B has no teeth and the factory grades its
-own homework.
+- ✅ **`trial_family_id` now exists** — on `step4_results`, `grw_batches`, `grw_passes`.
+  The multiplicity ledger is the `grw_family_trials` view (cumulative trials per family,
+  across batches). `step4_results.n_trials` added alongside it.
+- ✅ **`grw_batches` / `grw_passes` built**, with `grw_batch_scoreboard` driving the
+  §3.3 "3 consecutive batches, no promotion" hard stop.
+- ✅ **`tester_runs` DDL drift fixed at the root** (task 287). The DDL is no longer
+  duplicated: it lives once in
+  [schema_ledger.py](../../research/code/infra/schema_ledger.py) and both `db_init.py`
+  and `tester.py` import it. `MEASURED` drift that a rebuild would have silently
+  dropped: `tester_runs.run_role/git_sha/git_dirty`,
+  `tester_trades.zone_id/gross_usd/cost_usd`, and all of `tester_run_summary` +
+  `fob_cycles/fob_zones/fob_events/fob_run_stats`.
+- ✅ **`is_runs` was never a gap** — a stale-doc error, not a missing table. Migration
+  `033_collapse_is_runs.py` folded it into `step4_results.is_run` / `.what_changed`;
+  count shots via `DISTINCT is_run`. CLAUDE.md and this document both asserted the
+  table existed and then both called its absence a blocker. Corrected in place.
+- ✅ **`journal_mode=WAL`** (was `delete`) — Loop C writes on a timer while the
+  dashboard reads; rollback journaling would have thrown `database is locked`.
+
+### STILL OPEN — autonomy remains blocked
+
+- `claim_lint.py` not written (task 291)
+- `prereg.json` schema + mechanical adjudicator not written (task 290)
+- `grw_meta.mq5` + `OnTester` fitness not written (task 292)
+- **no code-layer writer for `grw_*`** — the tables exist but CLAUDE.md rule 10 forbids
+  raw `sqlite3` writes, so the adjudicator in task 290 must ship the writer functions
+  alongside the prereg schema
+
+**The loop must not run autonomously until the adjudicator exists.** The trial-family
+key is now built, but without a mechanical adjudicator Loop B still has no teeth and
+the factory grades its own homework.
 
 ---
 

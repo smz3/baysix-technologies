@@ -58,6 +58,10 @@ research/db/execution.db
 # up off-disk). Was tracked through HEAD 78d8f12 (88MB); history left intact (all ≤88MB,
 # already pushed). Local space reclaim: `git gc --prune=now`.
 research/db/research.db
+# WAL sidecars (migration 037 switched journal_mode delete->wal). SQLite removes them on a
+# clean close, so they only appear mid-session — but they MUST never be committable.
+research/db/*.db-wal
+research/db/*.db-shm
 
 # Pre-rebuild full-DB backups (Protocol 4.0 capture-before-nuke, ~100MB each) — local restore points only.
 # The small human-readable BRC seed in research/db/_seed/ IS tracked.

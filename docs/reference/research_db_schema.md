@@ -1,8 +1,8 @@
 # research.db — Schema (mirror of live DB)
 
-_Last updated: 2026-06-22 — **Protocol 4.0 lean rebuild** (migration 032): 4 gates (G1–G4), `trial_family` + the 3.3 result columns dropped, `is_runs` added, tester tables folded into `db_init`. Gate semantics in [research_protocol.md](research_protocol.md)._
+_Last updated: 2026-08-03 — **migration 037** (tasks 287/289): tester DDL de-duplicated into [schema_ledger.py](../../research/code/infra/schema_ledger.py), GRW-001 factory tables added, `journal_mode=WAL`. Prior: 2026-06-22 Protocol 4.0 lean rebuild (migration 032) — 4 gates (G1–G4), `trial_family` + the 3.3 result columns dropped, tester tables folded into `db_init`. Gate semantics in [research_protocol.md](research_protocol.md)._
 
-The DB has **11 tables** + **4 views**. All writes go through the 4 subpackages of [research/code/](../../research/code/) — `gates/` (`pipeline`, `protocol`), `lineage/` (`strategy_log`, `agent_log`, `backlog`), `io/` (`tester`, …), `infra/` (`db_init`, …) — never raw `sqlite3` (CLAUDE.md rule 10, hook-enforced). The flat `from research.code import X` contract is preserved via `__init__` re-exports.
+The DB has **18 tables** + **6 views**. All writes go through the 4 subpackages of [research/code/](../../research/code/) — `gates/` (`pipeline`, `protocol`), `lineage/` (`strategy_log`, `agent_log`, `backlog`), `io/` (`tester`, …), `infra/` (`db_init`, …) — never raw `sqlite3` (CLAUDE.md rule 10, hook-enforced). The flat `from research.code import X` contract is preserved via `__init__` re-exports.
 
 CHECK / UNIQUE / FK constraints below are the **real DB-level constraints** read from the table SQL. "observed:" lists the values actually present today (not a constraint unless a CHECK is noted).
 
@@ -11,10 +11,20 @@ CHECK / UNIQUE / FK constraints below are the **real DB-level constraints** read
 ## Table groups
 
 ```
-PIPELINE CORE      step1_ideas · step2_papers · step3_gates · step4_results · is_runs
+PIPELINE CORE      step1_ideas · step2_papers · step3_gates · step4_results
 LOGS               log_agent · log_strategy · log_tasks
-MT5 TESTER LEDGER  tester_runs · tester_trades · tester_zones   (the EA-emitted ledger; G2 edge read + G4 parity)
+MT5 TESTER LEDGER  tester_runs · tester_trades · tester_zones · tester_run_summary
+                   (the EA-emitted ledger; G2 edge read + G4 parity)
+FOB-001 PAYLOAD    fob_cycles · fob_zones · fob_events · fob_run_stats
+GRW-001 FACTORY    grw_batches · grw_passes   (+ views grw_family_trials, grw_batch_scoreboard)
 ```
+
+**DDL ownership (task 287).** The MT5 ledger / FOB payload / GRW factory DDL lives in
+exactly one place — [research/code/infra/schema_ledger.py](../../research/code/infra/schema_ledger.py)
+(`SCHEMA_MT5`, `SCHEMA_GRW`) — and both `db_init.py` and `tester.py` import it.
+`db_init.py` used to hold a second, drifted copy that was silently missing
+`tester_runs.run_role/git_sha/git_dirty`, `tester_trades.zone_id/gross_usd/cost_usd`,
+and every `tester_run_summary`/`fob_*` table. Never re-inline this DDL.
 
 ---
 
@@ -99,7 +109,10 @@ All quantitative output. Required-field guard in `pipeline.log_result` (git_sha,
 | cost_adjusted | INTEGER | NOT NULL DEFAULT 0, **CHECK(cost_adjusted IN (0,1))** (0=raw, 1=net) |
 | period | TEXT | **CHECK(period IN ('per_trade','daily','annualised'))**. observed: per_trade, daily |
 | n_obs | INTEGER | observation count (required by code layer) |
-| is_run | TEXT | 4.0 IS run label (IS-01, IS-02…) — soft ref → `is_runs.label`; REQUIRED on stage IN ('IS','OOS') |
+| is_run | TEXT | 4.0 IS run label (IS-01, IS-02…); REQUIRED on stage IN ('IS','OOS'). Count shots via `DISTINCT is_run` — the separate `is_runs` registry was collapsed into this column in migration 033 |
+| what_changed | TEXT | what this IS run swept/changed (was `is_runs.what_changed`) |
+| trial_family_id | TEXT | GRW-001 multiplicity key (migration 037) — trials compared for ONE decision, accumulating across batches. Bookkeeping only; nothing auto-kills on it |
+| n_trials | INTEGER | passes actually run to reach this result (migration 037). "A growth rate without its trial count is not a finding" |
 | instrument | TEXT | NOT NULL DEFAULT 'XAUUSD' |
 | data_start | DATE | |
 | data_end | DATE | |
@@ -113,16 +126,42 @@ All quantitative output. Required-field guard in `pipeline.log_result` (git_sha,
 
 ---
 
-### is_runs
-The **4.0 IS run numbering** (replaced the 3.3 `trial_family` / N_trials ledger — that table was dropped in the Protocol 4.0 rebuild). One row per tuning shot; its job is **counting degrees of freedom** taken before G3 — per-idea, never pooled. The only deflator 4.0 keeps. Written by `pipeline.log_is_run()`; `step4_results.is_run` carries the label.
+### ~~is_runs~~ — does not exist (collapsed, migration 033)
+**There is no `is_runs` table.** The 4.0 IS-run numbering was folded into
+`step4_results.is_run` / `.what_changed` by migration `033_collapse_is_runs.py`; count
+shots taken with `SELECT COUNT(DISTINCT is_run) … WHERE idea_id=?`. Read via
+`pipeline.get_is_runs(idea_id)`.
 
-| Column | Type | Constraints / Note |
-|--------|------|--------------------|
-| is_run_id | INTEGER | **PK** AUTOINCREMENT |
-| idea_id | TEXT | NOT NULL, FK → step1_ideas |
-| label | TEXT | NOT NULL — 'IS-01', 'IS-02', … ; **UNIQUE(idea_id, label)** |
-| what_changed | TEXT | what this run swept/changed |
-| created_at | DATETIME | NOT NULL |
+This is recorded explicitly because stale references to a phantom `is_runs` table in
+CLAUDE.md and the GRW spec were mistaken for a blocking schema gap (verified + closed
+by migration 037, task 289).
+
+---
+
+## GRW-001 FACTORY
+
+The compounding-factory ledger. Full semantics in
+[grw_autonomous_workflow.md](grw_autonomous_workflow.md) §2 (promotion ladder) / §4 (storage).
+
+### grw_batches
+One row per **pre-registered** batch. `prereg.json` on disk stays the source of truth
+(hashed + git-committed *before* the batch runs); this table is the queryable index.
+Key columns: `batch_id` (PK), `trial_family_id`, `hypothesis`, `mechanism` (why the edge
+should exist — no mechanism, no slot), `is_start/is_end`, `oos_start/oos_end`,
+`n_trials_budget`, `promote_if`, `kill_if`, `prereg_sha`, `stage`, `oos_spent`.
+
+### grw_passes
+One row per optimizer pass. **Passes are raw material, not results** — only an
+S3-adjudicated survivor is copied into `step4_results`. The `verdict` column
+(`PENDING`/`PROMOTED`/`FALSIFIED`/`KILLED`) is that boundary. Carries `prereg_sha` per
+row, so a pass judged under a moved goalpost is self-evident. IS and OOS legs link out
+to `tester_runs` via `is_run_id` / `oos_run_id`.
+
+### Views
+- `grw_family_trials` — the multiplicity ledger: cumulative `n_trials` per
+  `trial_family_id`, across batches.
+- `grw_batch_scoreboard` — per-batch promoted/falsified/pending counts; drives the
+  "3 consecutive batches with no promotion" hard stop.
 
 ---
 

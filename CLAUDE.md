@@ -29,7 +29,7 @@ baysix-technologies/          ← single repo · github.com/smz3/baysix-technolo
 ├── brokers/                  ← venue specs: justmarkets.yaml (TCM-001 cost model) + .md per broker
 ├── research/
 │   ├── db/                   ← all SQLite databases (2-DB design: workstation + VPS)
-│   │   ├── research.db       ← Protocol 4.0 lean: step1_ideas · step2_papers · step3_gates (G1-G4) · step4_results (+is_run) · is_runs · tester_runs/tester_trades/tester_zones · logs: log_agent · log_tasks · log_strategy
+│   │   ├── research.db       ← Protocol 4.0 lean (WAL): step1_ideas · step2_papers · step3_gates (G1-G4) · step4_results (+is_run/what_changed — there is NO is_runs table, collapsed in migration 033) · spine: tester_runs/tester_trades/tester_zones/tester_run_summary · fob_* payload · grw_batches/grw_passes (GRW-001 factory) · logs: log_agent · log_tasks · log_strategy. Ledger DDL has ONE home: research/code/infra/schema_ledger.py
 │   │   └── execution.db      ← live deployment ledger (downstream twin · 12 tables · spec: docs/reference/execution_schema.md · rebuild in progress)
 │   ├── code/                 ← shared DB layer, 4 subpackages (flat `from research.code import X` preserved via __init__ re-exports): gates/ (pipeline·protocol·idea_cli) · lineage/ (strategy_log·agent_log·backlog) · io/ (arctic_io·tester·ingest_*·fetch/extract/backfill) · infra/ (db_init·run_and_log·run_tracked·handover_lint·execution)
 │   ├── models/               ← one folder per idea/model (brc/ = active BRC-001 · struct/ = STRUCT-001 primitive · cusum/ · _archive/ = orb/hmm/msm, superseded)

@@ -17,7 +17,11 @@ Run: python research/code/infra/db_init.py
 """
 
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root for run-as-script
+from research.code.infra.schema_ledger import SCHEMA_MT5, SCHEMA_GRW
 
 DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
 
@@ -100,6 +104,10 @@ def init():
             n_obs           INTEGER,
             is_run          TEXT,                   -- 4.0 IS run label (IS-01, IS-02…); count shots via DISTINCT is_run
             what_changed    TEXT,                   -- what was swept on this IS run (was is_runs.what_changed)
+            -- GRW-001 multiplicity ledger (task 289, migration 037). BOOKKEEPING ONLY —
+            -- nothing auto-kills on these; the 3.3 DSR/PSR deflator machinery stays dropped.
+            trial_family_id TEXT,                   -- trials compared for one decision; spans batches
+            n_trials        INTEGER,                -- passes actually run to reach this result
             instrument      TEXT NOT NULL DEFAULT 'XAUUSD',
             data_start      DATE,
             data_end        DATE,
@@ -169,94 +177,6 @@ def init():
 
         CREATE INDEX IF NOT EXISTS idx_strategy_log_idea
             ON log_strategy(idea_id, created_at);
-
-        -- ── MT5 tester ledger (folded in from migrations 021/022/030/031) ──────
-        -- The EA emits this inside the Strategy Tester (causal, bar-by-bar). 4.0's
-        -- G2 edge read + G4 live parity both consume it. Python only analyses.
-        CREATE TABLE IF NOT EXISTS tester_runs (
-            run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            idea_id         TEXT NOT NULL,                 -- soft FK into step1_ideas
-            ea_name         TEXT,
-            ea_version      TEXT,
-            symbol          TEXT NOT NULL,
-            data_source     TEXT NOT NULL CHECK(data_source IN
-                               ('dukascopy','broker_history','custom')),
-            model_quality   TEXT,
-            tester_model    TEXT CHECK(tester_model IS NULL OR tester_model IN
-                               ('real_ticks','every_tick','1min_ohlc','open_only')),
-            timeframe       TEXT,
-            period_start    DATE,
-            period_end      DATE,
-            tz_offset_hours INTEGER,
-            magic_number    INTEGER,
-            initial_deposit REAL,
-            leverage        INTEGER,
-            spread_setting  TEXT,
-            params          TEXT CHECK(params IS NULL OR json_valid(params)),
-            n_trades        INTEGER,
-            net_profit_usd  REAL,
-            profit_factor   REAL,
-            max_dd_pct      REAL,
-            win_rate        REAL,
-            -- demo/live parity diff vs research (4.0 G4; fills via tester.log_fidelity_diff)
-            research_result_id   INTEGER,
-            trade_overlap_pct    REAL,
-            ER_delta_vs_research REAL,
-            R_corr               REAL,
-            fidelity_verdict     TEXT CHECK(fidelity_verdict IS NULL OR
-                                    fidelity_verdict IN ('pass','fail','pending')),
-            notes           TEXT,
-            created_at      DATETIME NOT NULL,
-            updated_at      DATETIME NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS tester_trades (
-            tt_id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id           INTEGER NOT NULL REFERENCES tester_runs(run_id),
-            ticket           INTEGER,
-            session_date     DATE,
-            direction        TEXT CHECK(direction IS NULL OR direction IN ('long','short','flat')),
-            entry_ts         DATETIME,
-            entry_px         REAL,
-            exit_ts          DATETIME,
-            exit_px          REAL,
-            exit_reason      TEXT,
-            lots             REAL,
-            risk_unit        REAL,
-            realized_R       REAL,
-            realized_pnl_usd REAL,
-            meta             TEXT CHECK(meta IS NULL OR json_valid(meta)),
-            created_at       DATETIME NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS tester_zones (
-            tz_id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
-            csv_zone_id       INTEGER,
-            tf                TEXT NOT NULL,
-            direction         TEXT CHECK(direction IN ('BUY','SELL')),
-            p1_time DATETIME, p1_price REAL,
-            p2_time DATETIME, p2_price REAL,
-            p3_time DATETIME, p3_price REAL,
-            p4_time DATETIME, p4_price REAL,
-            p5_time DATETIME, p5_price REAL,
-            l1 REAL, l2 REAL, mid REAL,
-            break_kind        TEXT CHECK(break_kind IS NULL OR break_kind IN ('sequential','same_bar')),
-            t1_time DATETIME, t2_time DATETIME, t3_time DATETIME,
-            confirm_time      DATETIME,
-            invalidation_time DATETIME,
-            alive_at_end      INTEGER,
-            continued         INTEGER,
-            mfe_r REAL, mae_r REAL, realized_r REAL,
-            bars_alive        INTEGER,
-            created_at        DATETIME NOT NULL,
-            seq INTEGER, zone_key TEXT, is_primary INTEGER, consolidated_into TEXT
-        );
-        CREATE INDEX IF NOT EXISTS ix_tester_trades_run    ON tester_trades(run_id);
-        CREATE INDEX IF NOT EXISTS ix_tester_trades_run_ts ON tester_trades(run_id, entry_ts);
-        CREATE INDEX IF NOT EXISTS ix_tester_zones_run     ON tester_zones(run_id);
-        CREATE INDEX IF NOT EXISTS ix_tester_zones_run_tf  ON tester_zones(run_id, tf);
-        CREATE INDEX IF NOT EXISTS ix_tester_zones_confirm ON tester_zones(run_id, confirm_time);
 
         DROP VIEW IF EXISTS open_backlog;
         CREATE VIEW open_backlog AS
@@ -342,6 +262,16 @@ def init():
           AND i.status NOT IN ('killed','graduated')
         ORDER BY p.added_at ASC;
     """)
+
+    # Ledger DDL from the single source of truth (task 287): MT5 spine + FOB payload
+    # + GRW factory. Never re-inline these here — a second copy is exactly what drifted.
+    cur.executescript(SCHEMA_MT5)
+    cur.executescript(SCHEMA_GRW)
+
+    # WAL (task 289): Loop C writes on a timer while Syafiq queries interactively, and
+    # the default rollback journal takes an exclusive lock -> 'database is locked'.
+    # journal_mode is persisted in the DB file, so this survives every reconnect.
+    cur.execute("PRAGMA journal_mode=WAL")
 
     conn.commit()
     conn.close()
