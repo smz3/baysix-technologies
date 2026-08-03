@@ -1,9 +1,13 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "log_growth",
   "objective": "log(final_equity / initial_deposit)",
   "direction": "maximize",
   "declared_on": "2026-08-03",
+  "changelog": [
+    "1.1.0 (2026-08-03) — min_trades 30 -> 500 for the SCALP mandate (task 294). The OBJECTIVE is unchanged; only the unrankable sentinel moved. Under a mandate of hundreds of trades per day a legitimate config produces 10^4-10^5 trades over a multi-year window, so 30 had stopped being a sentinel: it would have let a swing-shaped accident that traded 40 times win a scalping sweep. New trial family — v1.0.0 passes cannot be pooled with these. Safe to do now precisely because grw_passes is still empty.",
+    "1.0.0 (2026-08-03) — first declared objective."
+  ],
   "implemented_by": "mt5/Include/grw_system/grw_fitness.mqh (GrwFitnessCompute)",
   "cite_as": "grw_fitness.json@<git_sha>",
 
@@ -17,9 +21,9 @@
   "guards": [
     {
       "name": "min_trades",
-      "value": 30,
+      "value": 500,
       "behaviour": "fitness = -1e9 (UNRANKABLE)",
-      "why": "A handful of trades has no growth rate, only an anecdote. Scoring it merely 'poorly' would let it outrank a real strategy that had a bad window."
+      "why": "A handful of trades has no growth rate, only an anecdote. Scoring it merely 'poorly' would let it outrank a real strategy that had a bad window. Raised 30 -> 500 in v1.1.0: the mandate is hundreds of trades per day, so 500 is a floor against degenerate configs, NOT a quality bar."
     },
     {
       "name": "ruin_floor_frac",

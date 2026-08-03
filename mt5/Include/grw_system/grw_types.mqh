@@ -22,7 +22,7 @@
 #property strict
 
 //--- MUST match #property version in grw_meta.mq5 — bump both together.
-#define GRW_VERSION "0.1.0"
+#define GRW_VERSION "0.2.0"
 
 //+------------------------------------------------------------------+
 //| ENTRY primitives — each line is the MECHANISM, not a description. |
@@ -78,6 +78,36 @@ enum GRW_EXIT
                               // paying spread.
    GRW_X_BREAKEVEN_ATR = 3    // move to breakeven at aR, then trail by d*ATR. Isolates the
                               // cost of BE-stopping from the trail itself.
+  };
+
+//+------------------------------------------------------------------+
+//| STOP-DISTANCE mode — the axis the $20 scalp mandate needs.        |
+//|                                                                    |
+//| Every primitive produces a STRUCTURAL stop (the level whose        |
+//| violation falsifies its mechanism) offset by sl_buf_k * ATR. On H1 |
+//| gold that lands at a $2.52 median stop, which is right for H1 and  |
+//| unusable at $20: 5% of $20 is $1.00, so the sizing call asks for   |
+//| 0.004 lot, floors to the 0.01 broker minimum, and the trade        |
+//| silently risks ~2.5x what was declared (that is exactly the        |
+//| clamp_up_frac = 1.000 seen on the grw_smoke_20usd run).            |
+//|                                                                    |
+//| At min lot the stop distance in USD IS the risk in USD — 0.01 lot  |
+//| is 1 oz, so a $1 move is $1. The stop therefore is not a free      |
+//| parameter, it is the sizing instrument. These modes make that      |
+//| explicit instead of hoping ATR happens to land in range.           |
+//+------------------------------------------------------------------+
+enum GRW_SL_MODE
+  {
+   GRW_SL_ATR_BUF    = 0,  // structural level ± sl_buf_k*ATR. The original; correct
+                           // wherever the account can actually express the risk it implies.
+   GRW_SL_ABS_PIPS   = 1,  // fixed sl_pips from entry, structure ignored. THE SCALP MODE:
+                           // pins risk-per-trade to an exact USD amount at min lot, which
+                           // is what makes InpRiskFrac achievable at all on $20.
+   GRW_SL_STRUCT_CAP = 2   // structural, but never wider than sl_max_pips. Keeps the
+                           // mechanism's own invalidation where it is already tight and
+                           // truncates it where it is not. Truncating invalidation CHANGES
+                           // THE MECHANISM, so this is its own pre-registered config —
+                           // never a "tweak" of ATR_BUF.
   };
 
 //+------------------------------------------------------------------+
@@ -150,6 +180,10 @@ struct GrwCfg
    double          ext_k;         // ATR-extension threshold (reversion)
    double          sl_buf_k;      // stop buffer in ATR units beyond the structural level
    int             retest_bars;   // how long a break stays armed for a retest
+   //--- stop distance = the sizing instrument at min lot (see GRW_SL_MODE)
+   GRW_SL_MODE     sl_mode;
+   double          sl_pips;       // ABS_PIPS: exact stop distance from entry, in pips
+   double          sl_max_pips;   // STRUCT_CAP: widest structural stop tolerated, in pips
    //--- filters
    int             sess_start;    // broker hour, inclusive
    int             sess_end;      // broker hour, inclusive (start > end wraps midnight)
@@ -205,6 +239,11 @@ struct GrwStats
    int      n_orders;     // ...actually reached the broker
    int      n_clamp_up;   // requested lot < broker min -> FORCED UP (over-risk)
    int      n_clamp_down; // requested lot > broker max / free margin -> forced down
+   int      n_sl_too_tight; // stop landed inside the broker's min stop distance and the
+                            // signal was DROPPED. At scalp distances this is the gate
+                            // between "my stop is 4 pips" and "the broker refused it" —
+                            // silently widening instead would change the risk without
+                            // telling anyone, so it is counted and the trade is skipped.
    double   sum_risk_pct; // sum of realised risk-as-%-of-equity, for the mean
    double   max_risk_pct; // worst single-trade risk as % of equity
   };
@@ -217,6 +256,7 @@ void GrwStatsClear(GrwStats &st)
    st.n_orders     = 0;
    st.n_clamp_up   = 0;
    st.n_clamp_down = 0;
+   st.n_sl_too_tight = 0;
    st.sum_risk_pct = 0.0;
    st.max_risk_pct = 0.0;
   }
@@ -235,6 +275,24 @@ double GrwStopsLevel()
           * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
   }
 
+//+------------------------------------------------------------------+
+//| One pip in PRICE units.                                           |
+//|                                                                    |
+//| JM quotes XAUUSD at 2 digits, so point = 0.01 and a pip = 10       |
+//| points = 0.10 of price — which at the 0.01 min lot (1 oz) is       |
+//| exactly $0.10 of P&L. That matches brokers/justmarkets.yaml        |
+//| (pip_usd: 0.10), and it is the unit the whole $20 envelope is      |
+//| written in: a 10-pip stop = $1.00 = 5% of $20.                     |
+//|                                                                    |
+//| The 2/3/5-digit rule also gives the conventional pip on FX.        |
+//+------------------------------------------------------------------+
+double GrwPip()
+  {
+   int    d  = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double pt = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   return (d == 2 || d == 3 || d == 5) ? pt * 10.0 : pt;
+  }
+
 string GrwEntryName(const GRW_ENTRY e)
   {
    switch(e)
@@ -243,6 +301,17 @@ string GrwEntryName(const GRW_ENTRY e)
       case GRW_E_BREAK_RETEST:   return "BREAK_RETEST";
       case GRW_E_ATR_REVERSION:  return "ATR_REVERSION";
       case GRW_E_MOMO_PULLBACK:  return "MOMO_PULLBACK";
+     }
+   return "UNKNOWN";
+  }
+
+string GrwSlModeName(const GRW_SL_MODE m)
+  {
+   switch(m)
+     {
+      case GRW_SL_ATR_BUF:    return "ATR_BUF";
+      case GRW_SL_ABS_PIPS:   return "ABS_PIPS";
+      case GRW_SL_STRUCT_CAP: return "STRUCT_CAP";
      }
    return "UNKNOWN";
   }

@@ -160,6 +160,17 @@ def ingest(tag: str, batch_id: str = None, idea_id: str = "GRW-001",
         print(f"[grw-ingest] WARNING run #{run_id}: UNRANKABLE "
               f"(n_trades={_f(s, 'n_trades', int)}) — fitness is a sentinel, not a score.")
 
+    #--- SCALP VIABILITY: a stop too tight for the venue is a DIFFERENT failure from a stop
+    #--- that was allowed and lost. Tolerate the column being absent so v0.1.0 summaries
+    #--- still ingest, but shout when a material share of signals never reached the broker.
+    _tight = _f(s, "n_sl_too_tight", int, 0) if "n_sl_too_tight" in s else 0
+    _sig = _f(s, "n_signals", int, 0)
+    if _tight > 0 and _sig > 0:
+        print(f"[grw-ingest] NOTE run #{run_id}: {_tight}/{_sig} signals "
+              f"({_tight / _sig:.1%}) were dropped for a stop inside the broker min-distance "
+              f"or the live spread — the config's stop is too tight for this venue at those "
+              f"moments, which is a VENUE result, not a strategy result.")
+
     if not batch_id:
         print(f"[grw-ingest] run #{run_id} ingested WITHOUT a grw_passes row "
               f"(no --batch-id). Nothing here can be adjudicated or promoted.")

@@ -38,9 +38,15 @@
 #include "grw_types.mqh"
 
 //--- MUST match research/config/grw_fitness.json "version".
-#define GRW_FITNESS_VERSION      "1.0.0"
+#define GRW_FITNESS_VERSION      "1.1.0"
 #define GRW_FITNESS_UNRANKABLE   -1.0e9    // "cannot be scored", not "scored badly"
-#define GRW_FITNESS_MIN_TRADES   30        // declared floor for a growth claim
+//--- v1.1.0 raised min_trades 30 -> 500 for the SCALP mandate. Under a mandate of hundreds
+//--- of trades per day, a legitimate config produces 10^4-10^5 trades over a multi-year
+//--- window, so 30 stopped being a sentinel and became decoration: a config firing 30 times
+//--- in two years is not the strategy that was asked for, and scoring it would let a
+//--- swing-shaped accident win a scalping sweep. 500 still only catches degenerate configs
+//--- — it is deliberately NOT a quality bar (that is what the objective is for).
+#define GRW_FITNESS_MIN_TRADES   500       // declared floor for a growth claim
 #define GRW_FITNESS_RUIN_FLOOR   0.01      // equity floor as a fraction of the deposit
 
 //+------------------------------------------------------------------+

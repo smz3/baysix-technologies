@@ -37,14 +37,20 @@ string GrwCfgJson(const GrwCfg &c)
    return StringFormat(
       "{\"entry_type\":\"%s\",\"filter_mask\":%d,\"filters\":\"%s\",\"exit_type\":\"%s\","
       "\"risk_frac\":%.6f,\"tf\":\"%s\",\"htf\":\"%s\",\"lookback\":%d,\"ext_k\":%.4f,"
-      "\"sl_buf_k\":%.4f,\"retest_bars\":%d,\"sess_start\":%d,\"sess_end\":%d,"
+      "\"sl_buf_k\":%.4f,\"retest_bars\":%d,\"sl_mode\":\"%s\",\"sl_pips\":%.4f,"
+      "\"sl_max_pips\":%.4f,\"sess_start\":%d,\"sess_end\":%d,"
       "\"vol_floor_pts\":%.2f,\"cost_mult\":%.2f,\"rollover_hr\":%d,\"rr\":%.4f,"
       "\"arm_r\":%.4f,\"trail_atr\":%.4f,\"time_stop_bars\":%d,\"atr_period\":%d,"
       "\"magic\":%I64u}",
       GrwEntryName(c.entry_type), c.filter_mask, GrwFilterMaskName(c.filter_mask),
       GrwExitName(c.exit_type), c.risk_frac,
       EnumToString(c.tf), EnumToString(c.htf), c.lookback, c.ext_k,
-      c.sl_buf_k, c.retest_bars, c.sess_start, c.sess_end,
+      c.sl_buf_k, c.retest_bars,
+      //--- sl_* MUST be in the hash: without them an ABS_PIPS config and an ATR_BUF
+      //--- config hash identically, and the multiplicity ledger would count two
+      //--- genuinely different strategies as one re-run of the same trial.
+      GrwSlModeName(c.sl_mode), c.sl_pips, c.sl_max_pips,
+      c.sess_start, c.sess_end,
       c.vol_floor_pts, c.cost_mult, c.rollover_hr, c.rr,
       c.arm_r, c.trail_atr, c.time_stop_bars, c.atr_period, c.magic);
   }
@@ -130,6 +136,7 @@ bool GrwWriteRunSummary(const string tag, const GrwCfg &c, const GrwStats &st,
       "fitness","growth","unrankable","n_trades","net_usd","max_dd_pct",
       "profit_factor","win_rate","initial_deposit","final_equity",
       "n_signals","n_gated","n_skipped","n_orders","n_clamp_up","n_clamp_down",
+      "n_sl_too_tight",
       "clamp_up_frac","mean_risk_pct","max_risk_pct","sizing_valid",
       "config_hash","params_file");
 
@@ -146,6 +153,7 @@ bool GrwWriteRunSummary(const string tag, const GrwCfg &c, const GrwStats &st,
       DoubleToString(f.initial_deposit, 2), DoubleToString(f.final_equity, 2),
       (string)st.n_signals, (string)st.n_gated, (string)st.n_skipped,
       (string)st.n_orders, (string)st.n_clamp_up, (string)st.n_clamp_down,
+      (string)st.n_sl_too_tight,
       DoubleToString(f.clamp_up_frac, 6), DoubleToString(f.mean_risk_pct, 4),
       DoubleToString(f.max_risk_pct, 4), (f.sizing_valid ? "1" : "0"),
       GrwConfigHash(cfg_json), "grw_params_" + tag + ".json");

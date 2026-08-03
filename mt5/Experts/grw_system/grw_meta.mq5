@@ -32,7 +32,7 @@
 //|    grw_trade · grw_fitness · grw_ledger                             |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "0.1.0"          // MUST match GRW_VERSION (grw_types.mqh) — bump both
+#property version   "0.2.0"          // MUST match GRW_VERSION (grw_types.mqh) — bump both
 #property strict
 
 #include <grw_system/grw_types.mqh>
@@ -54,6 +54,14 @@ input int       InpLookback   = 20;      // Donchian window / anchor period / sl
 input double    InpExtK       = 2.0;     // ATR_REVERSION: fade at >= this many ATRs from anchor
 input double    InpSlBufK     = 0.5;     // stop buffer beyond the structural level, in ATRs
 input int       InpRetestBars = 5;       // BREAK_RETEST: bars a broken level stays armed
+
+//--- STOP DISTANCE. At the 0.01 min lot (1 oz) a $1 price move is $1, so the stop distance
+//--- in USD *is* the risk in USD — the stop is the sizing instrument, not a cosmetic. On $20
+//--- the whole viable envelope is a 10-20 pip ($1.00-$2.00) stop at 5-10% risk. ATR_BUF on
+//--- H1 lands at ~25 pips median, which is why the $20 smoke run clamped 100% of its orders.
+input GRW_SL_MODE InpSlMode    = GRW_SL_ATR_BUF;  // ATR_BUF (structural) · ABS_PIPS (scalp) · STRUCT_CAP
+input double      InpSlPips    = 10.0;   // ABS_PIPS: stop distance in pips (10 pips = $1.00 @0.01 lot)
+input double      InpSlMaxPips = 20.0;   // STRUCT_CAP: widest structural stop tolerated, in pips
 
 input group          "══════  AXIS 2 — FILTERS (bitmask; ALL selected bits must pass)  ══════"
 //--- 1 SESSION · 2 TREND_HTF · 4 VOL_FLOOR · 8 COST_RATIO · 16 NO_ROLLOVER · 31 ALL · 0 baseline
@@ -122,6 +130,9 @@ int OnInit()
    g_cfg.ext_k          = InpExtK;
    g_cfg.sl_buf_k       = InpSlBufK;
    g_cfg.retest_bars    = InpRetestBars;
+   g_cfg.sl_mode        = InpSlMode;
+   g_cfg.sl_pips        = InpSlPips;
+   g_cfg.sl_max_pips    = InpSlMaxPips;
    g_cfg.sess_start     = InpSessStart;
    g_cfg.sess_end       = InpSessEnd;
    g_cfg.vol_floor_pts  = InpVolFloorPts;
@@ -146,6 +157,10 @@ int OnInit()
      { Print("[GRW] InpMaxOpen must be >= 1"); return INIT_PARAMETERS_INCORRECT; }
    if(g_cfg.sl_buf_k < 0.0)
      { Print("[GRW] InpSlBufK must be >= 0"); return INIT_PARAMETERS_INCORRECT; }
+   if(g_cfg.sl_mode == GRW_SL_ABS_PIPS && g_cfg.sl_pips <= 0.0)
+     { Print("[GRW] ABS_PIPS needs InpSlPips > 0"); return INIT_PARAMETERS_INCORRECT; }
+   if(g_cfg.sl_mode == GRW_SL_STRUCT_CAP && g_cfg.sl_max_pips <= 0.0)
+     { Print("[GRW] STRUCT_CAP needs InpSlMaxPips > 0"); return INIT_PARAMETERS_INCORRECT; }
 
    g_ctx.h_atr    = iATR(_Symbol, g_cfg.tf,  g_cfg.atr_period);
    g_ctx.h_anchor = iMA(_Symbol, g_cfg.tf,  g_cfg.lookback, 0, MODE_SMA, PRICE_CLOSE);
@@ -161,10 +176,28 @@ int OnInit()
    PrintFormat("[GRW] v%s fitness v%s | git %s%s | built %s",
                GRW_VERSION, GRW_FITNESS_VERSION, GRW_GIT_SHA,
                (GRW_GIT_DIRTY ? "-DIRTY(exploratory)" : ""), GRW_BUILD_TIME);
-   PrintFormat("[GRW] entry=%s filters=%s exit=%s risk_frac=%.4f tf=%s htf=%s",
+   PrintFormat("[GRW] entry=%s filters=%s exit=%s risk_frac=%.4f tf=%s htf=%s sl_mode=%s",
                GrwEntryName(g_cfg.entry_type), GrwFilterMaskName(g_cfg.filter_mask),
                GrwExitName(g_cfg.exit_type), g_cfg.risk_frac,
-               EnumToString(g_cfg.tf), EnumToString(g_cfg.htf));
+               EnumToString(g_cfg.tf), EnumToString(g_cfg.htf),
+               GrwSlModeName(g_cfg.sl_mode));
+
+   //--- FEASIBILITY, stated up front instead of discovered as a 100% clamp rate afterwards.
+   //--- With a known stop distance the minimum expressible risk is arithmetic: min lot is
+   //--- 0.01 (1 oz), so a 10-pip stop risks exactly $1.00 and a risk_frac of 5% therefore
+   //--- needs $20 of equity to be honoured. Below that the pass is a fixed-lot strategy
+   //--- wearing a compounding label — which is what grw_smoke_20usd measured.
+   if(g_cfg.sl_mode == GRW_SL_ABS_PIPS)
+     {
+      double mpu  = GrwMoneyPerPricePerLot();
+      double vmin = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double minrisk = g_cfg.sl_pips * GrwPip() * mpu * vmin;
+      if(minrisk > 0.0)
+         PrintFormat("[GRW] FEASIBILITY: %.1f-pip stop risks $%.2f at min lot %.2f -> needs "
+                     "equity >= $%.2f to express risk_frac=%.4f without clamping (equity now $%.2f)",
+                     g_cfg.sl_pips, minrisk, vmin, minrisk / g_cfg.risk_frac,
+                     g_cfg.risk_frac, AccountInfoDouble(ACCOUNT_EQUITY));
+     }
 
    g_ready = true;
    return INIT_SUCCEEDED;
@@ -206,7 +239,7 @@ void OnTick()
       return;                                   // full — a fresh signal is simply not taken
 
    GrwSignal s;
-   GrwEntryEvaluate(g_cfg, g_ctx, s);
+   GrwEntryEvaluate(g_cfg, g_ctx, s, g_stats);
    if(!s.valid)
       return;
    g_stats.n_signals++;
@@ -237,8 +270,13 @@ double OnTester()
    GrwFitnessCompute(g_stats, f);
 
    Print(GrwFitnessLine(f));
-   PrintFormat("[GRW] signals=%d gated=%d skipped=%d orders=%d",
-               g_stats.n_signals, g_stats.n_gated, g_stats.n_skipped, g_stats.n_orders);
+   PrintFormat("[GRW] signals=%d gated=%d skipped=%d orders=%d sl_too_tight=%d",
+               g_stats.n_signals, g_stats.n_gated, g_stats.n_skipped, g_stats.n_orders,
+               g_stats.n_sl_too_tight);
+   if(g_stats.n_sl_too_tight > 0)
+      PrintFormat("[GRW] NOTE: %d signals dropped because the stop was inside the broker's "
+                  "min distance or the live spread — the scalp stop is too tight for this venue "
+                  "at those moments, not merely unprofitable.", g_stats.n_sl_too_tight);
    if(!f.sizing_valid && g_stats.n_orders > 0)
       PrintFormat("[GRW] WARNING: %.1f%% of orders were forced to the broker minimum lot. "
                   "This pass measured a FIXED-LOT strategy — its growth is NOT a "

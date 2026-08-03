@@ -227,11 +227,61 @@ void GrwEntryMomoPullback(const GrwCfg &c, const GrwCtx &ctx, const double atr, 
   }
 
 //+------------------------------------------------------------------+
+//| Rewrite the stop per c.sl_mode, then enforce the hard floor.      |
+//|                                                                    |
+//| Applied CENTRALLY, once, after the primitive has spoken — never    |
+//| inside the four branches. The primitives own the MECHANISM (which  |
+//| level falsifies the idea); the mode owns the ACCOUNT CONSTRAINT    |
+//| (what stop distance $20 can actually express at a 0.01 min lot).   |
+//| Folding the second into the first would mean editing four         |
+//| functions to change one policy, and the four would drift.          |
+//|                                                                    |
+//| Returns false when the signal must be dropped.                     |
+//+------------------------------------------------------------------+
+bool GrwApplySlMode(const GrwCfg &c, GrwSignal &s, GrwStats &st)
+  {
+   if(!s.valid) return false;
+   double pip = GrwPip();
+   if(pip <= 0.0) return false;
+
+   if(c.sl_mode == GRW_SL_ABS_PIPS)
+     {
+      double d = c.sl_pips * pip;
+      s.sl = s.is_long ? (s.entry - d) : (s.entry + d);
+     }
+   else if(c.sl_mode == GRW_SL_STRUCT_CAP)
+     {
+      double cap = c.sl_max_pips * pip;
+      double d   = MathAbs(s.entry - s.sl);
+      if(d > cap)
+         s.sl = s.is_long ? (s.entry - cap) : (s.entry + cap);
+     }
+   //--- GRW_SL_ATR_BUF: the primitive's own structural stop stands, untouched.
+
+   //--- HARD FLOOR, not a strategy choice. Two things a stop must clear:
+   //---   • the broker's minimum stop distance. JM reports stops_level 0 today, but the
+   //---     venue spec warns it may not hold for EA/HFT flow (justmarkets.yaml:116-117),
+   //---     and a scalp stop is precisely where that would bite.
+   //---   • the live spread. A stop inside the spread is taken out by the QUOTE, not by
+   //---     the market — it would book a loss no price path justifies.
+   //--- The optional GRW_F_COST_RATIO bit is the stronger, strategy-level version of the
+   //--- second one (stop >= N spreads). This is the floor beneath every config.
+   double need = MathMax(GrwStopsLevel(), GrwSpread());
+   if(MathAbs(s.entry - s.sl) <= need)
+     {
+      st.n_sl_too_tight++;
+      GrwSignalClear(s);
+      return false;
+     }
+   return true;
+  }
+
+//+------------------------------------------------------------------+
 //| Dispatch. Returns a cleared (invalid) signal when nothing fires.  |
 //| ATR is read ONCE here and carried on the signal, so the filter,   |
 //| the stop and the trail all reason about the same volatility.      |
 //+------------------------------------------------------------------+
-void GrwEntryEvaluate(const GrwCfg &c, const GrwCtx &ctx, GrwSignal &s)
+void GrwEntryEvaluate(const GrwCfg &c, const GrwCtx &ctx, GrwSignal &s, GrwStats &st)
   {
    GrwSignalClear(s);
    double atr;
@@ -247,17 +297,20 @@ void GrwEntryEvaluate(const GrwCfg &c, const GrwCtx &ctx, GrwSignal &s)
       case GRW_E_MOMO_PULLBACK:  GrwEntryMomoPullback(c, ctx, atr, s);     break;
      }
 
+   if(!s.valid) return;
+
+   //--- account constraint + broker floor, applied to whatever the mechanism produced
+   if(!GrwApplySlMode(c, s, st))
+      return;
+
    //--- a signal whose stop is on the wrong side of its own entry is a coding fault,
    //--- not a trade. Drop it loudly rather than sending a rejectable order.
-   if(s.valid)
+   bool bad = s.is_long ? (s.sl >= s.entry) : (s.sl <= s.entry);
+   if(bad)
      {
-      bool bad = s.is_long ? (s.sl >= s.entry) : (s.sl <= s.entry);
-      if(bad)
-        {
-         PrintFormat("[GRW] BUG: %s produced sl=%.5f on the wrong side of entry=%.5f — dropped",
-                     s.tag, s.sl, s.entry);
-         GrwSignalClear(s);
-        }
+      PrintFormat("[GRW] BUG: %s produced sl=%.5f on the wrong side of entry=%.5f — dropped",
+                  s.tag, s.sl, s.entry);
+      GrwSignalClear(s);
      }
   }
 
