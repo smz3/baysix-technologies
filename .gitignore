@@ -173,3 +173,6 @@ docs/job-hunt/
 cv_text.txt
 !research/papers/**/*.docx
 mt5/Include/grw_system/grw_version.mqh
+
+# FUSE filesystem artifacts (deleted-but-open file handles) — never source
+.fuse_hidden*

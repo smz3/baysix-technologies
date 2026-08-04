@@ -16,7 +16,6 @@
       "Bash(powershell -Command Start-Process*)",
       "Bash(rmdir *)",
       "Bash(powershell.exe -Command Start-Process*)"
-
     ],
     "deny": [
       "Bash(curl * api.binance.com/api/v3/order*)",
@@ -28,7 +27,11 @@
       "Bash(git merge*)"
     ]
   },
-  "enabledMcpjsonServers": ["context7", "supabase", "playwright"],
+  "enabledMcpjsonServers": [
+    "context7",
+    "supabase",
+    "playwright"
+  ],
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
     "SIGMA_BRAIN": "C:\\Users\\User\\Desktop\\baysix-technologies",
@@ -114,6 +117,16 @@
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/protocol_guard.py",
             "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/claim_lint.py\"",
+            "timeout": 10000
           }
         ]
       }
@@ -221,6 +234,15 @@
             "timeout": 5000,
             "async": true,
             "statusMessage": "Stop"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/claim_lint.py\"",
+            "timeout": 10000
           }
         ]
       }

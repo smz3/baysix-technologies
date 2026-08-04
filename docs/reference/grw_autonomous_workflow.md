@@ -97,9 +97,43 @@ Checks, in order of cheapness:
 - **Banned hedge-free assertions** — "always", "never survives", "impossible",
   "no strategy" without an adjacent `DERIVED` formula → **warn**.
 
-Wired at PreToolUse alongside
-[protocol_guard.py](../../.claude/hooks/scripts/protocol_guard.py), which already
-hard-blocks raw `sqlite3` writes. Same exit-2 deny convention.
+**BUILT 2026-08-04** — [claim_lint.py](../../.claude/hooks/scripts/claim_lint.py),
+17 tests in [test_claim_lint.py](../../research/tests/test_claim_lint.py).
+
+**Placement corrected while building it.** This section originally specified
+PreToolUse only. That placement cannot catch the failures it was written for:
+**PreToolUse sees tool inputs, and the errors are in prose.** All three errors that
+reached Syafiq on 2026-08-04 — a fabricated attribution, a t-stat computed off a
+non-independent `n`, and a hypothesis stated as a decision — were in reply text that
+no PreToolUse hook ever sees. So the guard runs at **two** events:
+
+| Event | Sees | Catches |
+|---|---|---|
+| `Stop` | `last_assistant_message` | prose claims — the load-bearing half |
+| `PreToolUse` (`Write`/`Edit`) | `.md`/`.json`/`.yaml` content | dead paths + bad schema before they reach disk |
+
+Implemented checks — **HARD** (exit 2, blocks) only where a regex can actually decide:
+
+- `DEAD_PATH` — markdown link to a repo path that does not resolve.
+- `BAD_SCHEMA` — `table.column` checked against live `PRAGMA table_info`.
+- `STAT_NO_N` — a t-stat / SE / p-value with no effective-`n` or independence
+  statement anywhere in the message. This is the 2026-08-04 failure: `t=+8.02` on
+  44,212 entries that overlapped ~14×; the honest figure was **+0.83**
+  (`result_id 72`, correcting `result_id 69`).
+
+**WARN** (surfaced via `systemMessage`, does not block) where judgement is required:
+`ATTRIBUTION` (second-person credit for a technical parameter), `UNADJUDICATED`
+(decision language with no tester run cited), `ABSOLUTE`, `NO_PROVENANCE`.
+
+Loop guard: at most 2 consecutive `Stop` blocks per session, then it passes through
+with a note — a guard that can hang the session is worse than no guard. Escape hatch
+`CLAIM_LINT=off`. Runs alongside
+[protocol_guard.py](../../.claude/hooks/scripts/protocol_guard.py), same exit-2 convention.
+
+**First catch was its own spec edit.** Writing this section, the guard blocked it:
+`lstrip("./")` was eating the dot in `.claude/`, so a live path read as dead. A
+false positive, fixed and pinned by a regression test — but the guard fired on real
+text within a minute of being wired, which is the behaviour that was wanted.
 
 ### 1.5 The standing order
 
@@ -330,13 +364,18 @@ missing tables, zero missing columns**; `research/tests` 24 passed.
 
 ### STILL OPEN — autonomy remains blocked
 
-- `claim_lint.py` not written (task 291)
+- ✅ **`claim_lint.py` BUILT 2026-08-04 (task 291)** — see §1.4. Two placements
+  (`Stop` + `PreToolUse`), 3 hard checks, 4 warnings, 17 tests. Loop A is no longer
+  prose.
 - **no batch has ever run.** `grw_batches` / `grw_passes` are still empty; every part of
   Loop B has been exercised only on synthetic fixtures. Task 293 is the first real test.
 
-**The loop must not run autonomously until `claim_lint.py` exists.** Loop B now has teeth —
-the adjudicator is mechanical and the engine feeds it — but Loop A is still prose, so the
-agent can still assert a false thing and build on it.
+**The standing order is now satisfied on its stated terms** — `claim_lint.py` exists, so
+the §1.5 block on autonomous running is lifted. It is not a completeness claim: the linter
+catches unverified *paths*, *schema* and *unqualified statistics*. It cannot check whether
+arithmetic is right, and it has no view on whether an `n` is the effective one — it only
+forces the question to be answered in the open. The remaining blocker is empirical, not
+procedural: no batch has ever run.
 
 ---
 
