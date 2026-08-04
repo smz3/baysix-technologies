@@ -1,29 +1,32 @@
 ---
 type: wiki
 domain: strategy
-status: stable
+status: archived
 tags:
   - samtc
   - crypto
   - python
   - strategy
 related:
-  - "[[sigma-engine-map]]"
-  - "[[backtest-results]]"
   - "[[b2b-overview]]"
-  - "[[sigma-crypto-architecture]]"
+  - "[[mt5-ea-architecture]]"
 source_files:
-  - "workspace/sigma-crypto/core/strategy/orchestrator.py"
-  - "workspace/sigma-crypto/core/strategy/engines/state_manager.py"
-  - "workspace/sigma-crypto/CLAUDE.md"
-last_updated: 2026-04-14
+  - "sigma-crypto/core/strategy/orchestrator.py (external, not in this repo)"
+  - "sigma-crypto/core/strategy/engines/state_manager.py (external, not in this repo)"
+last_updated: 2026-08-04
 maintained_by: ai
-ai_summary: "SAMTC V6.7 (State Aware Multi-Temporal Consensus) uses a 6-TF FlowState machine with Storyline Latches, Inertial Flow, Siege detection, and 3 trade gates (Fader, Inertial, Discovery). Generals (MN1/W1/D1) set the narrative; Officers (H4/H1/M30) execute. D1 latch is the primary driver."
+ai_summary: "SAMTC V6.7 (State Aware Multi-Temporal Consensus) uses a 6-TF FlowState machine with Storyline Latches, Inertial Flow, Siege detection, and 3 trade gates (Fader, Inertial, Discovery). Generals (MN1/W1/D1) set the narrative; Officers (H4/H1/M30) execute. D1 latch is the primary driver. ARCHIVED — the sigma-crypto codebase is not in this repo; kept as the design ancestor of the FOB cross-TF storyline model."
 ---
 
 # SAMTC Overview
 
-**State Aware Multi-Temporal Consensus** — the Python crypto trading strategy that runs on top of sigma_core B2B detection. Current version: **V6.7 "Inertial Flow"**.
+**State Aware Multi-Temporal Consensus** — the Python crypto trading strategy that ran on top of sigma_core B2B detection. Version at time of writing: **V6.7 "Inertial Flow"**.
+
+> **Status: archived / reference only.** The `sigma-crypto` codebase this documents is not
+> part of this repo, and none of the numbers below have been re-validated under the current
+> protocol. It is kept because the cross-TF storyline machinery here (Generals/Officers,
+> latches, magnets, siege) is the direct design ancestor of the FOB storyline model.
+> Moved out of `mt5/Documentation/` on 2026-08-04 — nothing in it is MQL5.
 
 ---
 
@@ -148,7 +151,7 @@ When a magnet zone is defeated (price closes beyond its L2), the most recent ali
 | 10C — Governance Baseline | 3yr | — | — | — | ✅ Approved baseline (Calmar 3.90, Sortino 3.06) |
 | 9G — Max Alpha (IS) | In-sample | 1.90 | — | — | Research reference only |
 
-See [[backtest-results]] for full detail.
+These are the numbers as recorded in the sigma-crypto era. The `backtest-results` page they referenced is not in this repo, and none of them have been re-run under Protocol 4.0 — treat as historical, not as validated results.
 
 ---
 
@@ -193,7 +196,5 @@ These were active in earlier phases, disabled to restore 10C Alpha:
 
 ## Related Pages
 
-- [[sigma-engine-map]] — How SAMTC relates to sigma_core and sigma-mt5
-- [[b2b-overview]] — The B2B zones SAMTC operates on
-- [[backtest-results]] — All test results and production gate checklist
-- [[sigma-crypto-architecture]] — Full Python stack layout (stub)
+- [b2b-overview.md](b2b-overview.md) — The B2B zones SAMTC operates on
+- [mt5-ea-architecture.md](../../mt5/Documentation/mt5-ea-architecture.md) — The MQL5 sibling (Sigma V5.0, legacy)

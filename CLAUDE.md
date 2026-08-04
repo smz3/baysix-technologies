@@ -108,4 +108,4 @@ Decoupled repos (Desktop-level, own git remotes):
 1. The SessionStart hook prints the live **open backlog**, recently resolved tasks, and latest results straight from `research.db` (via [.claude/hooks/scripts/session_brief.py](.claude/hooks/scripts/session_brief.py)). Read it — it is the source of truth for what is open and what is already tested.
 2. Read the latest [memory/](memory/) handover (the brief names the file) for the narrative + caveats.
 3. Before proposing any work, reconcile against `open_backlog` (P1 first) + `log_agent` for the active idea (rule 6), and check `strategy_log.get_live_config(idea_id)` for its current frozen config. Never re-surface a resolved task or re-run logged work.
-4. Brief Syafiq: "Here's where we left off" → wait for priority confirmation.
+4. Brief Syafiq: "Here's where we left off" → Claude agent decides the priority task.
