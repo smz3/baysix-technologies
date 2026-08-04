@@ -52,6 +52,24 @@ def test_tstat_with_effective_n_passes():
     assert hard == []
 
 
+def test_naming_a_statistic_without_a_value_does_not_block():
+    """FP found by the guard blocking a handover reply: a bare '\\bt-stat\\b' fired
+    on prose that only DISCUSSED the concept. The check is about reporting a value."""
+    hard, _ = claim_lint.lint(
+        "A cold session reading the results table gets the corrected t-stat, not "
+        "the inflated one, which is the whole point of writing the correction down."
+    )
+    assert hard == []
+
+
+def test_reported_tstat_value_still_blocks():
+    for txt in ("The t-stat of 3.4 settles it and there is nothing further to add here.",
+                "We measured t-stat = +8.02 across the window, which looked conclusive.",
+                "The z = 7.19 figure was the one quoted throughout the whole review."):
+        hard, _ = claim_lint.lint(txt)
+        assert any(h.startswith("STAT_NO_N") for h in hard), txt
+
+
 def test_dead_markdown_path_blocks():
     hard, _ = claim_lint.lint(
         "The full spec lives in [the plan](docs/reference/does_not_exist_xyz.md) "

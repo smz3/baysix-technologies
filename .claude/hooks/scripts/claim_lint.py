@@ -48,8 +48,12 @@ STATE = Path(os.environ.get("TEMP", "/tmp")) / "claim_lint_blocks.json"
 # ---------------------------------------------------------------- detectors
 
 # t = +8.02 | t=-2.1 | t-stat of 3.4 | SE 0.0024 | ±se | p < 0.05 | z = 7.19
+# EVERY alternative must bind to a NUMERAL. A bare `\bt-stat\b` fired on prose that
+# merely discussed the concept ("the corrected t-stat, not the inflated one") — the
+# check is about reporting a VALUE, not naming the statistic. Found by the guard
+# blocking a handover reply, 2026-08-04.
 STAT_RE = re.compile(
-    r"(?:\bt\s*[=:]\s*[+-]?\d|\bt-stat\b|\bz\s*[=:]\s*[+-]?\d|"
+    r"(?:\bt\s*[=:]\s*[+-]?\d|\bt-stat\D{0,12}[+-]?\d|\bz\s*[=:]\s*[+-]?\d|"
     r"\bSE\s*[=:]?\s*\d|±\s*se\b|\bp\s*[<>=]\s*0?\.\d)",
     re.IGNORECASE,
 )
