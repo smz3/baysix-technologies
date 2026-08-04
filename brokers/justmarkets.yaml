@@ -88,7 +88,9 @@ raw_account_reference:
     # was the typo. Settled by a MEASURED live-terminal reading, 2026-08-03:
     #   XAUUSD.s @ $4055, order_calc_margin(0.01 lot) = $1.35
     #   0.01 lot = 1 oz, so margin_pct = 1.35 / 4055 = 0.000333 = 1 / 3000  EXACTLY.
-    # (cited: memory/_handover_archive/Session_Handover_2026_08_03_Afternoon3.md:11)
+    # (cited: memory/_handover_archive/Session_Handover_2026_08_03_Afternoon3.md:11 —
+    #  LOCAL ONLY, memory/ is gitignored, so a fresh clone cannot see this source. Re-measure
+    #  rather than trust this line if the file is not on your disk.)
     # At 0.03 the same 0.01 lot would have needed $121.65 of margin — 90x the measured
     # figure, and a $20 account could not have opened it at all, which the four runs on
     # record (result_id 61-68) contradict.

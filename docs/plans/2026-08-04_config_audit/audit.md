@@ -106,11 +106,19 @@ Stated rules that are actually executable, checked rather than assumed:
   ([settings.json:124-132, 240-248](../../../.claude/settings.json)) — matching task 291.
 - **SessionStart chain** (`archive_handovers` → `prune_handover_archive` → `session_brief`)
   fired this session; its output is the brief at the top of this conversation.
-- **`handover_lint`** runs clean on the current handover (`MEASURED`), and a
-  `pre-commit` hook exists at `.git/hooks/pre-commit`.
-  - **Fragility, not an error:** `.git/hooks/` is not version-controlled and there is no
-    `.pre-commit-config.yaml` (`MEASURED`). That enforcement exists **on this machine
-    only** — a fresh clone silently has no handover lint.
+- **`handover_lint`** runs clean when invoked directly (`MEASURED`, on this session's
+  handover), and both the hook and its installer are tracked at
+  [.claude/hooks/git/](../../../.claude/hooks/git/).
+  - **BUT THE COMMIT GATE IS A NO-OP** (`MEASURED`, and it corrects what an earlier pass of
+    this same document claimed). The hook lints *staged* `memory/*.md` — and
+    [.gitignore:38-40](../../../.gitignore#L38) ignores `memory/` entirely
+    ("kept private, untracked 2026-07-25"). `git ls-files memory/` returns **0**; `git add
+    memory/` is refused. **No handover can ever be staged, so the hook exits 0 without
+    linting anything, every time.**
+  - The lint is real when run by hand (this session's `/handover` ran it and passed). The
+    *enforcement* is not. Pick one: un-ignore `memory/`, or move the gate to the
+    `/handover` command where it can actually fire, or stop citing pre-commit as teeth
+    ([[handover_lint_gate]] and this file both did).
 
 ---
 
@@ -156,9 +164,10 @@ document.
   `project_ib001_hypothesis.md` (⚠️ SUPERSEDED), `orb001/002/003` (⚠️ FALSIFIED /
   ABANDONED-UNPROVEN). The warnings work — they cost tokens forever to keep working.
   `active_work_state` in particular is superseded by the handover + brief and can go.
-- **The structural one.** The whole store — 111 files, read as canonical every session — is
-  **outside git, outside `handover_lint`, outside review**. There is no history, no diff, no
-  blame. A1, A2 and A3 are three separate wrong instructions that survived there with
+- **The structural one, and it is bigger than the memory store.** 111 memory files **plus
+  every handover in `memory/`** (`MEASURED`: 0 tracked, the directory is gitignored) are
+  read as canonical every session and are **outside git, outside enforcement, outside
+  review**. There is no history, no diff, no blame — for either. A1, A2 and A3 are three separate wrong instructions that survived there with
   nothing able to catch them. This was already filed as B8 in the prior corrections doc,
   about a single file; it is 111 files.
   - Options, cheapest first: (1) accept it and audit on a cadence; (2) mirror the store into
