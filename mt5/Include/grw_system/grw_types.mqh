@@ -22,7 +22,7 @@
 #property strict
 
 //--- MUST match #property version in grw_meta.mq5 — bump both together.
-#define GRW_VERSION "0.2.0"
+#define GRW_VERSION "0.3.0"
 
 //+------------------------------------------------------------------+
 //| ENTRY primitives — each line is the MECHANISM, not a description. |
@@ -81,7 +81,15 @@ enum GRW_EXIT
   };
 
 //+------------------------------------------------------------------+
-//| STOP-DISTANCE mode — the axis the $20 scalp mandate needs.        |
+//| STOP-DISTANCE mode — the axis a $20 stake needs.                  |
+//|                                                                    |
+//| [PARKED 2026-08-04, task 307] The "SCALP mandate" framing below is |
+//| superseded. The mandate is a BARRIER method — one non-reloadable   |
+//| $20 stake, half-potted at ~2:1, run to a fixed target with ruin    |
+//| accepted, resolving in ~21 trades — NOT hundreds of trades a day.  |
+//| Objective of record: research/config/grw_fitness.json v2.0.0.      |
+//| What survives the reframe is the ARITHMETIC, which never depended  |
+//| on trade frequency:                                                |
 //|                                                                    |
 //| Every primitive produces a STRUCTURAL stop (the level whose        |
 //| violation falsifies its mechanism) offset by sl_buf_k * ATR. On H1 |
@@ -100,9 +108,11 @@ enum GRW_SL_MODE
   {
    GRW_SL_ATR_BUF    = 0,  // structural level ± sl_buf_k*ATR. The original; correct
                            // wherever the account can actually express the risk it implies.
-   GRW_SL_ABS_PIPS   = 1,  // fixed sl_pips from entry, structure ignored. THE SCALP MODE:
-                           // pins risk-per-trade to an exact USD amount at min lot, which
-                           // is what makes InpRiskFrac achievable at all on $20.
+   GRW_SL_ABS_PIPS   = 1,  // fixed sl_pips from entry, structure ignored. THE FIXED-RISK
+                           // MODE (was labelled "THE SCALP MODE" pre-2.0.0): pins
+                           // risk-per-trade to an exact USD amount at min lot, which is
+                           // what makes InpRiskFrac achievable at all on $20. It says
+                           // nothing about trade FREQUENCY — that framing is parked.
    GRW_SL_STRUCT_CAP = 2   // structural, but never wider than sl_max_pips. Keeps the
                            // mechanism's own invalidation where it is already tight and
                            // truncates it where it is not. Truncating invalidation CHANGES
@@ -257,6 +267,16 @@ struct GrwStats
                           // history, not this run's window, and reporting it as
                           // period_start mislabels every pass (v0.2.0 smoke claimed
                           // 2016.06.13 for a window that began 2017.01.01).
+   //--- BARRIER EPISODE (v2.0.0 objective). The state lives here because it is written on
+   //--- every tick, but the LOGIC and the barrier constants live in grw_fitness.mqh with
+   //--- the objective they belong to — the state struct must not own the question.
+   int      ep_state;         // GRW_EP_LIVE / _TARGET / _FLOOR
+   double   ep_stake;         // account balance the episode started on (armed in OnInit)
+   double   ep_peak_eq;       // highest equity while LIVE
+   double   ep_min_eq;        // lowest equity while LIVE
+   datetime ep_resolved_at;   // tick the episode resolved (0 = never)
+   int      ep_orders_at_res; // n_orders at resolution — trades-to-target, the mandate unit
+   int      ep_days_at_res;   // n_days at resolution
   };
 
 void GrwStatsClear(GrwStats &st)
@@ -273,6 +293,16 @@ void GrwStatsClear(GrwStats &st)
    st.n_days       = 0;
    st.cur_day      = 0;
    st.first_seen   = 0;
+   //--- episode: cleared to LIVE with a ZERO stake on purpose. GrwBarrierMark refuses to
+   //--- act on a zero stake, so a run that forgets to arm the episode in OnInit produces a
+   //--- CENSORED pass rather than a barrier silently measured against $0.
+   st.ep_state        = 0;
+   st.ep_stake        = 0.0;
+   st.ep_peak_eq      = 0.0;
+   st.ep_min_eq       = 0.0;
+   st.ep_resolved_at  = 0;
+   st.ep_orders_at_res = 0;
+   st.ep_days_at_res  = 0;
   }
 
 //+------------------------------------------------------------------+

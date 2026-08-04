@@ -15,12 +15,16 @@ last_verified: 2026-05-25
 # Mid-price dynamics transfer; apply JM spread below, not Dukascopy's.
 data_source_note: model_on_dukascopy_execute_on_jm
 
-# --- ACCOUNT TYPE — DECIDED: model the scalping strategy on PRO -------------
+# --- ACCOUNT TYPE — DECIDED: model on PRO -----------------------------------
 # Pro (spread-only ~2 pip, no commission). Raw was evaluated: actual XAUUSD avg
 # spread is 1 pip (not the 0.2-pip "from" marketing) + $3.5/lot/side commission,
 # making Raw only ~15% cheaper per round-trip — AND Raw needs a $200 min deposit,
-# so it's unavailable on the $50 account. Pro is the right modelling basis.
-# Raw kept on file (raw_account_reference) for when equity > $200 makes it viable.
+# so it is unavailable on the $20 account (10x the whole stake). Pro is the right
+# modelling basis. Raw kept on file (raw_account_reference) for when equity > $200
+# makes it viable — i.e. after the $20 has already multiplied 10x, not before.
+# LIVE MANDATE (2026-08-04, task 308): $20, Pro, one shot, NOT reloadable. Every
+# risk figure in this file is denominated against $20. The earlier $50 figures were
+# a different account and are re-derived, not merely relabelled.
 account:
   active: pro
   model_on: pro                   # the scalping strategy is modelled + costed on Pro
@@ -43,8 +47,14 @@ instruments:
     margin_currency: XAU
     profit_currency: USD
     hedging_allowed: true         # spec: "Hedged margin 100"
-    # min-lot risk floor on $50: a 5-pip stop on 0.01 lot risks $0.50 = 1% equity;
-    # a 50-pip stop risks $5 = 10% → min-lot forces tight-stop scalping at micro size.
+    # min-lot risk floor on $20 (re-derived 2026-08-04, task 308 — these were computed
+    # against $50 and every percentage was therefore 2.5x too flattering):
+    #   5-pip  stop on 0.01 lot risks $0.50 =  2.5% of $20   (was quoted as "1% equity")
+    #   10-pip stop                  risks $1.00 =  5.0% of $20
+    #   20-pip stop                  risks $2.00 = 10.0% of $20
+    #   50-pip stop                  risks $5.00 = 25.0% of $20   (was quoted as "10%")
+    # The stop distance IS the bet size at min lot, and the fraction ESCALATES as equity
+    # falls because the account cannot delever below 0.01 lot (MEASURED, task 300).
 
 costs:
   model: spread_only              # for the ACTIVE pro account
@@ -64,7 +74,8 @@ costs:
   account_comparison:             # per 0.01-lot round-trip, with REAL numbers
     pro_roundtrip_usd: 0.20       # 2-pip spread crossed once, no commission
     raw_roundtrip_usd: 0.17       # 1-pip spread ($0.10) + $3.5/lot/side comm (0.01 lot = $0.07)
-    finding: Raw is only ~15% cheaper AND needs $200 min deposit — unavailable at $50. Pro it is.
+    finding: Raw is only ~15% cheaper AND needs $200 min deposit — unavailable at $20 (the min
+      deposit is 10x the entire stake). Pro it is.
 
 # Raw account kept for reference (viable once equity > $200).
 raw_account_reference:
@@ -72,7 +83,18 @@ raw_account_reference:
   xauusd:
     avg_spread_pips: 1.0
     commission_per_lot_per_side_usd: 3.5
-    margin_pct: 0.03              # = 1:3000
+    # FIXED 2026-08-04 (task 308). Was `margin_pct: 0.03  # = 1:3000` — the value and its
+    # own comment could not both be true (3% margin is 1:33). DERIVED that the VALUE was the
+    # typo, not the comment, from the observed per-lot margin at margin.per_lot_usd = 152.12:
+    #   at margin_pct 0.03   -> 100 oz x price x 0.03  = $152.12 implies gold at $50.7/oz  (absurd)
+    #   at 1:3000            -> 100 oz x price / 3000  = $152.12 implies gold at $4,564/oz (plausible)
+    # The 0.03 reading is off by ~90x at any gold price that has ever existed, and it would
+    # also mean a $20 account could not open 0.01 lot at all — contradicted by the four runs
+    # on record (result_id 61-68). TO_VERIFY in the live terminal:
+    #   SymbolInfoDouble("XAUUSD.s", SYMBOL_MARGIN_INITIAL) / OrderCalcMargin()
+    # Metals can carry an instrument-specific margin rate that overrides account leverage, so
+    # the measured number wins over this derivation the moment it exists.
+    margin_pct: 0.000333          # = 1:3000 (1/3000 = 0.0003333...); DERIVED, not yet measured
     long_swap_points: -71.04      # swap-free status zeroes this; ×$0.01×100oz = -$71.04/lot/night gross
     short_swap_points: -84.12
     stop_level_pips: 0

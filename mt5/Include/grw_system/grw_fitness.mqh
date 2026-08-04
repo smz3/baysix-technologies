@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                                    grw_fitness.mqh |
-//|  GRW-001 — the OBJECTIVE. Task 292.                                 |
+//|  GRW-001 — the OBJECTIVE. Task 292, replaced at v2.0.0 (task 307).  |
 //|                                                                     |
 //|  This file is the executable half of research/config/grw_fitness.json|
 //|  and the two MUST agree. The JSON is the declared, versioned        |
@@ -10,26 +10,36 @@
 //|  swapped without anyone noticing; one that is hashed and cited by   |
 //|  every batch cannot.                                                |
 //|                                                                     |
-//|  FITNESS = log(final_equity / initial_deposit)                       |
+//|  FITNESS = P(equity >= target_mult*stake BEFORE equity <= floor_frac*stake)
 //|                                                                     |
-//|  Total log-growth over the window, nothing else. Not Sharpe, not    |
-//|  profit factor, not a drawdown-penalised blend. It is the right     |
-//|  objective for a COMPOUNDING account because log-wealth is additive |
-//|  across sequential bets, so maximising it maximises terminal wealth |
-//|  — and it needs no risk term bolted on, since ruin is already       |
-//|  log(0) = -inf and the objective flees it on its own.               |
+//|  A BARRIER problem, not a terminal-wealth problem. The mandate is   |
+//|  one NON-RELOADABLE $20 stake, half-potted at roughly 2:1, run to a |
+//|  fixed dollar target with ruin ACCEPTED as the cost of speed        |
+//|  (Syafiq, 2026-08-04). Log-growth ranks the opposite preference —   |
+//|  it treats ruin as log(0) = -inf and therefore refuses the bet size |
+//|  the mandate is built on. See "parked_objective" in the JSON: the   |
+//|  v1.x objective was not wrong, the mandate changed underneath it.   |
 //|                                                                     |
-//|  Two guards, both SENTINELS rather than silent adjustments:         |
-//|    • n_trades < min_trades  -> UNRANKABLE. A 3-trade pass has no    |
-//|      growth rate, only an anecdote; giving it a merely-poor score   |
-//|      would let it outrank a real strategy that had a bad window.    |
-//|    • equity floored at ruin_floor_frac of the deposit before the    |
-//|      log, so ruin returns a finite, correctly-ordered worst score   |
-//|      instead of -inf/NaN, which MT5 ranks unpredictably.            |
+//|  ONE PASS = ONE EPISODE = ONE BERNOULLI DRAW. A single pass cannot  |
+//|  estimate a probability and does not pretend to:                    |
+//|      target touched first  -> 1.0                                   |
+//|      floor  touched first  -> 0.0                                   |
+//|      neither, window ended -> UNRANKABLE (CENSORED)                 |
+//|  p_hat is formed in the Python layer over K independent,            |
+//|  NON-OVERLAPPING windows. Censored episodes leave the denominator;  |
+//|  scoring one at 0.0 would make "we ran out of window" and "the      |
+//|  method died" the same number, which is the substitution this whole |
+//|  file exists to prevent.                                            |
+//|                                                                     |
+//|  Barriers are on EQUITY, floating P&L included — ruin is an equity  |
+//|  event and the disclosed exit is a dollar target read off open P&L. |
+//|  On resolution the EA closes everything and stops (grw_meta.mq5):   |
+//|  the one shot is over, and trading past it is a different           |
+//|  experiment wearing the same pass id.                               |
 //|                                                                     |
 //|  Everything else here is REPORTED, never optimised — max drawdown   |
-//|  included (spec §2: reported, never a constraint). clamp_up_frac is |
-//|  the load-bearing one: see grw_sizing.mqh.                          |
+//|  included (spec §2), and log-growth itself, kept as a diagnostic so |
+//|  v1 and v2 passes stay mutually legible.                            |
 //+------------------------------------------------------------------+
 #ifndef GRW_FITNESS_MQH
 #define GRW_FITNESS_MQH
@@ -38,16 +48,76 @@
 #include "grw_types.mqh"
 
 //--- MUST match research/config/grw_fitness.json "version".
-#define GRW_FITNESS_VERSION      "1.1.0"
+#define GRW_FITNESS_VERSION      "2.0.0"
 #define GRW_FITNESS_UNRANKABLE   -1.0e9    // "cannot be scored", not "scored badly"
-//--- v1.1.0 raised min_trades 30 -> 500 for the SCALP mandate. Under a mandate of hundreds
-//--- of trades per day, a legitimate config produces 10^4-10^5 trades over a multi-year
-//--- window, so 30 stopped being a sentinel and became decoration: a config firing 30 times
-//--- in two years is not the strategy that was asked for, and scoring it would let a
-//--- swing-shaped accident win a scalping sweep. 500 still only catches degenerate configs
-//--- — it is deliberately NOT a quality bar (that is what the objective is for).
-#define GRW_FITNESS_MIN_TRADES   500       // declared floor for a growth claim
-#define GRW_FITNESS_RUIN_FLOOR   0.01      // equity floor as a fraction of the deposit
+
+//--- THE BARRIERS. These are the objective's own parameters, NOT tuning knobs, so they are
+//--- #defines here and declared in the JSON — never EA inputs. A .set preset must not be
+//--- able to move a barrier: that would silently change the question the batch answers.
+//--- Moving one is a version bump and a new trial family (JSON change_policy).
+#define GRW_BARRIER_STAKE_USD    20.0      // declared stake; the tester deposit MUST equal it
+#define GRW_BARRIER_TARGET_MULT  2.0       // +100% — the disclosed manual target
+#define GRW_BARRIER_FLOOR_FRAC   0.10      // $2.00 on $20: below this no risk fraction under
+                                           // 50% is expressible at the 0.01 min lot, so the
+                                           // account is dead before the broker says so
+                                           // (stop-out sits near $0.30 — justmarkets.yaml:99)
+
+//--- Diagnostic only (the PARKED v1.x objective). Floors equity before the log so ruin is a
+//--- finite, correctly-ordered number instead of -inf/NaN, which MT5 ranks unpredictably.
+#define GRW_FITNESS_RUIN_FLOOR   0.01
+
+//+------------------------------------------------------------------+
+//| Episode states. LIVE until a barrier is touched.                  |
+//+------------------------------------------------------------------+
+#define GRW_EP_LIVE    0
+#define GRW_EP_TARGET  1
+#define GRW_EP_FLOOR   2
+
+//+------------------------------------------------------------------+
+//| Arm the episode. Called ONCE from OnInit with the account balance |
+//| the run actually started on — not the declared constant, so a     |
+//| deposit that disagrees with the mandate is measured and reported  |
+//| rather than silently corrected into agreement.                    |
+//+------------------------------------------------------------------+
+void GrwBarrierInit(GrwStats &st, const double start_balance)
+  {
+   st.ep_state        = GRW_EP_LIVE;
+   st.ep_stake        = start_balance;
+   st.ep_peak_eq      = start_balance;
+   st.ep_min_eq       = start_balance;
+   st.ep_resolved_at  = 0;
+   st.ep_orders_at_res = 0;
+   st.ep_days_at_res  = 0;
+  }
+
+//+------------------------------------------------------------------+
+//| Mark the equity path against both barriers. Call on EVERY tick.   |
+//| Returns true on the tick the episode RESOLVES (once, ever) so the |
+//| caller can close out and stand down.                              |
+//+------------------------------------------------------------------+
+bool GrwBarrierMark(GrwStats &st, const double equity, const datetime now)
+  {
+   if(st.ep_state != GRW_EP_LIVE || st.ep_stake <= 0.0)
+      return false;
+
+   if(equity > st.ep_peak_eq) st.ep_peak_eq = equity;
+   if(equity < st.ep_min_eq)  st.ep_min_eq  = equity;
+
+   //--- FLOOR is tested FIRST. Both barriers can be crossed inside one tick's gap only if
+   //--- the account blew through the target and back, which is not a success; and on a
+   //--- weekend gap the loss side is the one that actually happened to the account.
+   if(equity <= st.ep_stake * GRW_BARRIER_FLOOR_FRAC)
+      st.ep_state = GRW_EP_FLOOR;
+   else if(equity >= st.ep_stake * GRW_BARRIER_TARGET_MULT)
+      st.ep_state = GRW_EP_TARGET;
+   else
+      return false;
+
+   st.ep_resolved_at   = now;
+   st.ep_orders_at_res = st.n_orders;
+   st.ep_days_at_res   = st.n_days;
+   return true;
+  }
 
 //+------------------------------------------------------------------+
 //| Everything one pass produces. Fields map 1:1 onto grw_passes      |
@@ -55,9 +125,8 @@
 //+------------------------------------------------------------------+
 struct GrwFitness
   {
-   double fitness;        // -> grw_passes.is_fitness / .oos_fitness
-   double growth;         // -> .is_growth  (same number; kept separate because a future
-                          //    fitness version may diverge from raw log-growth)
+   double fitness;        // -> grw_passes.is_fitness / .oos_fitness  (1.0 / 0.0 / sentinel)
+   double growth;         // -> .is_growth   PARKED v1 objective, diagnostic only
    int    n_trades;       // -> .is_n_trades
    double net_usd;        // -> .is_net_usd
    double max_dd_pct;     // -> .is_max_dd_pct   REPORTED ONLY
@@ -65,30 +134,39 @@ struct GrwFitness
    double final_equity;
    double profit_factor;
    double win_rate;
-   bool   unrankable;     // the min-trades guard fired
-   //--- MANDATE UNIT. "Hundreds of trades a day" is unfalsifiable without these, and
-   //--- n_trades alone hides whether a run traded evenly or emptied the account on day
-   //--- one and then sat out the window. REPORTED, never optimised.
+   bool   unrankable;     // the episode never resolved — CENSORED, not failed
+   //--- BARRIER EPISODE. The objective itself.
+   int      ep_state;         // GRW_EP_LIVE / _TARGET / _FLOOR
+   bool     resolved;         // ep_state != LIVE
+   double   ep_stake;         // account balance the episode started on
+   double   target_eq;        // ep_stake * GRW_BARRIER_TARGET_MULT
+   double   floor_eq;         // ep_stake * GRW_BARRIER_FLOOR_FRAC
+   int      trades_to_res;    // orders opened before resolution (mandate unit: ~21 expected)
+   int      days_to_res;
+   datetime resolved_at;
+   bool     stake_mismatch;   // deposit != declared stake -> the min-lot arithmetic that
+                              // drives this whole mandate is NOT the one being measured
+   //--- MANDATE UNIT. REPORTED, never optimised.
    int    n_days;
    double trades_per_day;
    double signals_per_day;  // the SUBSTRATE's raw firing rate, before max-open serialisation
                             // and margin refusals — the ceiling frequency can ever reach
-   //--- sizing validity (grw_sizing.mqh) — decides whether "growth" is even a
-   //--- compounding claim for this pass.
+   //--- sizing telemetry (grw_sizing.mqh). NOTE: under a half-pot barrier mandate a high
+   //--- clamp rate is EXPECTED, not an invalidation — see the JSON validity_flags entry.
    double clamp_up_frac;  // share of orders forced UP to the broker minimum
    double mean_risk_pct;  // realised risk per trade, as % of equity
    double max_risk_pct;
    bool   sizing_valid;   // clamp_up_frac <= threshold
   };
 
-//--- Above this share of forced-min-lot orders, the equity fraction was not being
-//--- honoured and the pass measured a FIXED-LOT strategy. Reported, not penalised —
-//--- promote_if in a prereg may cite it, but the fitness itself stays a pure objective.
+//--- Above this share of forced-min-lot orders the declared risk fraction was not being
+//--- honoured. REPORTED, never penalised — and at 2.0.0 it means "the fraction was not
+//--- expressible", NOT "the pass is invalid". A promote_if may cite it; fitness never does.
 #define GRW_SIZING_MAX_CLAMP_FRAC 0.20
 
 //+------------------------------------------------------------------+
 //| Compute the pass result from MT5's own tester statistics plus the |
-//| EA's sizing telemetry. Call from OnTester().                      |
+//| EA's episode + sizing telemetry. Call from OnTester().            |
 //+------------------------------------------------------------------+
 void GrwFitnessCompute(const GrwStats &st, GrwFitness &f)
   {
@@ -111,22 +189,35 @@ void GrwFitnessCompute(const GrwStats &st, GrwFitness &f)
    f.max_risk_pct  = st.max_risk_pct;
    f.sizing_valid  = (st.n_orders > 0 && f.clamp_up_frac <= GRW_SIZING_MAX_CLAMP_FRAC);
 
-   //--- guard 1: too few trades to be a growth rate at all.
-   if(f.n_trades < GRW_FITNESS_MIN_TRADES || f.initial_deposit <= 0.0)
+   //--- the episode.
+   f.ep_state       = st.ep_state;
+   f.ep_stake       = st.ep_stake;
+   f.target_eq      = st.ep_stake * GRW_BARRIER_TARGET_MULT;
+   f.floor_eq       = st.ep_stake * GRW_BARRIER_FLOOR_FRAC;
+   f.resolved       = (st.ep_state != GRW_EP_LIVE);
+   f.trades_to_res  = st.ep_orders_at_res;
+   f.days_to_res    = st.ep_days_at_res;
+   f.resolved_at    = st.ep_resolved_at;
+   //--- REPORTED, never fatal. A deposit that is not the declared stake measures a
+   //--- different account: the min-lot escalation that drives the whole mandate is a
+   //--- property of $20, not of the strategy (MEASURED, task 300).
+   f.stake_mismatch = (MathAbs(st.ep_stake - GRW_BARRIER_STAKE_USD) > 0.01);
+
+   //--- DIAGNOSTIC ONLY: the parked v1.x objective, kept so v1 and v2 passes remain
+   //--- comparable on the same axis. It is NOT the fitness and must not be ranked on.
+   if(f.initial_deposit > 0.0)
      {
-      f.unrankable = true;
-      f.growth     = 0.0;
-      f.fitness    = GRW_FITNESS_UNRANKABLE;
-      return;
+      double floor_eq = f.initial_deposit * GRW_FITNESS_RUIN_FLOOR;
+      double eq       = MathMax(f.final_equity, floor_eq);
+      f.growth = MathLog(eq / f.initial_deposit);
      }
-   f.unrankable = false;
+   else
+      f.growth = 0.0;
 
-   //--- guard 2: floor equity so ruin is finite and ordered, not -inf.
-   double floor_eq = f.initial_deposit * GRW_FITNESS_RUIN_FLOOR;
-   double eq       = MathMax(f.final_equity, floor_eq);
-
-   f.growth  = MathLog(eq / f.initial_deposit);
-   f.fitness = f.growth;
+   //--- THE OBJECTIVE.
+   if(st.ep_state == GRW_EP_TARGET)      { f.unrankable = false; f.fitness = 1.0; }
+   else if(st.ep_state == GRW_EP_FLOOR)  { f.unrankable = false; f.fitness = 0.0; }
+   else                                  { f.unrankable = true;  f.fitness = GRW_FITNESS_UNRANKABLE; }
   }
 
 //+------------------------------------------------------------------+
@@ -135,17 +226,18 @@ void GrwFitnessCompute(const GrwStats &st, GrwFitness &f)
 //+------------------------------------------------------------------+
 string GrwFitnessLine(const GrwFitness &f)
   {
-   if(f.unrankable)
-      return StringFormat("[GRW] UNRANKABLE n=%d (<%d) net=%.2f | %.1f trades/day over %d days "
-                          "(substrate fired %.1f signals/day) — no growth claim possible",
-                          f.n_trades, GRW_FITNESS_MIN_TRADES, f.net_usd,
-                          f.trades_per_day, f.n_days, f.signals_per_day);
-   return StringFormat("[GRW] fit=%.5f growth=%.5f n=%d (%.1f/day over %d days, %.1f signals/day) "
-                       "net=%.2f dd=%.2f%% | sizing %s clamp_up=%.1f%% mean_risk=%.2f%% max_risk=%.2f%%",
-                       f.fitness, f.growth, f.n_trades, f.trades_per_day, f.n_days,
-                       f.signals_per_day, f.net_usd, f.max_dd_pct,
-                       (f.sizing_valid ? "VALID" : "INVALID(fixed-lot)"),
-                       100.0 * f.clamp_up_frac, f.mean_risk_pct, f.max_risk_pct);
+   if(!f.resolved)
+      return StringFormat("[GRW] CENSORED — episode never resolved: equity stayed inside "
+                          "[%.2f, %.2f] on a %.2f stake for the whole window. n=%d over %d days. "
+                          "NOT a failure: excluded from p_hat, never scored 0.",
+                          f.floor_eq, f.target_eq, f.ep_stake, f.n_trades, f.n_days);
+   return StringFormat("[GRW] %s fit=%.1f | stake=%.2f target=%.2f floor=%.2f | resolved in "
+                       "%d trades / %d days | growth=%.5f(parked) n=%d net=%.2f dd=%.2f%% | "
+                       "clamp_up=%.1f%% mean_risk=%.2f%% max_risk=%.2f%%",
+                       (f.ep_state == GRW_EP_TARGET ? "TARGET HIT" : "FLOOR HIT"),
+                       f.fitness, f.ep_stake, f.target_eq, f.floor_eq,
+                       f.trades_to_res, f.days_to_res, f.growth, f.n_trades, f.net_usd,
+                       f.max_dd_pct, 100.0 * f.clamp_up_frac, f.mean_risk_pct, f.max_risk_pct);
   }
 
 #endif // GRW_FITNESS_MQH

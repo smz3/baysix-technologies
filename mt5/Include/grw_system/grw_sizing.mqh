@@ -4,16 +4,22 @@
 //|                                                                     |
 //|  Every trade risks a fixed FRACTION of live equity, so lots are     |
 //|  re-derived from AccountInfoDouble(ACCOUNT_EQUITY) at each fill.    |
-//|  That, and only that, is what makes the objective log-growth: with  |
-//|  a fixed lot the account grows arithmetically and log-growth        |
-//|  degenerates into "net USD with extra steps".                       |
+//|  Under the v2.0.0 barrier objective that fraction is the BET SIZE   |
+//|  in a half-pot method: it sets how fast the target barrier can be   |
+//|  reached and how fast the floor arrives, which is the whole trade-  |
+//|  off the objective prices. (Pre-2.0.0 this paragraph justified it   |
+//|  as the thing that made log-growth meaningful — that objective is   |
+//|  PARKED, the mechanic is unchanged.)                                |
 //|                                                                     |
 //|  THE VALIDITY TRAP THIS MODULE EXISTS TO EXPOSE                     |
 //|  A small account cannot express a small risk fraction. XAUUSD min   |
 //|  lot is 0.01 = 1 oz = $1 per $1 of gold, so a $10 stop risks $10    |
 //|  no matter what InpRiskFrac says. On a $20 deposit that is 50% of   |
-//|  equity per trade — the fraction is not being honoured, and any     |
-//|  "compounding" read off that pass is a fiction.                     |
+//|  equity per trade — the fraction is not being honoured, and the     |
+//|  realised bet size is the stop distance, not the declared fraction. |
+//|  (v2.0.0: that is REPORTED, not an invalidation. A half-pot method  |
+//|  sits at the lot floor deliberately; what must never be silent is   |
+//|  the GAP between the declared fraction and the realised one.)       |
 //|                                                                     |
 //|  So the clamp is NEVER silent. It is counted (GrwStats.n_clamp_up), |
 //|  reported by OnTester as clamp_up_frac, and the behaviour is an     |

@@ -8,15 +8,24 @@
 //|      InpEntryType   WHERE the signal comes from   (1 of 4)          |
 //|      InpFilterMask  WHICH gates must all pass     (bitmask, AND)    |
 //|      InpExitType    HOW the trade ends            (1 of 4)          |
-//|      InpRiskFrac    fraction of EQUITY per trade  (the compounding  |
+//|      InpRiskFrac    fraction of EQUITY per trade  (the bet-size     |
 //|                     lever — lots re-derived from live equity)       |
 //|                                                                     |
-//|  Objective: OnTester() returns log(final_equity / initial_deposit), |
-//|  the declared fitness in research/config/grw_fitness.json. Log-     |
-//|  growth, because wealth compounds multiplicatively and log-wealth   |
-//|  is what adds up across sequential bets. No Sharpe, no drawdown     |
-//|  penalty, no blend — a blended objective is how the thing you       |
-//|  actually optimised stops matching the thing you said you wanted.   |
+//|  Objective (v2.0.0, task 307): OnTester() returns the BARRIER       |
+//|  outcome — 1.0 if equity reached target_mult*stake before it fell   |
+//|  to floor_frac*stake, 0.0 if the floor came first, UNRANKABLE if    |
+//|  the window ended with neither touched. Declared in                 |
+//|  research/config/grw_fitness.json; log-growth is PARKED there and   |
+//|  still computed as a diagnostic. The mandate is ONE non-reloadable  |
+//|  $20 stake run to a fixed target with ruin accepted, which is a     |
+//|  barrier problem — an objective that flees ruin cannot rank a       |
+//|  method that spends it. No Sharpe, no drawdown penalty, no blend —  |
+//|  a blended objective is how the thing you actually optimised stops  |
+//|  matching the thing you said you wanted.                            |
+//|                                                                     |
+//|  ONE PASS = ONE EPISODE. On resolution the EA flattens the book and |
+//|  stops trading for the rest of the window: the shot is spent, and   |
+//|  post-resolution P&L belongs to a different experiment.             |
 //|                                                                     |
 //|  ONE FILE, forever. A new variant EXTENDS AN ENUM BRANCH and ships  |
 //|  a new .set preset; it never copies this EA. Duplicating the file   |
@@ -32,7 +41,7 @@
 //|    grw_trade · grw_fitness · grw_ledger                             |
 //+------------------------------------------------------------------+
 #property copyright "Baysix Technologies"
-#property version   "0.2.0"          // MUST match GRW_VERSION (grw_types.mqh) — bump both
+#property version   "0.3.0"          // MUST match GRW_VERSION (grw_types.mqh) — bump both
 #property strict
 
 #include <grw_system/grw_types.mqh>
@@ -199,6 +208,23 @@ int OnInit()
                      g_cfg.risk_frac, AccountInfoDouble(ACCOUNT_EQUITY));
      }
 
+   //--- ARM THE EPISODE. The barrier base is the balance this run actually started on, not
+   //--- the declared constant: a deposit that disagrees with the mandate must be MEASURED
+   //--- and reported, never quietly corrected into agreement. The min-lot escalation that
+   //--- the whole $20 question turns on is a property of the stake (MEASURED, task 300), so
+   //--- a run at a different deposit is answering a different question.
+   double stake = AccountInfoDouble(ACCOUNT_BALANCE);
+   GrwBarrierInit(g_stats, stake);
+   PrintFormat("[GRW] EPISODE armed: stake=$%.2f  target=$%.2f (x%.1f)  floor=$%.2f (x%.2f) "
+               "— one shot, resolution ends the run",
+               stake, stake * GRW_BARRIER_TARGET_MULT, GRW_BARRIER_TARGET_MULT,
+               stake * GRW_BARRIER_FLOOR_FRAC, GRW_BARRIER_FLOOR_FRAC);
+   if(MathAbs(stake - GRW_BARRIER_STAKE_USD) > 0.01)
+      PrintFormat("[GRW] WARNING: deposit $%.2f != declared stake $%.2f "
+                  "(grw_fitness.json v%s). The barriers scale with the deposit, but the "
+                  "min-lot arithmetic does NOT — this pass does not answer the $%.0f question.",
+                  stake, GRW_BARRIER_STAKE_USD, GRW_FITNESS_VERSION, GRW_BARRIER_STAKE_USD);
+
    g_ready = true;
    return INIT_SUCCEEDED;
   }
@@ -225,6 +251,29 @@ void OnTick()
 
    GrwStatsMarkDay(g_stats, TimeCurrent());   // trading-day counter -> trades/day, the
                                               // mandate's own unit (reported, not optimised)
+
+   //--- THE EPISODE, before anything else. Barriers read EQUITY (floating P&L included):
+   //--- ruin is an equity event and the disclosed exit is a dollar target read off open
+   //--- P&L, so the touch is what resolves the shot — not the subsequent close.
+   if(g_stats.ep_state != GRW_EP_LIVE)
+     {
+      GrwCloseAll(g_cfg.magic);   // idempotent once flat; retries a close that was refused
+      return;                     // spent. No management, no new entries, for the rest of
+     }                            // the window.
+
+   if(GrwBarrierMark(g_stats, AccountInfoDouble(ACCOUNT_EQUITY), TimeCurrent()))
+     {
+      int closed = GrwCloseAll(g_cfg.magic);
+      PrintFormat("[GRW] EPISODE %s at %s — equity %.2f vs stake %.2f "
+                  "(target %.2f / floor %.2f) after %d orders over %d days; %d position(s) closed.",
+                  (g_stats.ep_state == GRW_EP_TARGET ? "RESOLVED: TARGET" : "RESOLVED: FLOOR"),
+                  TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES),
+                  AccountInfoDouble(ACCOUNT_EQUITY), g_stats.ep_stake,
+                  g_stats.ep_stake * GRW_BARRIER_TARGET_MULT,
+                  g_stats.ep_stake * GRW_BARRIER_FLOOR_FRAC,
+                  g_stats.ep_orders_at_res, g_stats.ep_days_at_res, closed);
+      return;
+     }
 
    GrwExitManageAll(g_cfg);
 
@@ -261,8 +310,8 @@ void OnTick()
 //+------------------------------------------------------------------+
 //| OnTester — THE OBJECTIVE.                                         |
 //|                                                                    |
-//| Returns log(final_equity / initial_deposit) per                    |
-//| research/config/grw_fitness.json v1.0.0, and writes the two CSVs   |
+//| Returns the barrier outcome per research/config/grw_fitness.json   |
+//| v2.0.0 (1.0 target / 0.0 floor / UNRANKABLE censored), writes the   |
 //| the Python side turns into a grw_passes row. It writes NOTHING to  |
 //| research.db: a pass is raw material, not a finding, and the DB is  |
 //| reachable only through the code layer (CLAUDE.md rule 10).         |
@@ -281,10 +330,16 @@ double OnTester()
                   "min distance or the live spread — the scalp stop is too tight for this venue "
                   "at those moments, not merely unprofitable.", g_stats.n_sl_too_tight);
    if(!f.sizing_valid && g_stats.n_orders > 0)
-      PrintFormat("[GRW] WARNING: %.1f%% of orders were forced to the broker minimum lot. "
-                  "This pass measured a FIXED-LOT strategy — its growth is NOT a "
-                  "compounding claim at risk_frac=%.4f.",
+      PrintFormat("[GRW] NOTE: %.1f%% of orders were forced to the broker minimum lot — the "
+                  "declared risk_frac=%.4f was NOT expressible at this equity. Under the "
+                  "v2.0.0 barrier objective that is reported, not an invalidation: at the "
+                  "lot floor the stop distance IS the bet size.",
                   100.0 * f.clamp_up_frac, g_cfg.risk_frac);
+   if(!f.resolved)
+      PrintFormat("[GRW] CENSORED: the window ended with equity inside [%.2f, %.2f]. This "
+                  "pass contributes NOTHING to p_hat — it is excluded from the denominator, "
+                  "never counted as a failure (grw_fitness.json v%s estimator).",
+                  f.floor_eq, f.target_eq, GRW_FITNESS_VERSION);
 
    string tag = GrwRunTag(InpBatchId, g_stats.first_seen);
    GrwWriteRunSummary(tag, g_cfg, g_stats, f, InpBatchId);

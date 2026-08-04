@@ -142,6 +142,8 @@ bool GrwWriteRunSummary(const string tag, const GrwCfg &c, const GrwStats &st,
       "n_signals","n_gated","n_skipped","n_orders","n_clamp_up","n_clamp_down",
       "n_sl_too_tight","n_days","trades_per_day","signals_per_day",
       "clamp_up_frac","mean_risk_pct","max_risk_pct","sizing_valid",
+      "ep_state","resolved","ep_stake","target_eq","floor_eq",
+      "trades_to_res","days_to_res","resolved_at","stake_mismatch",
       "config_hash","params_file");
 
    FileWrite(h,
@@ -161,6 +163,14 @@ bool GrwWriteRunSummary(const string tag, const GrwCfg &c, const GrwStats &st,
       DoubleToString(f.trades_per_day, 3), DoubleToString(f.signals_per_day, 3),
       DoubleToString(f.clamp_up_frac, 6), DoubleToString(f.mean_risk_pct, 4),
       DoubleToString(f.max_risk_pct, 4), (f.sizing_valid ? "1" : "0"),
+      //--- BARRIER EPISODE (fitness v2.0.0). `resolved`=0 is CENSORED, not failed: the
+      //--- reader must be able to tell those apart without recomputing anything.
+      (string)f.ep_state, (f.resolved ? "1" : "0"),
+      DoubleToString(f.ep_stake, 2), DoubleToString(f.target_eq, 2),
+      DoubleToString(f.floor_eq, 2),
+      (string)f.trades_to_res, (string)f.days_to_res,
+      (f.resolved_at > 0 ? TimeToString(f.resolved_at, TIME_DATE|TIME_MINUTES) : ""),
+      (f.stake_mismatch ? "1" : "0"),
       GrwConfigHash(cfg_json), "grw_params_" + tag + ".json");
 
    FileClose(h);

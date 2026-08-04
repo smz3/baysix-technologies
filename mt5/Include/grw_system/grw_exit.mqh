@@ -235,4 +235,26 @@ void GrwExitOnNewBar(const GrwCfg &c)
      }
   }
 
+//+------------------------------------------------------------------+
+//| Flatten the book. Called ONCE, when the barrier episode resolves  |
+//| (grw_fitness.mqh v2.0.0): the target is a DOLLAR target read off  |
+//| open P&L, so hitting it means banking it, and hitting the floor   |
+//| means the shot is spent. Leaving a position open past resolution  |
+//| would let post-episode P&L land in the same pass row.             |
+//| Returns how many positions were closed.                           |
+//+------------------------------------------------------------------+
+int GrwCloseAll(const ulong magic)
+  {
+   int n = 0;
+   for(int i = ArraySize(g_grw_open) - 1; i >= 0; i--)
+     {
+      if(GrwClosePosition(g_grw_open[i].pos_id, magic))
+        {
+         GrwOpenRemoveAt(i);
+         n++;
+        }
+     }
+   return n;
+  }
+
 #endif // GRW_EXIT_MQH

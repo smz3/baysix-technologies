@@ -1,43 +1,75 @@
 {
-  "version": "1.1.0",
-  "name": "log_growth",
-  "objective": "log(final_equity / initial_deposit)",
+  "version": "2.0.0",
+  "name": "barrier_hit_rate",
+  "objective": "P(equity >= target_mult * stake  BEFORE  equity <= floor_frac * stake)",
   "direction": "maximize",
-  "declared_on": "2026-08-03",
+  "declared_on": "2026-08-04",
   "changelog": [
-    "1.1.0 (2026-08-03) — min_trades 30 -> 500 for the SCALP mandate (task 294). The OBJECTIVE is unchanged; only the unrankable sentinel moved. Under a mandate of hundreds of trades per day a legitimate config produces 10^4-10^5 trades over a multi-year window, so 30 had stopped being a sentinel: it would have let a swing-shaped accident that traded 40 times win a scalping sweep. New trial family — v1.0.0 passes cannot be pooled with these. Safe to do now precisely because grw_passes is still empty.",
-    "1.0.0 (2026-08-03) — first declared objective."
+    "2.0.0 (2026-08-04) — OBJECTIVE REPLACED. Kelly/log-growth is PARKED (see parked_objective below). Syafiq's directive, task 307: the mandate is one non-reloadable $20 stake, half-potted at roughly 2:1, run to a fixed dollar target and with ruin accepted. That is a BARRIER problem — P(hit target before hitting floor) — not a terminal-wealth problem. min_trades:500 is deleted with it: a barrier episode resolves in ~21 trades (CITED: task 307 detail, Syafiq directive 2026-08-04), so a 500-trade floor made the mandate's own method score -1e9, i.e. UNREPRESENTABLE rather than merely disfavoured. New trial family — no v1.x pass may be pooled with a v2 pass. Safe to do now because grw_passes is MEASURED at 0 rows; the first batch (task 293) closes that window permanently.",
+    "1.1.0 (2026-08-03) — [PARKED at 2.0.0] min_trades 30 -> 500 for the SCALP mandate (task 294). The OBJECTIVE is unchanged; only the unrankable sentinel moved. Under a mandate of hundreds of trades per day a legitimate config produces 10^4-10^5 trades over a multi-year window, so 30 had stopped being a sentinel: it would have let a swing-shaped accident that traded 40 times win a scalping sweep. New trial family — v1.0.0 passes cannot be pooled with these. Safe to do now precisely because grw_passes is still empty.",
+    "1.0.0 (2026-08-03) — [PARKED at 2.0.0] first declared objective."
   ],
-  "implemented_by": "mt5/Include/grw_system/grw_fitness.mqh (GrwFitnessCompute)",
+  "implemented_by": "mt5/Include/grw_system/grw_fitness.mqh (GrwFitnessCompute + GrwBarrierMark)",
   "cite_as": "grw_fitness.json@<git_sha>",
 
+  "parameters": {
+    "stake_usd": 20.0,
+    "target_mult": 2.0,
+    "floor_frac": 0.10,
+    "note": "These are PART OF THE OBJECTIVE, not tuning knobs. Changing any of them changes the question being asked and therefore bumps this file's version and starts a new trial family. They are #defines in grw_fitness.mqh, never EA inputs, so a .set preset cannot move a barrier.",
+    "why_target_mult_2": "CITED — Syafiq 2026-08-04: the disclosed manual method targets +100% (sometimes +300%) and reaches it in roughly 3 trades. +300% is a DIFFERENT declared objective (target_mult 4.0) and would be version 2.1.0, run as its own family, never a variant inside this one.",
+    "why_floor_frac_0_10": "DERIVED — $2.00 on a $20 stake. At the 0.01 min lot (1 oz) a 10-pip stop risks exactly $1.00, so below $2 no risk fraction under 50% is expressible at all and the account cannot delever (MEASURED, task 300: mean_risk_pct 14.57 against a declared 5.00, max 123.46). $2 is where the account stops being able to make the bet it declared, which is the operative death, not the broker's $0.30 stop-out level (brokers/justmarkets.yaml:99-104)."
+  },
+
   "why_this_objective": [
-    "The account compounds: every trade is sized off live equity, so wealth evolves multiplicatively.",
-    "Log-wealth is additive across sequential bets, so maximising summed log-growth maximises terminal wealth.",
-    "It needs no bolted-on risk term. Ruin is log(0) = -inf, so the objective already flees it.",
-    "A blended objective (growth minus a drawdown penalty, Sharpe, profit factor) is how the thing actually optimised silently stops being the thing that was asked for. That substitution is the origin failure behind Loop A, spec 1.3(2)."
+    "The stake is ONE SHOT and non-reloadable (CITED — Syafiq 2026-08-04: '20$ is not reloadable. Meaning. I want it one shot grow that 20$'). Terminal wealth over an unbounded horizon is not the question being asked; reaching a fixed target before dying is.",
+    "Log-growth treats ruin as catastrophic (log(0) = -inf) and therefore refuses the bet size the mandate is built on. The mandate ACCEPTS ruin as a cost of a fast target. An objective that flees ruin cannot rank a method that spends it.",
+    "A barrier objective is scale-honest at $20 in a way log-growth is not: the min-lot floor makes risk-per-trade ESCALATE as equity falls (MEASURED, task 300), so the account's death is a mechanical property of the stake, not a preference parameter. P(target before floor) prices that directly.",
+    "It stays a PURE objective. No drawdown penalty, no Sharpe, no blend. Drawdown is implied by the floor barrier and is otherwise REPORTED only. A blended objective is how the thing actually optimised silently stops being the thing that was asked for — the origin failure behind Loop A, spec 1.3(2)."
   ],
+
+  "estimator": {
+    "problem": "P(target before floor) is a probability. One tester pass produces ONE equity path, i.e. ONE Bernoulli draw. A single pass therefore cannot estimate it and must not pretend to.",
+    "per_pass": "One pass = one episode, started at the tester's initial deposit (which MUST equal stake_usd for the min-lot arithmetic to be the real one). OnTester returns 1.0 if the target barrier was touched first, 0.0 if the floor barrier was touched first, and the UNRANKABLE sentinel if the window ended with neither touched (CENSORED — not a failure, and it must never be scored as one).",
+    "barrier_basis": "EQUITY, including floating P&L — not balance. Ruin is an equity event, and the disclosed exit is a dollar target read off open P&L. On resolution the EA CLOSES every open position and stops opening new ones for the rest of the window: the one shot is over, and post-resolution trading is a different experiment.",
+    "aggregation": "p_hat = n_target / (n_target + n_floor) over K INDEPENDENT, NON-OVERLAPPING windows for the same config, with a Wilson 95% interval. Censored episodes are excluded from the denominator and reported separately. Overlapping windows inflate the effective sample and must not be used (the pooled t=+8.02 in result_id 69 versus the yearly t=+0.83 in result_id 70/72 is the measured cost of ignoring this).",
+    "SCHEMA GAP": "grw_passes carries ONE is_run_id per pass, so K windows per config has no home yet. Until that is fixed the K runs must be ingested as K separate passes sharing a config_hash and aggregated at read time. Tracked as its own task — do NOT paper over it by averaging fitness inside a pass."
+  },
 
   "guards": [
     {
-      "name": "min_trades",
-      "value": 500,
-      "behaviour": "fitness = -1e9 (UNRANKABLE)",
-      "why": "A handful of trades has no growth rate, only an anecdote. Scoring it merely 'poorly' would let it outrank a real strategy that had a bad window. Raised 30 -> 500 in v1.1.0: the mandate is hundreds of trades per day, so 500 is a floor against degenerate configs, NOT a quality bar."
+      "name": "min_resolved_episodes",
+      "value": 20,
+      "scope": "BATCH-level (Python adjudicator), not per-pass",
+      "behaviour": "p_hat is not reportable below this; the config is UNJUDGED, not rejected",
+      "why": "DECLARED, not measured. At n=20 the Wilson half-width near p=0.5 is about 0.21 — wide, and honestly so. Fewer draws than that is an anecdote with a decimal point."
     },
     {
-      "name": "ruin_floor_frac",
-      "value": 0.01,
-      "behaviour": "equity is floored at 1% of the deposit before the log",
-      "why": "Ruin must return a finite, correctly-ordered worst score. -inf and NaN are ranked unpredictably by the tester."
+      "name": "censored_frac_max",
+      "value": 0.50,
+      "scope": "BATCH-level",
+      "behaviour": "above this share of unresolved windows, p_hat is void",
+      "why": "If most windows never touch either barrier, the config is not answering the mandate's question — it is idling. Reporting p_hat off the minority that did resolve is selection on the outcome."
+    },
+    {
+      "name": "unresolved_sentinel",
+      "value": -1000000000.0,
+      "scope": "per-pass",
+      "behaviour": "fitness = -1e9 (UNRANKABLE)",
+      "why": "'Cannot be scored', never 'scored badly'. A censored episode ranked at 0.0 would be indistinguishable from a measured failure, which is the exact substitution this file exists to prevent."
     }
   ],
 
   "reported_not_optimised": [
+    "log_growth — the PARKED v1.x objective, still computed on every pass as a diagnostic so v1 and v2 passes remain mutually legible. It is no longer the fitness.",
+    "trades_to_resolution — the mandate's own unit. ~21 expected (CITED, task 307). A config resolving in 4,000 trades is not the disclosed method even if p_hat is high.",
+    "days_to_resolution",
     "max_dd_pct — reported on every pass, never a constraint and never in the objective (spec section 2).",
     "profit_factor",
     "win_rate",
-    "n_trades"
+    "n_trades",
+    "trades_per_day",
+    "signals_per_day"
   ],
 
   "validity_flags": [
@@ -45,10 +77,27 @@
       "name": "sizing_valid",
       "rule": "clamp_up_frac <= 0.20",
       "clamp_up_frac": "share of orders whose risk-fraction lot fell below the broker minimum and was forced up",
-      "why": "A small account cannot express a small risk fraction. XAUUSD min lot 0.01 = $1 per $1 of gold, so a $10 stop risks $10 whatever risk_frac says — on a $20 deposit that is 50% of equity per trade. Above the threshold the pass measured a FIXED-LOT strategy and its growth is not a compounding claim.",
-      "status": "REPORTED, not penalised. A prereg may cite it in promote_if; the fitness itself stays a pure objective."
+      "status": "REPORTED, not penalised, and its MEANING CHANGED at 2.0.0 — read the why before citing it.",
+      "why": "Under v1.x log-growth this flag meant 'this pass measured a fixed-lot strategy, so its growth is not a compounding claim'. Under a barrier mandate at half-pot the account is DELIBERATELY at or near the lot floor, so a high clamp rate is expected behaviour rather than an invalidated pass. What it still measures honestly is the gap between the declared risk fraction and the realised one: cite it as 'the declared fraction was not expressible', never as 'the pass is invalid'. All four runs on record (result_id 61-68) carry sizing_valid=0 and are NOT thereby falsified under this objective."
+    },
+    {
+      "name": "barrier_resolved",
+      "rule": "the episode touched target or floor before the window ended",
+      "status": "REPORTED per pass; feeds censored_frac_max at batch level",
+      "why": "Separates 'the method failed' from 'the window was too short to find out'. Collapsing the two is the same class of error as scoring a censored episode at 0.0."
     }
   ],
 
-  "change_policy": "Changing this file is never automated (spec 3.4). A change bumps the version and starts a new trial family — old passes were judged against a different objective and cannot be pooled with new ones."
+  "parked_objective": {
+    "name": "log_growth",
+    "objective": "log(final_equity / initial_deposit)",
+    "versions": ["1.0.0", "1.1.0"],
+    "parked_on": "2026-08-04",
+    "parked_by": "Syafiq directive, task 307",
+    "reason": "Correct objective for a bankroll compounding over an unbounded horizon with ruin unacceptable. Wrong objective for a one-shot non-reloadable $20 stake run to a fixed target with ruin accepted. Nothing about it was found to be WRONG — the mandate changed underneath it.",
+    "revive_if": "the stake becomes reloadable, or the horizon becomes open-ended (e.g. after a first target is banked and the account is being run as a bankroll rather than a shot). That is a version bump back, with its own trial family — never a silent restore.",
+    "do_not": "pool v1.x passes with v2.x passes, or cite a v1 fitness number as evidence under this objective. There are currently 0 v1 passes (MEASURED), so this costs nothing today and everything later."
+  },
+
+  "change_policy": "Changing this file is never automated (spec 3.4). A change bumps the version and starts a new trial family — old passes were judged against a different objective and cannot be pooled with new ones. The parameters block is part of the objective: moving a barrier is a version bump, not a setting."
 }
