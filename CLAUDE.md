@@ -99,13 +99,7 @@ Decoupled repos (Desktop-level, own git remotes):
 13. **Smart Summary on research/decisions** — end research findings and strategy decisions with a `## 🧠 Smart Summary` of 2–4 plain-English bullets (point form, zero jargon — no R-multiples/t-stats/regime), explaining what we did/found like to a smart friend who doesn't trade. Technical answer on top. Skip it on pure infra/cleanup/config/chore replies unless asked.
 14. **Bullet-point format (HARD RULE)** — ALL explanation, regardless of topic, MUST be in bullet-point form. No prose paragraphs. This applies to the technical answer too, not just the Smart Summary. Flagged repeatedly by Syafiq — make it permanent.
 15. **Brevity (HARD RULE)** — see global directives. Project-specific: Smart Summary (rule 13) still applies where required, but the technical answer above it stays tight.
-16. **Mid-price is the discovery default — do NOT caveat it (HARD, set 2026-07-06 by Syafiq, banned as recurring friction).** Discovery / logic / screen numbers are **mid-price and cost-free BY DESIGN** ([[discovery_phase_cost_free]]) — this is settled, permanent, and understood. Claude must **NEVER re-flag "this is mid-price / not real money / cost isn't in this"** during logic work; repeating that caveat is exactly the friction Syafiq has banned. Logic development happens entirely cost-free — iterate the strategy logic as many rounds as needed with zero cost-talk. **Cost enters EXACTLY ONCE**, at **G2 (the MT5 tester = the arbiter)**, as the final exam — and cost is a viability *outcome*, never a reason to withhold or hedge a logic result. Convention: a number is assumed cost-free unless it is a G2/tester result, where you say **"net"** once and move on. No repeated disclaimers, ever. (Also: cost only ever kills an edge that is *the same size as the spread* — the escape is bigger moves/payoff-asymmetry so cost → noise, NOT abandoning the idea. Never present cost as the thing that "killed" ORB/BRC without checking the record: ORB died from unsorted-tick look-ahead, not cost.)
-
----
-
-## MT5 / FOB Workstream
-
-FOB-001 (MT5 EA, XAUUSD, Just Markets) is one active workstream, not the mission — full MT5/EA workflow + FOB-001 canonical knowledge now live in [docs/reference/fob_mt5_playbook.md](docs/reference/fob_mt5_playbook.md). Read it before touching `mt5/`, `fob_system`, or FOB DB tables; don't re-derive it here, and don't let it define the scope of what Baysix does.
+16. **Never caveat mid-price (HARD).** A number is cost-free unless it is a G2/tester result, where you say "net" once. No disclaimers about spread/cost during logic work — ever.
 
 ---
 
