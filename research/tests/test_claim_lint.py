@@ -235,3 +235,31 @@ def test_env_escape_hatch(monkeypatch):
         env={**__import__("os").environ, "CLAIM_LINT": "off"},
     )
     assert p.returncode == 0
+
+
+def test_statistic_inside_code_span_is_mentioned_not_asserted():
+    """FP found by the guard blocking a reply that quoted its own test fixture."""
+    hard, _ = claim_lint.lint(
+        "The pattern is `t-stat of 3.4` and the fence below shows the fixture, "
+        "neither of which asserts anything at all about the actual market.\n"
+        "```\nt = +8.02\n```\n"
+    )
+    assert hard == []
+
+
+def test_statistic_in_plain_prose_still_blocks_alongside_code_spans():
+    hard, _ = claim_lint.lint(
+        "The pattern is `t-stat of 3.4`, but the measurement itself gave "
+        "t = +8.02 across the whole in-sample window and that settles it."
+    )
+    assert any(h.startswith("STAT_NO_N") for h in hard)
+
+
+def test_schema_in_code_span_still_checked():
+    if not claim_lint._tables():
+        pytest.skip("research.db not available")
+    hard, _ = claim_lint.lint(
+        "Provenance travels on `tester_runs.made_up_column_xyz` for every row "
+        "the ingest path writes, so the venue is always recoverable later."
+    )
+    assert any(h.startswith("BAD_SCHEMA") for h in hard)

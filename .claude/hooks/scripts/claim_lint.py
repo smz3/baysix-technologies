@@ -106,11 +106,27 @@ def _tables() -> dict:
         return {}
 
 
+CODE_RE = re.compile(r"```.*?```|~~~.*?~~~|`[^`\n]+`", re.DOTALL)
+
+
+def _prose(text: str) -> str:
+    """Text with code fences and inline code spans removed.
+
+    A statistic inside backticks is being MENTIONED, not asserted — quoting a
+    regex, a test fixture or a command is not a claim about the world. Found by
+    the guard blocking a reply that quoted its own test fixture, 2026-08-04.
+    Paths and schema still lint against the FULL text: docs legitimately write
+    `table.column` and file links in code spans and those must stay checked.
+    """
+    return CODE_RE.sub(" ", text)
+
+
 def lint(text: str) -> tuple[list, list]:
     """-> (hard_failures, warnings)"""
     hard, warn = [], []
     if not text or len(text) < 40:
         return hard, warn
+    prose = _prose(text)
 
     # 1. dead markdown paths
     for m in MD_LINK_RE.finditer(text):
@@ -140,7 +156,7 @@ def lint(text: str) -> tuple[list, list]:
                 )
 
     # 3. a statistic without its effective n
-    if STAT_RE.search(text) and not NEFF_RE.search(text):
+    if STAT_RE.search(prose) and not NEFF_RE.search(text):
         hard.append(
             "STAT_NO_N  A t-stat / SE / p-value is reported with no effective sample "
             "size or independence statement. Overlapping samples inflate t by "
@@ -149,26 +165,26 @@ def lint(text: str) -> tuple[list, list]:
         )
 
     # 4-6. warnings
-    if ATTRIB_RE.search(text):
+    if ATTRIB_RE.search(prose):
         warn.append(
             "ATTRIBUTION  Second-person credit for a technical parameter. Confirm "
             "Syafiq actually specified it - a DERIVED value must not be returned "
             "to him as CITED (2026-08-04: the 100-pip stop was never his)."
         )
-    if DECISION_RE.search(text) and not TESTER_RE.search(text):
+    if DECISION_RE.search(prose) and not TESTER_RE.search(text):
         warn.append(
             "UNADJUDICATED  Decision language with no tester run cited. The MT5 "
             "Strategy Tester on real ticks is the arbiter (CLAUDE.md rule 8/16); "
             "until it has run, this is a hypothesis, not a decision."
         )
-    for m in ABSOLUTE_RE.finditer(text):
-        lo, hi = max(0, m.start() - 260), min(len(text), m.end() + 260)
-        if not PROV_RE.search(text[lo:hi]):
+    for m in ABSOLUTE_RE.finditer(prose):
+        lo, hi = max(0, m.start() - 260), min(len(prose), m.end() + 260)
+        if not PROV_RE.search(prose[lo:hi]):
             warn.append(f"ABSOLUTE  '{m.group(0)}' with no MEASURED/DERIVED basis nearby.")
             break
 
     # message-level provenance floor for findings-shaped prose
-    if STAT_RE.search(text) and not PROV_RE.search(text) and not RESULT_ID_RE.search(text):
+    if STAT_RE.search(prose) and not PROV_RE.search(text) and not RESULT_ID_RE.search(text):
         warn.append(
             "NO_PROVENANCE  Statistics reported with no MEASURED/DERIVED/CITED/"
             "ASSUMED tag and no result_id. RECALLED is banned (spec 1.2)."
