@@ -121,8 +121,16 @@ def _prose(text: str) -> str:
     return CODE_RE.sub(" ", text)
 
 
-def lint(text: str) -> tuple[list, list]:
-    """-> (hard_failures, warnings)"""
+def lint(text: str, base: Path = None) -> tuple[list, list]:
+    """-> (hard_failures, warnings)
+
+    `base` = the directory the text will LIVE in, when known (PreToolUse knows it
+    from tool_input.file_path). Markdown links are relative to their own file, not
+    to the repo root, so a doc in a subfolder linking a sibling was reported dead
+    while `../../../CLAUDE.md` only passed by accident — the `../` stripping made
+    it collapse onto the repo root. MEASURED 2026-08-04: this linter blocked the
+    audit document that documents this linter.
+    """
     hard, warn = [], []
     if not text or len(text) < 40:
         return hard, warn
@@ -141,6 +149,8 @@ def lint(text: str) -> tuple[list, list]:
         raw_n = raw.replace("\\", "/")
         p = re.sub(r"^(?:\.{1,2}/)+", "", raw_n)
         cands = [REPO / p, REPO / raw_n, Path(raw_n)]
+        if base is not None:
+            cands += [base / raw_n, base / p]
         if not any(c.exists() for c in cands):
             hard.append(f"DEAD_PATH  [{raw}] does not resolve under {REPO.name}/")
 
@@ -260,9 +270,19 @@ def main() -> None:
     if tool in ("Write", "Edit"):
         ti = data.get("tool_input") or {}
         path = (ti.get("file_path") or "").replace("\\", "/")
-        if path.lower().endswith((".md", ".json", ".yaml", ".yml")):
+        # OUTSIDE THE REPO -> not ours to lint. The memory store lives under
+        # ~/.claude/projects/<slug>/memory/ and its links are relative to THAT
+        # directory, so every one of them reads as a DEAD_PATH here and the
+        # linter blocks a legitimate memory write (MEASURED 2026-08-04: it
+        # refused an edit to MEMORY.md). DEAD_PATH is only decidable for paths
+        # that are supposed to resolve under the repo.
+        try:
+            in_repo = Path(path).resolve().is_relative_to(REPO.resolve())
+        except (OSError, ValueError):
+            in_repo = False
+        if in_repo and path.lower().endswith((".md", ".json", ".yaml", ".yml")):
             body = ti.get("content") or ti.get("new_string") or ""
-            hard, _ = lint(body)
+            hard, _ = lint(body, base=Path(path).parent)
             hard = [h for h in hard if not h.startswith("STAT_NO_N")]
             if hard:
                 print(json.dumps({

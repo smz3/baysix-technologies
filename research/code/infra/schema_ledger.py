@@ -304,8 +304,12 @@ CREATE TABLE IF NOT EXISTS grw_passes (
     params          TEXT CHECK(params IS NULL OR json_valid(params)),  -- EA inputs snapshot
     -- S0/S1: in-sample --
     is_run_id       INTEGER REFERENCES tester_runs(run_id),
-    is_fitness      REAL,                           -- OnTester() custom fitness (log-growth)
-    is_growth       REAL,                           -- log-growth over the IS window
+    is_fitness      REAL,                           -- OnTester() custom fitness. v2.0.0 =
+                                                    -- barrier outcome: 1.0 target / 0.0 floor
+                                                    -- / -1e9 CENSORED (grw_fitness.json)
+    is_growth       REAL,                           -- log-growth over the IS window. PARKED
+                                                    -- objective, kept as a diagnostic only —
+                                                    -- never rank on it (fitness v2.0.0)
     is_n_trades     INTEGER,
     is_net_usd      REAL,
     is_max_dd_pct   REAL,                           -- REPORTED, never a constraint (spec 0/§2)

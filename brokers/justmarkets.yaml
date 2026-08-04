@@ -83,18 +83,20 @@ raw_account_reference:
   xauusd:
     avg_spread_pips: 1.0
     commission_per_lot_per_side_usd: 3.5
-    # FIXED 2026-08-04 (task 308). Was `margin_pct: 0.03  # = 1:3000` — the value and its
-    # own comment could not both be true (3% margin is 1:33). DERIVED that the VALUE was the
-    # typo, not the comment, from the observed per-lot margin at margin.per_lot_usd = 152.12:
-    #   at margin_pct 0.03   -> 100 oz x price x 0.03  = $152.12 implies gold at $50.7/oz  (absurd)
-    #   at 1:3000            -> 100 oz x price / 3000  = $152.12 implies gold at $4,564/oz (plausible)
-    # The 0.03 reading is off by ~90x at any gold price that has ever existed, and it would
-    # also mean a $20 account could not open 0.01 lot at all — contradicted by the four runs
-    # on record (result_id 61-68). TO_VERIFY in the live terminal:
+    # FIXED 2026-08-04 (task 308). Was `margin_pct: 0.03  # = 1:3000` — the value and its own
+    # comment could not both be true (3% margin is 1:33). The comment was right and the VALUE
+    # was the typo. Settled by a MEASURED live-terminal reading, 2026-08-03:
+    #   XAUUSD.s @ $4055, order_calc_margin(0.01 lot) = $1.35
+    #   0.01 lot = 1 oz, so margin_pct = 1.35 / 4055 = 0.000333 = 1 / 3000  EXACTLY.
+    # (cited: memory/_handover_archive/Session_Handover_2026_08_03_Afternoon3.md:11)
+    # At 0.03 the same 0.01 lot would have needed $121.65 of margin — 90x the measured
+    # figure, and a $20 account could not have opened it at all, which the four runs on
+    # record (result_id 61-68) contradict.
+    # Still worth re-reading live before it gates a sizing rule, because metals can carry an
+    # instrument-specific margin rate and JM's leverage is EQUITY-TIERED (see leverage.ladder
+    # below — 1:3000 only holds under $1,000 equity):
     #   SymbolInfoDouble("XAUUSD.s", SYMBOL_MARGIN_INITIAL) / OrderCalcMargin()
-    # Metals can carry an instrument-specific margin rate that overrides account leverage, so
-    # the measured number wins over this derivation the moment it exists.
-    margin_pct: 0.000333          # = 1:3000 (1/3000 = 0.0003333...); DERIVED, not yet measured
+    margin_pct: 0.000333          # = 1:3000 (1/3000); MEASURED 2026-08-03 via order_calc_margin
     long_swap_points: -71.04      # swap-free status zeroes this; ×$0.01×100oz = -$71.04/lot/night gross
     short_swap_points: -84.12
     stop_level_pips: 0
@@ -115,6 +117,10 @@ leverage:
     note: you cannot open at full 1:3000 around news — affects any news-window scalp
 
 margin:
+  # PRICE-DEPENDENT SNAPSHOT, not a constant. Margin = notional / leverage, so this number
+  # moves with gold. 152.12/lot corresponds to gold near $4,564/oz at 1:3000; the MEASURED
+  # 2026-08-03 reading was $1.35 per 0.01 lot at $4,055 = $135.2/lot. Compute it, never cite
+  # it: per_lot_usd = 100 oz * price * margin_pct.
   per_lot_usd: 152.12             # observed initial margin/lot (spec); price+leverage dependent
   initial_equals_maintenance: true   # initial ≈ maintenance ≈ 152.12/lot — no separate buffer
   margin_call_level_pct: 40       # confirmed — warning only

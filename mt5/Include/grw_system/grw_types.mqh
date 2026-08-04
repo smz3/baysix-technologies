@@ -259,7 +259,7 @@ struct GrwStats
    //--- TRADING DAYS actually seen (distinct dates with ticks), so trades-per-day is
    //--- computed against real sessions rather than calendar span. It is the mandate's
    //--- own unit — "hundreds of trades a day" is unfalsifiable without it — and it is
-   //--- REPORTED, never optimised: the objective stays pure log-growth.
+   //--- REPORTED, never optimised: the objective stays a pure barrier hit-rate (v2.0.0).
    int      n_days;
    datetime cur_day;      // last date bucket seen, for the day-change edge
    datetime first_seen;   // FIRST tick the EA actually processed = the true window start.

@@ -354,6 +354,9 @@ missing tables, zero missing columns**; `research/tests` 24 passed.
 - ✅ **`OnTester()` log-growth fitness**, with the objective declared as a versioned
   artifact at [grw_fitness.json](../../research/config/grw_fitness.json) v1.0.0 — the
   §1.3(2) guard is now real rather than aspirational.
+  **SUPERSEDED 2026-08-04 (task 307):** the fitness is now `barrier_hit_rate` at v2.0.0
+  (`P(equity >= 2.0*stake BEFORE equity <= 0.10*stake)`) and log-growth is PARKED. The
+  history above stands as history; the objective of record is whatever the JSON says.
 - ✅ **Sizing module** ([grw_sizing.mqh](../../mt5/Include/grw_system/grw_sizing.mqh)) —
   equity-fraction lots, floor-rounded so a trade can never over-risk by a volume step.
   `MEASURED` on the $10k smoke run: requested 1.00%, realised mean 0.986% / max 1.000%,

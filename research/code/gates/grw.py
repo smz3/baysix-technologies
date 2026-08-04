@@ -388,7 +388,7 @@ def family_trials(trial_family_id: str) -> dict:
     return dict(row) if row else {"trial_family_id": trial_family_id, "n_trials_cum": 0}
 
 
-def promote(pass_id: int, metric_key: str = "oos_log_growth") -> int:
+def promote(pass_id: int, metric_key: str = "oos_barrier_hit") -> int:
     """S4 — copy an adjudicated survivor into step4_results.
 
     Refuses anything the adjudicator did not stamp PROMOTED. This is the only door
