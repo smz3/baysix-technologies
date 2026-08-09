@@ -8,55 +8,29 @@
 
 Syafiq — 7yr Quant Trader → Quant Researcher (deployable).
 Building an Autonomous Research Agent for systematic strategy discovery, trading XAUUSD live.
-Goal: a research process that survives out-of-sample, scaled up over time.
+Goal: grow ONE non-reloadable $20 to a fixed target under a **barrier** objective —
+P(target before floor), not log-growth. Not reloadable, no cent account, Pro account.
+The research process must survive out-of-sample; that is the constraint, not the mission.
 
 
 ---
 
-## Repo Layout
+## Where Things Live (gotchas only — `ls` shows the rest)
 
-```
-baysix-technologies/          ← single repo · github.com/smz3/baysix-technologies
-├── mt5/                      ← MQL5 EAs (XAUUSD live · Just Markets)
-│   ├── Experts/              ← Sigma_System/ (Sigma_V5.0 B2B EA + .ex5) · orb_system/ (baysix_orb_NNN EAs)
-│   ├── Include/              ← Sigma_System/ (.mqh: B2B detect, trade, risk, UI) · orb_system/ (ORB modules)
-│   ├── Scripts/orb_system/   ← ORB helper scripts
-│   ├── Documentation/        ← Sigma EA architecture + SAMTC · orb_system/ (per-EA docs)
-│   └── strategy_tester_xlsx/ ← MT5 Strategy Tester report exports
-├── b2b/
-│   ├── code/                 ← B2B Python engine (zone detection, trade logic)
-│   └── docs/                 ← B2B knowledge base (overview, zone lifecycle, russian doll, etc.)
-├── brokers/                  ← venue specs: justmarkets.yaml (TCM-001 cost model) + .md per broker
-├── research/
-│   ├── db/                   ← all SQLite databases (2-DB design: workstation + VPS)
-│   │   ├── research.db       ← Protocol 4.0 lean (WAL): step1_ideas · step2_papers · step3_gates (G1-G4) · step4_results (+is_run/what_changed — there is NO is_runs table, collapsed in migration 033) · spine: tester_runs/tester_trades/tester_zones/tester_run_summary · fob_* payload · grw_batches/grw_passes (GRW-001 factory) · logs: log_agent · log_tasks · log_strategy. Ledger DDL has ONE home: research/code/infra/schema_ledger.py
-│   │   └── execution.db      ← live deployment ledger (downstream twin · 12 tables · spec: docs/reference/execution_schema.md · rebuild in progress)
-│   ├── code/                 ← shared DB layer, 4 subpackages (flat `from research.code import X` preserved via __init__ re-exports): gates/ (pipeline·protocol·idea_cli) · lineage/ (strategy_log·agent_log·backlog) · io/ (arctic_io·tester·ingest_*·fetch/extract/backfill) · infra/ (db_init·run_and_log·run_tracked·handover_lint·execution)
-│   ├── models/               ← one folder per idea/model (brc/ = active BRC-001 · struct/ = STRUCT-001 primitive · cusum/ · _archive/ = orb/hmm/msm, superseded)
-│   ├── migrations/           ← DB migration scripts (010 create_research_db · 011 migrate_data)
-│   ├── dashboard/            ← Streamlit research dashboard (app.py · localhost:8501)
-│   ├── outputs/              ← model plot outputs (Plotly HTML + Seaborn PNG · gitignored)
-│   ├── papers/               ← QR-agent paper dissection notes
-│   ├── tests/                ← pytest suites (test_backlog.py · …)
-│   └── RESEARCH_CODE_PROTOCOL.md ← code rules for research/models/ and research/code/
-├── data/
-│   └── arctic/               ← CANONICAL tick store: ArcticDB (lib 'ticks', symbol 'XAUUSD',
-│                                 511M ticks 2016→2026, SORTED + seal 2024-05-02). Daily =
-│                                 symbol 'XAUUSD_DAILY'. Read ONLY via research/code/arctic_io.py
-│                                 (tick_months/read_tick_month/is_ticks/oos_ticks/daily_bars).
-│                                 Parquet RETIRED+deleted 2026-06-12 (task 51) — sort kills look-ahead.
-├── .claude/
-│   ├── agents/               ← quant-researcher agent definition
-│   ├── hooks/                ← session hooks + audio notifications
-│   └── commands/             ← /handover
-├── docs/                     ← plans/ (dated build plans) · specs/ (dated design docs) · reference/ (evergreen schemas + protocols)
-└── memory/                   ← session handovers · _handover_archive/ for older ones
+Single repo · github.com/smz3/baysix-technologies. MQL5 systems live in `mt5/{Experts,Include,Scripts}/<system>_system/`; the live ones are **fob_system** and **grw_system** (brc/orb/Sigma are parked or closed).
+
+- **[research/db/research.db](research/db/research.db)** — Protocol 4.0 lean, WAL. There is **NO `is_runs` table** (collapsed into `step4_results.is_run` in migration 033). Ledger DDL has ONE home: [schema_ledger.py](research/code/infra/schema_ledger.py).
+- **[research/db/execution.db](research/db/execution.db)** — live deployment ledger, 12 tables, spec at [execution_schema.md](docs/reference/execution_schema.md). Rebuild in progress.
+- **[research/code/](research/code/)** — 4 subpackages (`gates` · `lineage` · `io` · `infra`); the flat `from research.code import X` still works via `__init__` re-exports.
+- **[data/arctic/](data/arctic/)** — CANONICAL tick store (ArcticDB, lib `ticks`, symbol `XAUUSD`, 511M ticks 2016→2026, SORTED + seal 2024-05-02; daily = `XAUUSD_DAILY`). Read ONLY via [arctic_io.py](research/code/io/arctic_io.py). Parquet RETIRED + deleted 2026-06-12 (task 51) — sorting is what kills the look-ahead.
+- **[research/models/_archive/](research/models/_archive/)** — orb/hmm/msm, all superseded. `brc/` is PARKED; live model work is `fob/` plus the GRW factory.
+- **[research/config/](research/config/)** — `grw_fitness.json` (versioned objective; a version bump starts a new trial family).
+- **[brokers/justmarkets.yaml](brokers/justmarkets.yaml)** — TCM-001 cost model, re-derived at $20.
+- **[docs/](docs/)** — `plans/` and `specs/` are dated; `reference/` is evergreen.
+- **[mt5/presets/](mt5/presets/)** — single source for `.set` presets; auto-mirrors to the JM terminal via junctions. **[mt5/tester/](mt5/tester/)** holds per-trade CSV artifacts.
 
 Decoupled repos (Desktop-level, own git remotes):
-  ~/Desktop/sigma-quant/      ← Cloudflare Pages frontend (deployed · syafiqmzin-sigma-quant.pages.dev)
-  ~/Desktop/sigma-research/   ← FastAPI backend + Qdrant/Groq AI briefs
-  ~/Desktop/sigma-linkedin/   ← LinkedIn automation
-```
+`~/Desktop/sigma-quant/` (Cloudflare Pages, deployed) · `~/Desktop/sigma-research/` (FastAPI + Qdrant/Groq) · `~/Desktop/sigma-linkedin/`
 
 ---
 
