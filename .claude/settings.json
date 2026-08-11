@@ -14,7 +14,6 @@
       "mcp__*",
       "Bash(powershell.exe -Command:*)",
       "Bash(powershell -Command Start-Process*)",
-      "Bash(rmdir *)",
       "Bash(powershell.exe -Command Start-Process*)"
     ],
     "deny": [
@@ -23,20 +22,17 @@
     ],
     "ask": [
       "Bash(rm *)",
+      "Bash(rmdir *)",
       "Bash(git reset --hard*)",
       "Bash(git merge*)"
     ]
   },
   "enabledMcpjsonServers": [
-    "context7",
-    "supabase",
     "playwright"
   ],
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
     "SIGMA_BRAIN": "C:\\Users\\User\\Desktop\\baysix-technologies",
-    "SIGMA_CRYPTO": "C:\\Users\\User\\Desktop\\sigma-crypto",
-    "SIGMA_MT5": "C:\\Users\\User\\Desktop\\sigma-mt5",
     "SIGMA_QUANT": "C:\\Users\\User\\Desktop\\sigma-quant",
     "SIGMA_LINKEDIN": "C:\\Users\\User\\Desktop\\sigma-linkedin",
     "SIGMA_RESEARCH": "C:\\Users\\User\\Desktop\\sigma-research"
@@ -48,65 +44,30 @@
           {
             "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/archive_handovers.py\"",
-            "timeout": 5000,
-            "once": true
+            "timeout": 10
           },
           {
             "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/prune_handover_archive.py\" --days 2 --apply",
-            "timeout": 5000,
-            "once": true
+            "timeout": 10
           },
           {
             "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/session_brief.py\"",
-            "timeout": 5000,
-            "once": true
-          },
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "once": true,
-            "statusMessage": "SessionStart"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "once": true,
-            "statusMessage": "SessionEnd"
+            "timeout": 15,
+            "statusMessage": "session brief"
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "PreToolUse"
-          }
-        ]
-      },
-      {
         "matcher": "mcp__playwright__browser_navigate",
         "hooks": [
           {
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/playwright_guard.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       },
@@ -116,7 +77,7 @@
           {
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/protocol_guard.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       },
@@ -126,69 +87,19 @@
           {
             "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/claim_lint.py\"",
-            "timeout": 10000
+            "timeout": 10
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "PostToolUse"
-          }
-        ]
-      },
-      {
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/edit_watcher.py",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "PostToolUseFailure"
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "PermissionRequest"
-          }
-        ]
-      }
-    ],
-    "PermissionDenied": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "PermissionDenied"
+            "timeout": 5
           }
         ]
       }
@@ -198,29 +109,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "UserPromptSubmit"
-          },
-          {
-            "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/context_watch.py\"",
-            "timeout": 5000,
+            "timeout": 5,
             "statusMessage": "context-watch"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "Notification"
           }
         ]
       }
@@ -231,7 +122,7 @@
           {
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
+            "timeout": 5,
             "async": true,
             "statusMessage": "Stop"
           }
@@ -242,7 +133,7 @@
           {
             "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/claim_lint.py\"",
-            "timeout": 10000
+            "timeout": 10
           }
         ]
       }
@@ -253,88 +144,9 @@
           {
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
+            "timeout": 5,
             "async": true,
             "statusMessage": "StopFailure"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "SubagentStart"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "SubagentStop"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "once": true,
-            "statusMessage": "PreCompact"
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "PostCompact"
-          }
-        ]
-      }
-    ],
-    "Setup": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 30000,
-            "async": true,
-            "statusMessage": "Setup"
-          }
-        ]
-      }
-    ],
-    "TaskCreated": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "TaskCreated"
           }
         ]
       }
@@ -345,127 +157,9 @@
           {
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
+            "timeout": 5,
             "async": true,
             "statusMessage": "TaskCompleted"
-          }
-        ]
-      }
-    ],
-    "TeammateIdle": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "TeammateIdle"
-          }
-        ]
-      }
-    ],
-    "ConfigChange": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "ConfigChange"
-          }
-        ]
-      }
-    ],
-    "WorktreeCreate": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "WorktreeCreate"
-          }
-        ]
-      }
-    ],
-    "WorktreeRemove": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "WorktreeRemove"
-          }
-        ]
-      }
-    ],
-    "InstructionsLoaded": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "InstructionsLoaded"
-          }
-        ]
-      }
-    ],
-    "Elicitation": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "Elicitation"
-          }
-        ]
-      }
-    ],
-    "ElicitationResult": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "ElicitationResult"
-          }
-        ]
-      }
-    ],
-    "CwdChanged": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "CwdChanged"
-          }
-        ]
-      }
-    ],
-    "FileChanged": [
-      {
-        "matcher": ".envrc|.env|.env.local",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5000,
-            "async": true,
-            "statusMessage": "FileChanged"
           }
         ]
       }
