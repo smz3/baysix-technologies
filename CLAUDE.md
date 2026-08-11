@@ -49,6 +49,7 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **Paper agents — FIND vs DISSECT are now two separate agents (updated 2026-06-16)**
 5. **`quant-researcher` = permanently Sonnet, FIND-only.** It ONLY searches for + surfaces papers (cheap fan-out). **`paper-dissector` = permanently Opus, DISSECT-only** — the "separate room" that deep-reads a keeper's `.md` in its own context and returns the distilled dissection (token firewall). Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. Both agents have `model` pinned in their frontmatter — no need to pass `model` per call, but still tell Syafiq which ran ("find on Sonnet / dissect on Opus"). (Reversed 2026-05-28 Sonnet-only-dissect on 2026-06-09; split DISSECT off QR into its own Opus agent 2026-06-16.)
+    - **Firing condition (added 2026-08-11):** the harness forbids spawning agents unless Syafiq asks. So this rule defines *how* paper agents run when invoked, not a licence to auto-fire them. Say "want me to run FIND?" and wait — never spawn `quant-researcher` / `paper-dissector` unprompted.
 5b. **Paper pipeline (HARD, set 2026-06-16) — FIND → ACQUIRE → EXTRACT → DISSECT, dissect on the `.md` NEVER the PDF:**
     - **FIND** (`quant-researcher`, Sonnet) → **ACQUIRE** [fetch_papers.py](research/code/io/fetch_papers.py) downloads PDF to `research/papers/<family>/` → **EXTRACT** [extract_pdf.py](research/code/io/extract_pdf.py) (Docling) converts PDF → `<stem>.md` source text → **DISSECT** (`paper-dissector`, Opus) reads the **`.md`** in-subagent and returns a distilled summary.
     - **BANNED:** native vision / Read-PDF-mode to dissect a PDF directly. It burns vision tokens AND lands the whole paper in main context. Extraction is Docling-only (chosen for table fidelity over pymupdf4llm; Nougat rejected — hallucinates numbers). Figures-as-images are a known gap → record as a limitation, never vision-read the PDF to recover them.
@@ -70,9 +71,11 @@ Decoupled repos (Desktop-level, own git remotes):
 12. **Long-running commands (>10s)** — model fits, data loads, migrations — launch in a new PowerShell window via `Start-Process`. Never `run_in_background`; Syafiq needs live output.
 
 **Communication**
-13. **Smart Summary on research/decisions** — end research findings and strategy decisions with a `## 🧠 Smart Summary` of 2–4 plain-English bullets (point form, zero jargon — no R-multiples/t-stats/regime), explaining what we did/found like to a smart friend who doesn't trade. Technical answer on top. Skip it on pure infra/cleanup/config/chore replies unless asked.
-14. **Bullet-point format (HARD RULE)** — ALL explanation, regardless of topic, MUST be in bullet-point form. No prose paragraphs. This applies to the technical answer too, not just the Smart Summary. Flagged repeatedly by Syafiq — make it permanent.
-15. **Brevity (HARD RULE)** — see global directives. Project-specific: Smart Summary (rule 13) still applies where required, but the technical answer above it stays tight.
+13. **Answer format (HARD, single rule — supersedes the old 13/14/15 trio).** Every reply, in this order:
+    - **Bullets, always.** All explanation is bullet-point form — technical answer included. No prose paragraphs. Factual/comparison = `x = y` lines.
+    - **Answer first, then stop.** Lead with the verdict in the first 1–2 lines. Default ceiling ~150 words; longer only on "expand"/"go deep"/"full breakdown". Depth of topic ≠ licence for length.
+    - **`## 🧠 Smart Summary` is the ONE permitted section header** (this is the carve-out from the global "no section headers" ban). 2–4 plain-English bullets, zero jargon (no R-multiples/t-stats/regime), last thing in the reply. Required on research findings + strategy decisions; skip on infra/cleanup/config/chore unless asked. It does not buy the technical answer above it any extra length.
+    - Any file DELETED in the work gets named explicitly in the Smart Summary.
 16. **Never caveat mid-price (HARD).** A number is cost-free unless it is a G2/tester result, where you say "net" once. No disclaimers about spread/cost during logic work — ever.
 
 ---
@@ -80,6 +83,8 @@ Decoupled repos (Desktop-level, own git remotes):
 ## Startup
 
 1. The SessionStart hook prints the live **open backlog**, recently resolved tasks, and latest results straight from `research.db` (via [.claude/hooks/scripts/session_brief.py](.claude/hooks/scripts/session_brief.py)). Read it — it is the source of truth for what is open and what is already tested.
-2. Read the latest [memory/](memory/) handover (the brief names the file) for the narrative + caveats.
+2. Read the latest handover in the **repo** [memory/](memory/) dir (the brief names the file) for the narrative + caveats. Note there are two `memory/` dirs: this one holds session handovers; auto-memory (MEMORY.md + fact files) lives under `~/.claude/projects/c--Users-User-Desktop-baysix-technologies/memory/` and is injected automatically — never confuse the two.
 3. Before proposing any work, reconcile against `open_backlog` (P1 first) + `log_agent` for the active idea (rule 6), and check `strategy_log.get_live_config(idea_id)` for its current frozen config. Never re-surface a resolved task or re-run logged work.
 4. Brief Syafiq: "Here's where we left off" → Claude agent decides the priority task.
+
+**Priority rule (set 2026-08-11): GRW outranks FOB.** The $20 barrier run is the mission, so an open GRW task beats an open FOB task of the same P-level — always. FOB keeps running as research (it is 38 tasks deep and feeds GRW its strategy), but it never preempts a live GRW task. Backlog volume is NOT a priority signal; the mandate is.
