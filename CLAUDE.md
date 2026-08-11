@@ -49,7 +49,6 @@ Decoupled repos (Desktop-level, own git remotes):
 
 **Paper agents — FIND vs DISSECT are now two separate agents (updated 2026-06-16)**
 5. **`quant-researcher` = permanently Sonnet, FIND-only.** It ONLY searches for + surfaces papers (cheap fan-out). **`paper-dissector` = permanently Opus, DISSECT-only** — the "separate room" that deep-reads a keeper's `.md` in its own context and returns the distilled dissection (token firewall). Strategy/ideation and coding/backtests are done **inline by Claude**, never delegated. Both agents have `model` pinned in their frontmatter — no need to pass `model` per call, but still tell Syafiq which ran ("find on Sonnet / dissect on Opus"). (Reversed 2026-05-28 Sonnet-only-dissect on 2026-06-09; split DISSECT off QR into its own Opus agent 2026-06-16.)
-    - **Firing condition (added 2026-08-11):** the harness forbids spawning agents unless Syafiq asks. So this rule defines *how* paper agents run when invoked, not a licence to auto-fire them. Say "want me to run FIND?" and wait — never spawn `quant-researcher` / `paper-dissector` unprompted.
 5b. **Paper pipeline (HARD, set 2026-06-16) — FIND → ACQUIRE → EXTRACT → DISSECT, dissect on the `.md` NEVER the PDF:**
     - **FIND** (`quant-researcher`, Sonnet) → **ACQUIRE** [fetch_papers.py](research/code/io/fetch_papers.py) downloads PDF to `research/papers/<family>/` → **EXTRACT** [extract_pdf.py](research/code/io/extract_pdf.py) (Docling) converts PDF → `<stem>.md` source text → **DISSECT** (`paper-dissector`, Opus) reads the **`.md`** in-subagent and returns a distilled summary.
     - **BANNED:** native vision / Read-PDF-mode to dissect a PDF directly. It burns vision tokens AND lands the whole paper in main context. Extraction is Docling-only (chosen for table fidelity over pymupdf4llm; Nougat rejected — hallucinates numbers). Figures-as-images are a known gap → record as a limitation, never vision-read the PDF to recover them.
@@ -71,13 +70,11 @@ Decoupled repos (Desktop-level, own git remotes):
 12. **Long-running commands (>10s)** — model fits, data loads, migrations — launch in a new PowerShell window via `Start-Process`. Never `run_in_background`; Syafiq needs live output.
 
 **Communication**
-13. **Answer format (HARD, single rule — supersedes the old 13/14/15 trio).** Every reply, in this order:
-    - **Bullets, always.** All explanation is bullet-point form — technical answer included. No prose paragraphs. Factual/comparison = `x = y` lines.
-    - **Answer first, then stop.** Lead with the verdict in the first 1–2 lines. Default ceiling ~150 words; longer only on "expand"/"go deep"/"full breakdown". Depth of topic ≠ licence for length.
-    - **Plain English is the DEFAULT register (HARD, set 2026-08-11)** — see the global directive. The Smart-Summary voice is now the WHOLE reply, not a trailing translation: bold plain-word verdict first, short jargon-free bullets, no file paths or metrics unless the number IS the answer. The technical register (result_ids, links, t-stats, full detail) unlocks only on "expand"/"elaborate"/"go deep"/"full breakdown".
-    - **`## 🧠 Smart Summary` is the ONE permitted section header** (this is the carve-out from the global "no section headers" ban). 2–4 plain-English bullets, zero jargon (no R-multiples/t-stats/regime), last thing in the reply. Required on research findings + strategy decisions; skip on infra/cleanup/config/chore unless asked. **When the whole reply is already plain (the default), the summary is redundant — skip it and just answer.** It does not buy the technical answer above it any extra length.
+13. **Smart Summary — the project-only piece.** Answer format itself (plain English, bullets, ~150-word ceiling, unlock words) lives in the global directives; do not restate it here.
+    - **`## 🧠 Smart Summary` is the ONE permitted section header.** 2–4 plain-English bullets, zero jargon (no R-multiples/t-stats/regime), last thing in the reply.
+    - **Required** on research findings + strategy decisions. **Skip** on infra/cleanup/config/chore unless asked — and skip whenever the reply above it is already plain (the default), which makes it a duplicate.
     - Any file DELETED in the work gets named explicitly in the Smart Summary.
-16. **Never caveat mid-price (HARD).** A number is cost-free unless it is a G2/tester result, where you say "net" once. No disclaimers about spread/cost during logic work — ever.
+14. **Never caveat mid-price (HARD).** A number is cost-free unless it is a G2/tester result, where you say "net" once. No disclaimers about spread/cost during logic work — ever.
 
 ---
 
