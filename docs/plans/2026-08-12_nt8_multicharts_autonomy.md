@@ -201,6 +201,49 @@ effort is better spent on it.
 
 ---
 
+## 6. Addendum — sim account, Strategy Analyzer, and the data reality (added same day)
+
+Follow-up question: does NT8 have a demo account and an MT5-Strategy-Tester equivalent, for futures
+and ETF work on real (or synthetic) data?
+
+**Yes to both, and the tester is better than MT5's.** All **CITED** unless marked.
+
+- **Free forever** for charting, backtesting and simulation. You pay only to trade live. **CITED.**
+- **Sim101** is the built-in simulated account — tracks cash, P&L and margin like a live one, no
+  expiry, tied to the install. Extra sim accounts need Multi-Provider mode enabled in Options. **CITED.**
+- **Strategy Analyzer** = the Strategy Tester equivalent: trade-by-trade reports, parameter
+  optimization (exhaustive and genetic), and **walk-forward analysis built in**, including anchored
+  mode. MT5 has no native WFO. **CITED.**
+- **Market Replay / Playback** replays stored tick data in real time — closer to a live dry-run than
+  MT5's visual mode. **CITED.**
+
+**The binding constraint is data, not the platform.** **CITED** for each figure:
+
+| Source | What you get free |
+|---|---|
+| Market Replay (NT servers) | ~90 days of tick replay, popular instruments only |
+| Kinetick free | End-of-day (daily) only — stocks, futures, FX |
+| Kinetick paid | 180 days of tick |
+| Continuum | ~1 year of historical tick |
+| NT demo trial | 14 days of live streaming data; afterwards live is simulated/delayed, historical still real |
+| Simulated Data Feed | no historical data at all — chart starts building from now |
+
+Multi-year intraday/tick for futures is a paid purchase (Portara, FirstRate Data). **CITED.**
+
+**DERIVED — the practical route:** NT8 imports arbitrary CSV as a custom instrument
+(`yyyyMMdd HHmmss;price;volume`), so bring-your-own-data sidesteps the whole feed question, works
+identically for synthetic series, and reuses the Arctic-style store we already run. Buy or generate
+once, import, backtest offline forever.
+
+**ASSUMED, flag before trusting a number:** Strategy Analyzer fills against bar data by default.
+Given the standing real-ticks-only rule, any NT8 result must be run with **Tick Replay** (or a tick
+data series) enabled, otherwise it flatters the edge the same way MT5 open-prices mode does. Verify
+this setting exists and is on before logging a single result.
+
+**DERIVED:** futures over ETFs is the right instinct for a first build — one exchange licence,
+continuous sessions, cleaner contract-level cost modelling, and no free intraday equity data anyway
+(Kinetick free is daily-only for stocks/ETFs).
+
 ## Sources
 
 - [Automating Compilation and Backtesting of NinjaScript Code — NT forum](https://forum.ninjatrader.com/forum/ninjatrader-8/add-on-development/1261077-automating-compilation-and-backtesting-of-ninjascript-code)
@@ -221,3 +264,10 @@ effort is better spent on it.
 - [Self-Adaptive Trading — MultiCharts help](https://www.multicharts.com/trading-software/index.php?title=Self-Adaptive_Trading)
 - [Portfolio Trader command line options — MultiCharts forum](https://www.multicharts.com/discussion/viewtopic.php?t=50270)
 - [MultiCharts SDK / Data API](https://www.multicharts.com/features/sdk/)
+- [NinjaTrader Trading Simulator](https://ninjatrader.com/trading-platform/trading-simulator/)
+- [Operations > Simulator — NT8 help guide](https://ninjatrader.com/support/helpguides/nt8/simulation.htm)
+- [Backtest a Strategy — NT8 help guide](https://ninjatrader.com/support/helpguides/nt8/backtest_a_strategy.htm)
+- [Operations > Playback Connection — NT8 help guide](https://ninjatrader.com/support/helpguides/nt8/playback.htm)
+- [Historical Data by Provider — NT8 help guide](https://ninjatrader.com/support/helpguides/nt8/data_by_provider.htm)
+- [Kinetick free end-of-day data for NinjaTrader](https://kinetick.com/NinjaTrader)
+- [How far back Market Replay goes — NT forum](https://forum.ninjatrader.com/forum/ninjatrader-8/platform-technical-support-aa/1336348-how-can-i-get-market-replay-data-from-3-months-ago)
