@@ -244,6 +244,50 @@ this setting exists and is on before logging a single result.
 continuous sessions, cleaner contract-level cost modelling, and no free intraday equity data anyway
 (Kinetick free is daily-only for stocks/ETFs).
 
+## 7. Addendum — StrategyQuant QuantDataManager as the data pipe (added same day)
+
+Question: can QuantDataManager (QDM) feed this?
+
+**Right pipe, wrong reservoir for futures.**
+
+### What it does well — **CITED**
+- Free; Pro is **$49 lifetime** and buys download speed (10–15× CDN), verified downloads and no ads.
+  The data itself is free either way.
+- **Exports NinjaTrader tick format and NinjaTrader bar format natively**, alongside MT4/MT5 FXT/HST,
+  Amibroker, Tradestation, Forex Tester, and generic comma/tab CSV. Direct pipe into NT8, no adapter.
+- **Has a command line**: `QDataManager_console.exe`, with add/edit/delete symbols (`-a`/`-e`/`-d`),
+  instruments (`-ia`/`-ie`/`-il`), import (`-di`), export (`-de`), clone with timezone and
+  weekend-removal (`-dc`), and update-all (`-u`). Example:
+  ```
+  QDataManager_console.exe -a symbols=EURUSD,GBPUSD datasource=dukascopy datatype=TICK
+  QDataManager_console.exe -de symbols=EURUSD_M1 timeframe=M1 datefrom=2018.01.01 dateto=2018.12.31
+  ```
+  **Caveat:** that doc page states it covers builds **prior to 119** — re-verify the flags against the
+  installed build before wiring anything to them.
+- Free sources: Dukascopy (forex, metals, CFDs — tick and minute), Yahoo (stocks), Darwinex,
+  Binance / Bitfinex / Coinbase / Poloniex (crypto), plus a flexible importer for arbitrary CSV.
+
+### Where it fails for futures — **CITED unless marked**
+- StrategyQuant's own page: *"Commodity data are paid, there is no free source available."*
+- There is **no real CME futures source**. The nearest thing is Dukascopy's `USA500.IDX`, a CFD whose
+  price correlates with the front-month S&P futures contract.
+- **DERIVED:** a CFD is not a futures contract — no contract months, no roll, no exchange volume, and
+  broker-specific spreads. Every one of those matters to the strategies we would build.
+- StrategyQuant's own forum, on using Dukascopy index data to trade index products: *"every broker
+  using different specs and most probably your backtest will be a lie"*, contrasting CFD spreads with
+  micro-futures spreads of ~1–2 ticks.
+- Some Dukascopy symbols (bond CFDs, some stock CFDs, parts of the crypto/ETF/indices lists) are
+  missing from QDM's downloadable list. **CITED.**
+- **DERIVED:** Yahoo covers ETFs but as daily bars — it does not solve intraday ETF work either.
+
+### Call
+- **Use QDM** for FX/metals tick (including XAUUSD) and as the general CSV pipe into NT8. Its CLI makes
+  the acquire-and-export step scriptable, which fits the loop.
+- **Do not use it to source futures data.** For the futures build, start on NT8's own free Market
+  Replay (~90 days) and Continuum (~1 year tick) to get a first credible run, then decide whether
+  multi-year CME tick is worth buying (Databento / FirstRate Data / Portara). **ASSUMED** that ~1 year
+  of tick is enough for a first honest read, not enough for a regime-robustness claim.
+
 ## Sources
 
 - [Automating Compilation and Backtesting of NinjaScript Code — NT forum](https://forum.ninjatrader.com/forum/ninjatrader-8/add-on-development/1261077-automating-compilation-and-backtesting-of-ninjascript-code)
@@ -271,3 +315,9 @@ continuous sessions, cleaner contract-level cost modelling, and no free intraday
 - [Historical Data by Provider — NT8 help guide](https://ninjatrader.com/support/helpguides/nt8/data_by_provider.htm)
 - [Kinetick free end-of-day data for NinjaTrader](https://kinetick.com/NinjaTrader)
 - [How far back Market Replay goes — NT forum](https://forum.ninjatrader.com/forum/ninjatrader-8/platform-technical-support-aa/1336348-how-can-i-get-market-replay-data-from-3-months-ago)
+- [QuantDataManager — StrategyQuant](https://strategyquant.com/quantdatamanager/)
+- [QuantDataManager command line interface help](https://strategyquant.com/doc/quantdatamanager/quant-data-manager-command-line-interface-help/)
+- [Export tick data to CSV for NinjaTrader — SQ forum](https://strategyquant.com/forum/topic/export-tick-data-to-csv-file-for-ninjatrader/)
+- [Data for CFD trading strategies — SQ forum](https://strategyquant.com/forum/topic/data-for-cfd-trading-strategies/)
+- [Dukascopy tick data missing symbols — SQ forum](https://strategyquant.com/forum/topic/dukascopy-tick-data-missing-symbols/)
+- [Dukascopy S&P 500 Index CFD](https://www.dukascopy.com/swiss/english/cfd/range-of-markets/sp-500-index/)
