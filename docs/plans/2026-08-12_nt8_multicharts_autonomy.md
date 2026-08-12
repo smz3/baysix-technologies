@@ -288,6 +288,75 @@ Question: can QuantDataManager (QDM) feed this?
   multi-year CME tick is worth buying (Databento / FirstRate Data / Portara). **ASSUMED** that ~1 year
   of tick is enough for a first honest read, not enough for a regime-robustness claim.
 
+## 8. Addendum — solving the futures/ETF data bottleneck (added same day)
+
+Question: where do we actually get historical GC (COMEX gold futures) or gold-ETF data good enough to
+build and test on?
+
+### 8.1 The reframe that comes first — **DERIVED**
+We already hold **511M XAUUSD ticks, 2016→2026, in Arctic**. Spot gold and GC futures are the same
+underlying. So the bottleneck is not "data to *build* on" — it is "a clean futures sample to *check*
+the logic survives the venue change". That turns a four-figure data purchase into a small one.
+
+What changes when porting spot gold logic to GC (**DERIVED**, each must be handled explicitly):
+- contract months and rolls (spot has none)
+- session shape — Globex ~23h with a daily break, vs 24/5 spot
+- costs become commission + exchange fee **per contract**, not spread
+- tick size $0.10 = $10/contract on GC, $1 on MGC
+- **real exchange volume exists** — that is an upgrade, a signal class spot never gave us
+
+### 8.2 Ranked sources — all prices **CITED**
+
+**1. Databento — best fit, start here.**
+- CME Globex MDP 3.0 (`GLBX.MDP3`): all futures and options on CME, CBOT, NYMEX, COMEX, 650k+ symbols.
+- **History back to 2010-06-06.** Pre-2017 is capped at MBP-10 granularity (legacy FIX/FAST carried no
+  full MBO).
+- Covers `GC`, `MGC` (micro), `QO` (e-mini), `1OZ`.
+- **$0.50/GB usage-based, plus $125 free credits on signup.**
+- **ASSUMED — must be measured, not trusted:** trades/OHLCV-1m for one metal over ~15 years is small
+  relative to $125 of credit; MBO/MBP-10 is not. Pull the cheap schemas first and check the invoice
+  before scaling up.
+- Python API — drops straight into the existing Arctic stack, and re-exports to NT8's CSV format.
+
+**2. Kibot — one-time purchase, no subscription.**
+- Top-10 continuous futures: **1-min $220 · tick + bid/ask $800**
+- Top-25 continuous futures: **1-min $330 · tick + bid/ask $1,200**
+- All futures, continuous + individual contracts (9,600+): **1-min $820 · tick + bid/ask $3,750**
+- Top-50 ETFs: **1-min $450 · tick + bid/ask $1,350** · All ETFs: **1-min $1,200 · tick $3,600**
+- Continuous series built **without back-adjustment**, so we apply our own roll method — good.
+- Free samples exist but are stocks/ETFs only; futures samples on request.
+
+**3. FirstRate Data — cheapest broad coverage, bars not ticks for GC.**
+- GC: **1-min/5-min/30-min/1-hour/1-day, 31-Jan-2008 → present**; individual contracts from `GCZ08`
+  plus continuous in unadjusted / absolute-adjusted / ratio-adjusted flavours; zipped CSV.
+- No tick tier shown for GC on that page. Updates are **$99.95/yr** after the first free month.
+- Purchase price is not printed on the instrument page — check the bundle pages. One 2021 forum report
+  cites ~€200 for 70 futures back to 2006; **treat as indicative and stale, not a quote.**
+- GLD ETF: ~21 years of 1-min available.
+
+**4. Free options, and their real limits.**
+- **NinjaTrader itself**: ~90 days Market Replay, ~1 year Continuum tick. Enough for a first honest
+  run; not enough for a regime claim.
+- **Interactive Brokers API**: free with an account, but **expired futures data older than two years
+  past expiry is unavailable**, plus pacing limits (60 requests/10 min, 50 concurrent). **DERIVED:**
+  the 2-year rule makes IB unusable for multi-year individual-contract backtests. Fine for recent data.
+- **CME DataMine**: the official source, priced accordingly.
+- **TradingView**: CME real-time from $7/month — a viewing subscription, not a bulk download.
+
+### 8.3 Recommended sequence — **DERIVED**
+1. Sign up to Databento, spend the **free $125** on `GC` + `MGC`: OHLCV-1m for 2010→now, plus trades
+   for the most recent 2–3 years. Measure the actual cost before going wider.
+2. Land it in Arctic beside XAUUSD; reuse the existing loaders.
+3. Export to NT8 tick/bar CSV for the platform work (QDM or a 50-line writer both do this).
+4. Buy breadth (Kibot top-10 tick at $800, or a FirstRate bundle) **only after** the loop has produced
+   one result worth widening.
+
+### 8.4 The honest flag — **DERIVED**
+Futures carry a hard minimum capital that the live $20 barrier mandate cannot meet: one MGC contract
+needs margin in the thousands, not tens. So this is a **separate research track**, justified as
+engine-and-venue independence plus access to real volume — **not** a route to the GRW mission. Worth
+saying out loud before any money is spent on data.
+
 ## Sources
 
 - [Automating Compilation and Backtesting of NinjaScript Code — NT forum](https://forum.ninjatrader.com/forum/ninjatrader-8/add-on-development/1261077-automating-compilation-and-backtesting-of-ninjascript-code)
@@ -321,3 +390,13 @@ Question: can QuantDataManager (QDM) feed this?
 - [Data for CFD trading strategies — SQ forum](https://strategyquant.com/forum/topic/data-for-cfd-trading-strategies/)
 - [Dukascopy tick data missing symbols — SQ forum](https://strategyquant.com/forum/topic/dukascopy-tick-data-missing-symbols/)
 - [Dukascopy S&P 500 Index CFD](https://www.dukascopy.com/swiss/english/cfd/range-of-markets/sp-500-index/)
+- [Databento CME Globex MDP 3.0 dataset](https://databento.com/datasets/GLBX.MDP3)
+- [Databento — CME history extended to 2010](https://databento.com/blog/CME-history-extended-to-2010)
+- [Databento — CME Gold Futures (GC)](https://databento.com/datasets/GLBX.MDP3/futures/GC)
+- [Kibot data packages and pricing](https://www.kibot.com/buy.html)
+- [Kibot free historical intraday samples](https://www.kibot.com/free-historical-intraday-data.html)
+- [FirstRate Data — Gold Futures (GC)](https://firstratedata.com/i/futures/GC)
+- [FirstRate Data — GLD ETF](https://firstratedata.com/i/etf/GLD)
+- [IBKR TWS API historical data limitations](https://interactivebrokers.github.io/tws-api/historical_limitations.html)
+- [CME DataMine](https://www.cmegroup.com/datamine.html)
+- [Where to get free or cheap historical futures data — QuantVPS](https://www.quantvps.com/blog/cme-historical-data-complete-guide)
