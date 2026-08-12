@@ -357,6 +357,59 @@ needs margin in the thousands, not tens. So this is a **separate research track*
 engine-and-venue independence plus access to real volume — **not** a route to the GRW mission. Worth
 saying out loud before any money is spent on data.
 
+## 9. Addendum — project shape: paper-trade POC, then prop firms (added same day)
+
+**Syafiq's call, 2026-08-12: this is a separate project. It must not touch the MT5 $20 XAUUSD
+mission.** Recorded here so a future session cannot quietly merge them.
+
+### 9.1 Separation — **DERIVED from rule 4a (namespace discipline)**
+Give it its own repo at Desktop level with its own remote, the way `sigma-quant` / `sigma-research`
+are decoupled. Not a subfolder of `baysix-technologies`. Reasons: a shared `research.db` would let
+futures results surface in GRW/FOB gate queries, and column names collide across systems by accident.
+Shared assets are copied deliberately (the barrier objective, the Arctic loaders), never imported by
+proximity.
+
+### 9.2 Phase 1 — paper-trade proof of concept, cost $0
+NT8 is free for charting, backtesting and simulation, and `Sim101` never expires (§6). So the whole
+ideation loop — generate → compile → backtest → score → forward-test on sim — can be proven end to
+end without paying anyone. **DERIVED:** prove the loop before buying data breadth or an evaluation.
+Data for this phase = Databento free credit (§8.3).
+
+### 9.3 Phase 2 — prop firms, and why they fit
+**DERIVED, and this is the interesting part:** a futures prop evaluation *is* a barrier problem.
+Topstep's 50K: **$3,000 profit target against a $2,000 max loss** — hit the target before the floor.
+That is the same objective family as the GRW mandate, so the barrier fitness function ports across
+almost unchanged. One genuine escalation: prop drawdown **trails**. A $50K account with a $2,500
+trailing drawdown that grows to $52,000 has its floor move up to $49,500. So the floor is a function
+of the equity high-water mark, not a constant — a strictly harder and more interesting objective than
+the fixed floor we solve today. **All figures CITED, but from review sites — reconfirm on the firm's
+own rulebook before encoding any of them.**
+
+Cost of entry is small: Topstep 50K evaluation **$109 one-time**; Apex evaluations nominally
+$147–$517 but frequently discounted to ~$35 with promotions, and Apex moved from recurring to
+one-time fees in 2026. **CITED, same caveat.**
+
+### 9.4 The rules that constrain the autonomy — **CITED, verify per firm before building**
+- **Apex:** allows bots during evaluation, but on funded Performance Accounts fully automated
+  "set and forget" is **prohibited** — active human management is required. HFT and certain
+  arbitrage strategies banned.
+- **Topstep:** among the more automation-friendly; offers API access via TopstepX (ProjectX). But
+  **every automated strategy needs prior written approval from their risk team**, with strategy
+  details submitted. HFT, abusive exchange messaging and latency arbitrage are prohibited.
+- **MyFundedFutures** is also named as permitting algorithmic trading.
+- Platforms across the sector: Tradovate, Rithmic, NinjaTrader, ProjectX.
+
+**DERIVED:** so the honest design target is an **autonomous researcher with a supervised trader** —
+the loop discovers and validates strategies unattended, and a human stays in the loop on the funded
+account because the rules require it. Building for fully hands-off funded trading would be building
+something we are not allowed to run.
+
+### 9.5 First three moves
+1. Stand up the separate repo; copy in the barrier objective and the Arctic loader, nothing else.
+2. Databento free credit → GC/MGC into Arctic → NT8 import → one manual backtest of a trivial
+   strategy, to verify the whole chain end to end (including Tick Replay, §6).
+3. Only then automate: custom `OptimizationFitness` first (§2.4), CLI/AddOn driving second.
+
 ## Sources
 
 - [Automating Compilation and Backtesting of NinjaScript Code — NT forum](https://forum.ninjatrader.com/forum/ninjatrader-8/add-on-development/1261077-automating-compilation-and-backtesting-of-ninjascript-code)
@@ -400,3 +453,7 @@ saying out loud before any money is spent on data.
 - [IBKR TWS API historical data limitations](https://interactivebrokers.github.io/tws-api/historical_limitations.html)
 - [CME DataMine](https://www.cmegroup.com/datamine.html)
 - [Where to get free or cheap historical futures data — QuantVPS](https://www.quantvps.com/blog/cme-historical-data-complete-guide)
+- [Algo trading on futures prop firms: what's allowed in 2026](https://propfirmplus.com/algo-trading-on-futures-prop-firms-whats-actually-allowed-in-2026/)
+- [Futures prop firms that allow automated trading (2026)](https://propfirmpinescripts.com/guides/prop-firms-that-allow-automated-trading.html)
+- [Apex vs Topstep 2026 comparison](https://phidiaspropfirm.com/education/apex-vs-topstep)
+- [Futures prop firm evaluation rules: drawdown, daily loss, consistency (2026)](https://godloveuniversity.com/futures-prop-firm-evaluation-rules/)
