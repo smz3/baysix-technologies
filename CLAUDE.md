@@ -37,7 +37,7 @@ Decoupled repos (Desktop-level, own git remotes):
 ## Rules
 
 **Safety & Git**
-1. **Auto commit + push** at natural completion points — stage all (`git add -A`), real message, push to master, no need to ask (standing authorization 2026-06-06). Guardrails: `.gitignore` is the safety net (secrets/.env, data/parquet/csv/pkl, logs, binaries all ignored — keep it airtight); pause and ask only if something sensitive/large looks like it'll slip through, or before any history rewrite / force-push.
+1. **Auto commit + push** at natural completion points — real message, push to master, no need to ask (standing authorization 2026-06-06). **`git add -A` is BANNED (HARD, set 2026-08-12):** several agent harnesses (Claude Code, grokbot, hermes) share ONE working copy on this PC, so `-A` stages another agent's half-finished edits into your commit and two bare `git commit`/`git push` calls race the shared index. Commit through **[agent_commit.py](.claude/hooks/git/agent_commit.py)** instead — it takes an exclusive lock, stages only the paths you name, and pathspec-limits the commit: `python .claude/hooks/git/agent_commit.py -m "msg" --agent claude-code <paths...>`. Enforced by the pre-commit hook (install via [install.sh](.claude/hooks/git/install.sh)), which blocks any commit made while another agent holds the lock. Guardrails: `.gitignore` is the safety net (secrets/.env, data/parquet/csv/pkl, logs, binaries all ignored — keep it airtight); pause and ask only if something sensitive/large looks like it'll slip through, or before any history rewrite / force-push.
 2. **No destructive actions** (`rm -rf`, `reset --hard`, etc.) without telling Syafiq first.
 3. **Never print API keys** — read from `.env` only.
 

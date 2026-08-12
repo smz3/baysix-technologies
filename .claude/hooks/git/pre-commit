@@ -1,13 +1,37 @@
 #!/usr/bin/env bash
-# Baysix pre-commit — BLOCKING handover-lint (task 50).
-# Lints every STAGED memory/*.md handover: result-shaped numbers must cite a
-# step4_results result_id or an on-disk artifact. Exit 1 aborts the commit.
+# Baysix pre-commit — two BLOCKING guards.
+#   1. parallel-agent interleave: refuse a commit made while another harness is
+#      inside agent_commit.py's commit+push critical section.
+#   2. handover-lint (task 50): every STAGED memory/*.md handover must cite a
+#      step4_results result_id or an on-disk artifact for result-shaped numbers.
+# Exit 1 aborts the commit.
 #
 # Tracked source: .claude/hooks/git/pre-commit
 # Install:        cp .claude/hooks/git/pre-commit .git/hooks/pre-commit  (or run install.sh)
 set -euo pipefail
 
 REPO="$(git rev-parse --show-toplevel)"
+
+# resolve a python (py launcher on Windows, else python)
+PY="python"; command -v py >/dev/null 2>&1 && PY="py -3"
+
+# --- GUARD 1: parallel-agent interleave (several harnesses, one working copy) --
+# agent_commit.py holds .git/baysix-agent.lock for its whole commit+push and
+# exports its token. A commit that runs while SOMEONE ELSE holds that lock is an
+# interleaved write into the shared index — abort rather than mix two agents'
+# work into one commit.
+LOCK="$REPO/.git/baysix-agent.lock"
+if [ -f "$LOCK" ]; then
+  HOLDER="$($PY -c "import json,sys;d=json.load(open(sys.argv[1]));print(d.get('token',''),d.get('agent','?'))" "$LOCK" 2>/dev/null || echo "")"
+  HOLDER_TOKEN="${HOLDER%% *}"
+  HOLDER_AGENT="${HOLDER#* }"
+  if [ -n "$HOLDER_TOKEN" ] && [ "$HOLDER_TOKEN" != "${BAYSIX_GIT_LOCK_TOKEN:-}" ]; then
+    echo "[pre-commit] COMMIT BLOCKED — agent '$HOLDER_AGENT' is mid commit+push."
+    echo "             Wait for it, or commit via .claude/hooks/git/agent_commit.py"
+    echo "             so the two are serialised instead of racing."
+    exit 1
+  fi
+fi
 
 # staged (added/copied/modified) markdown under memory/ — case-insensitive
 # (Windows git stores some paths as "Memory/", others "memory/"; match both).
@@ -16,9 +40,7 @@ mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null
 
 [ "${#FILES[@]}" -eq 0 ] && exit 0
 
-# resolve a python (py launcher on Windows, else python)
-PY="python"; command -v py >/dev/null 2>&1 && PY="py -3"
-
+# --- GUARD 2: handover lint (task 50) ------------------------------------------
 echo "[pre-commit] handover-lint on ${#FILES[@]} staged handover file(s)…"
 if ! $PY "$REPO/research/code/infra/handover_lint.py" "${FILES[@]}"; then
   echo ""
