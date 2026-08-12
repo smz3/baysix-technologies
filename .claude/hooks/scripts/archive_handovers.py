@@ -1,10 +1,14 @@
-"""SessionStart handover sweep — keeps ONLY the single latest handover in
-memory/ and moves every other one into memory/_handover_archive/.
+"""SessionStart handover sweep — keeps the WHOLE current day's handovers in
+memory/ and moves every earlier day into memory/_handover_archive/.
 
-Rule (revised 2026-06-10): each day produces several handovers
-(Morning/Afternoon/Afternoon2/Evening/...). Keep just the most recent one for
-easy tracking; archive the rest — including older same-day slots. "Most recent"
-is ranked by (date, slot-of-day, slot-number, mtime): a robust slot order
+Rule (revised 2026-08-12): Syafiq runs several Claude tabs in parallel, so one
+day produces many handovers (Morning/Morning2/.../Evening) and each tab only
+sees a slice of the day. Keeping just the last one hid the other tabs' work, so
+the day is now the unit: every handover whose filename date == the newest date
+present stays in memory/ and is read in order; only strictly older days get
+archived. (Previous rule, 2026-06-10: keep only the single latest handover.)
+
+Ordering is by (date, slot-of-day, slot-number, mtime): a robust slot order
 (Morning < Noon < Afternoon < Evening < Night, with trailing digit as a minor
 key), with file mtime as the final tiebreaker for unknown slot names. Wired into
 the SessionStart hook (.claude/settings.json). Quiet on no-op; never blocks a
@@ -83,12 +87,13 @@ def main():
     if not candidates:
         return  # nothing parseable -> nothing to sweep
 
-    keeper = max(candidates, key=lambda kf: kf[0])[1]  # the single latest
+    # The newest DAY is the keep-set: every handover from that date stays put.
+    today = max(k[0] for k, _ in candidates)
 
     moved = []
-    for _, f in sorted(candidates, key=lambda kf: kf[0]):
-        if f == keeper:
-            continue  # the latest handover stays in memory/
+    for k, f in sorted(candidates, key=lambda kf: kf[0]):
+        if k[0] == today:
+            continue  # same-day handover -> stays in memory/, read in order
         dst = ARCHIVE / f.name
         if dst.exists():
             dst = ARCHIVE / f"{f.stem}_dup{f.suffix}"
@@ -96,7 +101,7 @@ def main():
         moved.append(f.name)
 
     if moved:
-        print(f"[handover-sweep] kept {keeper.name}; archived "
+        print(f"[handover-sweep] kept all of {today}; archived "
               f"{len(moved)} older handover(s): " + ", ".join(moved))
 
 

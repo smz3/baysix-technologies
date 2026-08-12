@@ -10,14 +10,42 @@ DB = REPO / "research" / "db" / "research.db"
 MEM = REPO / "memory"
 
 
-def _latest_handover():
-    files = sorted(MEM.glob("Session_Handover_*.md"))
-    return files[-1].name if files else "(none yet)"
+def _todays_handovers():
+    """All of the current day's handovers, oldest -> newest.
+
+    Parallel Claude tabs each write their own handover, so one day's context is
+    split across several files; the day is the unit of read, not the last file.
+    Ordering reuses archive_handovers._sort_key (slot-aware: Morning2 after
+    Morning, Afternoon after Morning) — lexicographic sorting gets it wrong.
+    """
+    files = list(MEM.glob("Session_Handover_*.md"))
+    if not files:
+        return []
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from archive_handovers import _sort_key
+        keyed = [(k, f) for f in files if (k := _sort_key(f)) is not None]
+        if keyed:
+            day = max(k[0] for k, _ in keyed)  # newest date present
+            return [f.name for k, f in sorted(keyed) if k[0] == day]
+    except Exception:
+        pass
+    return [f.name for f in sorted(files)]  # fallback: never block the brief
 
 
 def main():
     print("=== BAYSIX SESSION START ===\n")
-    print(f"Latest handover: memory/{_latest_handover()}   <- read this FIRST\n")
+    hos = _todays_handovers()
+    if not hos:
+        print("Handovers: (none yet)\n")
+    else:
+        print(f"TODAY'S HANDOVERS ({len(hos)}) <- read ALL of these, in this "
+              f"order, BEFORE anything else:")
+        for i, name in enumerate(hos, 1):
+            tail = "   <- most recent" if i == len(hos) else ""
+            print(f"  {i}. memory/{name}{tail}")
+        print("  (other tabs wrote these today; the last one is not the whole "
+              "picture)\n")
 
     if not DB.exists():
         print(f"(research.db not found at {DB})")
