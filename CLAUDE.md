@@ -8,9 +8,11 @@
 
 Syafiq — 7yr Quant Trader → Quant Researcher (deployable).
 Building an Autonomous Research Agent for systematic strategy discovery, trading XAUUSD live.
-Goal: grow ONE non-reloadable $20 to a fixed target under a **barrier** objective —
-P(target before floor), not log-growth. Not reloadable, no cent account, Pro account.
+Objective is a **barrier** one — P(target before floor) on a single fixed stake, not log-growth.
 The research process must survive out-of-sample; that is the constraint, not the mission.
+
+Account size, target, and the rejected framings live in `docs/private/mandate.md` (gitignored —
+this file is public). **Read it at session start before any GRW sizing or objective work.**
 
 
 ---
@@ -25,7 +27,7 @@ Single repo · github.com/smz3/baysix-technologies. MQL5 systems live in `mt5/{E
 - **[data/arctic/](data/arctic/)** — CANONICAL tick store (ArcticDB, lib `ticks`, symbol `XAUUSD`, 511M ticks 2016→2026, SORTED + seal 2024-05-02; daily = `XAUUSD_DAILY`). Read ONLY via [arctic_io.py](research/code/io/arctic_io.py). Parquet RETIRED + deleted 2026-06-12 (task 51) — sorting is what kills the look-ahead.
 - **[research/models/_archive/](research/models/_archive/)** — orb/hmm/msm, all superseded. `brc/` is PARKED; live model work is `fob/` plus the GRW factory.
 - **[research/config/](research/config/)** — `grw_fitness.json` (versioned objective; a version bump starts a new trial family).
-- **[brokers/justmarkets.yaml](brokers/justmarkets.yaml)** — TCM-001 cost model, re-derived at $20.
+- **[brokers/justmarkets.yaml](brokers/justmarkets.yaml)** — TCM-001 cost model, re-derived at the live stake.
 - **[docs/](docs/)** — `plans/` and `specs/` are dated; `reference/` is evergreen.
 - **[mt5/presets/](mt5/presets/)** — single source for `.set` presets; auto-mirrors to the JM terminal via junctions. **[mt5/tester/](mt5/tester/)** holds per-trade CSV artifacts.
 
@@ -85,4 +87,4 @@ Decoupled repos (Desktop-level, own git remotes):
 3. Before proposing any work, reconcile against `open_backlog` (P1 first) + `log_agent` for the active idea (rule 6), and check `strategy_log.get_live_config(idea_id)` for its current frozen config. Never re-surface a resolved task or re-run logged work.
 4. Brief Syafiq: "Here's where we left off" → Claude agent decides the priority task.
 
-**Priority rule (set 2026-08-11): GRW outranks FOB.** The $20 barrier run is the mission, so an open GRW task beats an open FOB task of the same P-level — always. FOB keeps running as research (it is 38 tasks deep and feeds GRW its strategy), but it never preempts a live GRW task. Backlog volume is NOT a priority signal; the mandate is.
+**Priority rule (set 2026-08-11): GRW outranks FOB.** The barrier run is the mission, so an open GRW task beats an open FOB task of the same P-level — always. FOB keeps running as research (it is 38 tasks deep and feeds GRW its strategy), but it never preempts a live GRW task. Backlog volume is NOT a priority signal; the mandate is.
