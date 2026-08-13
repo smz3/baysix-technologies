@@ -1,0 +1,16 @@
+# Alhazen — local-only working area.
+# private/ holds strategy docs and unshared drafts. This repo is PUBLIC; nothing
+# in here should ever be pushed until it is deliberately promoted to docs/.
+private/
+
+# Recorded market tape and derived stores — never source, never small.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+*.csv
+*.pkl
+
+# Secrets — API keys for venue feeds live in .env only, never in code.
+.env
