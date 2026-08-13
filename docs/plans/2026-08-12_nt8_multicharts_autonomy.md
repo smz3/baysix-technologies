@@ -410,6 +410,47 @@ something we are not allowed to run.
    strategy, to verify the whole chain end to end (including Tick Replay, §6).
 3. Only then automate: custom `OptimizationFitness` first (§2.4), CLI/AddOn driving second.
 
+## 10. Addendum — corrections from the build session (added 2026-08-13)
+
+§9.3's prop-firm figures were CITED from review sites with a caveat to reconfirm. They were
+reconfirmed against Topstep's own help centre on 2026-08-13, and **two of them were wrong**. Both
+matter to the objective, so the corrections live here rather than only in the new repo.
+
+**1. The drawdown does NOT trail the intraday equity high-water mark.** It trails the
+**end-of-day balance**, never moves down, and **locks permanently once it reaches the starting
+balance**. On a 50K the Maximum Loss Limit starts at $48,000 and can rise to at most $50,000.
+§9.3's example — "a $50K account with a $2,500 trailing drawdown that grows to $52,000 has its
+floor move up to $49,500" — has both the mechanism and the ceiling wrong. **CITED:**
+[Topstep — What is the Maximum Loss Limit](https://help.topstep.com/en/articles/8284204-what-is-the-maximum-loss-limit).
+
+**2. But it IS enforced intraday, on equity including unrealized P&L**, and a touch triggers
+immediate market liquidation. So the floor is *set* daily and *tested* continuously. Modelling only
+one of those halves produces a number that looks right and is not. **CITED**, same page.
+
+**3. §9.3 omits the consistency rule entirely, and it is the most shape-changing rule in the set.**
+`best_day_profit / total_profit` must stay at or below 50% on the Trading Combine (40% on Express
+Funded). Breaching it does **not** fail the account — it **raises the profit target** until the
+ratio is satisfied. Rearranged, that is `effective_target = max(profit_target, best_day / 0.50)`,
+which makes the target endogenous to the equity path: one outsized session raises the account's own
+bar. A naive fixed-barrier search would rank exactly the one-lucky-day strategies first. **CITED:**
+[Topstep — Consistency](https://help.topstep.com/en/articles/8284208-consistency-at-topstep).
+
+**4. Still UNVERIFIED: the 50K profit target.** The $3,000 figure in §9.3 is a review-site number and
+was NOT found on any Topstep page read on 2026-08-13. It is encoded in the new repo as UNVERIFIED and
+the objective loader **refuses to run** while it stays that way.
+
+**5. §8 correction — Databento does not sell a ready-made adjusted continuous series.** Continuous
+symbology exists (`GC.c.0` calendar / `GC.v.0` volume / `GC.n.0` open interest; parent `GC.FUT`), but
+**back-adjusted continuous contracts are an open roadmap item, not a product**. Building our own roll
+is therefore required, not a preference. **CITED:**
+[Databento — how to get continuous contracts](https://databento.com/docs/examples/symbology/continuous).
+
+**Where the build went.** §9.5's "first three moves" are underway in a separate Desktop repo,
+`~/Desktop/baysix-factory` (own git, **no remote yet**). One architectural change from §4.2: the
+Python layer is not just the orchestrator, it is the **search engine**, and NT8 is demoted to
+**arbiter** over the top-K only. Reason: §2.3 establishes the `/headless` switches are unsupported by
+the vendor, and putting the search loop on that seam rests the whole factory on it.
+
 ## Sources
 
 - [Automating Compilation and Backtesting of NinjaScript Code — NT forum](https://forum.ninjatrader.com/forum/ninjatrader-8/add-on-development/1261077-automating-compilation-and-backtesting-of-ninjascript-code)
