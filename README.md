@@ -62,12 +62,13 @@ research/          ← the core. Python research engine, gates, DB layer, models
   ├── models/        one folder per idea (active line + retired/archived lines)
   ├── db/            SQLite research + execution databases
   ├── dashboard/     Streamlit research dashboard
+  ├── data/arctic/   511M-tick ArcticDB store (read-only interface)
+  ├── b2b/           earlier zone-detection engine (Python + docs)
+  ├── brokers/       venue cost models (spread/commission specs)
   └── tests/         pytest suites
-mt5/               ← MQL5 Expert Advisors + Strategy Tester exports (the verifier)
-b2b/               ← earlier zone-detection engine (Python + docs)
-data/arctic/       ← 511M-tick ArcticDB store (read-only interface)
+platforms/         ← execution venues (MT5, NinjaTrader, IBKR)
+  └── mt5/           MQL5 Expert Advisors + Strategy Tester exports (the verifier)
 docs/              ← design specs, reference schemas, protocols
-brokers/           ← venue cost models (spread/commission specs)
 ```
 
 **Start in [`research/`](research/)** — that's the crown jewel.

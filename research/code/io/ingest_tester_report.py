@@ -8,7 +8,7 @@ each export overwrites the last). This tool:
      + the run-level Results summary (net profit, PF, max DD%, win-rate, n_trades),
   2. writes a tester_runs row via research.code.tester.ingest_tester_run() -> run_id,
   3. renames/moves the file to  run{run_id:03d}_{idea}_{source}_dep{dep}_{start}_{end}.xlsx
-     under mt5/strategy_tester_xlsx/  (preserving it before the next run overwrites it).
+     under platforms/mt5/strategy_tester_xlsx/  (preserving it before the next run overwrites it).
 
 Per-trade ingest (tester_trades) for the FIDELITY diff is task 43 — the .xlsx Deals
 section has price/time/PnL but NOT range_w (the 1R unit), so realized_R needs the EA
@@ -32,7 +32,7 @@ import openpyxl
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from research.code.io import tester
 
-REPORT_DIR = Path(__file__).resolve().parents[2].parent / "mt5" / "strategy_tester_xlsx"
+REPORT_DIR = Path(__file__).resolve().parents[2].parent / "platforms" / "mt5" / "strategy_tester_xlsx"
 RAW_GLOB = "ReportTester-*.xlsx"
 
 

@@ -4,7 +4,7 @@
 """
 import pandas as pd, numpy as np
 
-R_DIR = "data/fob_payload/run_19"; K = 0.5; SETUP = "H4"
+R_DIR = "research/data/fob_payload/run_19"; K = 0.5; SETUP = "H4"
 z = pd.read_parquet(f"{R_DIR}/zones.parquet")
 e = pd.read_parquet(f"{R_DIR}/events.parquet")
 c = pd.read_parquet(f"{R_DIR}/cycles.parquet")

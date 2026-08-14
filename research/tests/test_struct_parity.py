@@ -18,7 +18,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 STRUCT = REPO / "research" / "models" / "struct" / "struct001"
 sys.path.insert(0, str(STRUCT))
-sys.path.insert(0, str(REPO / "b2b"))
+sys.path.insert(0, str(REPO / "research" / "b2b"))
 sys.path.insert(0, str(REPO / "research" / "code" / "io"))
 
 

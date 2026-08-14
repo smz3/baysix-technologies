@@ -118,11 +118,11 @@ security_alerts.log
 *.zip
 
 # ArcticDB local store (LMDB backend — large binary, never commit)
-data/arctic/
+research/data/arctic/
 *.lmdb
 
 # FOB raw payload (task 229 data-plane split — Parquet-per-run, derivable from emit CSV)
-data/fob_payload/
+research/data/fob_payload/
 
 # Secrets scanner output
 Sandbox/
@@ -156,11 +156,11 @@ research/papers/**/*.md
 research/db/*.pre40_rebuild
 
 # Auto-generated provenance headers (regenerated each compile via gen_version.py <system>)
-mt5/Include/brc_system/brc_version.mqh
-mt5/Include/fob_system/fob_version.mqh
+platforms/mt5/Include/brc_system/brc_version.mqh
+platforms/mt5/Include/fob_system/fob_version.mqh
 
 # transient tester sentinels
-mt5/tester/_*.done
+platforms/mt5/tester/_*.done
 
 # personal / job-hunt artifacts — NEVER in this public repo (task 19)
 docs/job-hunt/
@@ -172,7 +172,7 @@ docs/job-hunt/
 *[Rr]esume*
 cv_text.txt
 !research/papers/**/*.docx
-mt5/Include/grw_system/grw_version.mqh
+platforms/mt5/Include/grw_system/grw_version.mqh
 
 # FUSE filesystem artifacts (deleted-but-open file handles) — never source
 .fuse_hidden*

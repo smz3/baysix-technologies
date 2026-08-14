@@ -1,4 +1,4 @@
-"""Generate mt5/Include/<system>_system/<system>_version.mqh from git state.
+"""Generate platforms/mt5/Include/<system>_system/<system>_version.mqh from git state.
 
 Pre-compile step for any Baysix trader/emitter EA: stamps the exact git sha /
 branch / dirty-flag / build-time into a header the EA prints on OnInit, so every
@@ -30,7 +30,7 @@ def _git(*args: str) -> str:
 def gen(system: str) -> Path:
     sys_lc = system.lower()
     SYS = sys_lc.upper()
-    out = REPO / "mt5" / "Include" / f"{sys_lc}_system" / f"{sys_lc}_version.mqh"
+    out = REPO / "platforms" / "mt5" / "Include" / f"{sys_lc}_system" / f"{sys_lc}_version.mqh"
     if not out.parent.exists():
         raise SystemExit(f"[gen_version] no such include dir: {out.parent.relative_to(REPO)}")
 

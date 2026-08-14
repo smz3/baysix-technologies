@@ -1,0 +1,47 @@
+# Strategy V5.4 - Location Filter (PROPOSED)
+## The "No Roadblocks" Logic
+
+### Philosophy: "It's About Location, Not Obstacles."
+
+This version removes the concept of "Roadblocks" entirely and replaces it with strict **Location Filters**.
+
+---
+
+### 1. Location Filter Logic (The New Gate)
+**Ref**: [StrategyOrchestrator.mqh](file:///C:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/StrategyOrchestrator.mqh) (IsTradeAllowed)
+
+**The Rule**:
+*   A Zone **CAN** trade anywhere...
+*   **EXCEPT** inside an **Equal or Higher Timeframe OPPOSING Zone**.
+
+**Constraints**:
+*   **MN1 Trade**: NO Restrictions. (Tide Rules All).
+*   **W1 Trade**: Can trade anywhere, **EXCEPT** inside MN1 Demand (for Shorts) or MN1 Supply (for Longs).
+*   **D1 Trade**: Can trade anywhere, **EXCEPT** inside W1 or MN1 Demand (for Shorts) or W1 or MN1 Supply (for Longs).
+
+**Advantage**:
+*   Removes "Distance Anxiety".
+*   Allows trading *near* support (e.g., 50 pips above), trusting the momentum.
+*   Strictly prevents trading *inside* the enemy base (Suicide).
+
+---
+
+### 2. Magnet Fade Logic (Aggressive Pullback)
+**Ref**: [StrategyOrchestrator.mqh](file:///C:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/StrategyOrchestrator.mqh)
+
+**Scenario**:
+*   **Context**: Price hits MN1/W1 Magnet (Resistance).
+*   **Trigger**: Price touches T2 or T3 of the Magnet.
+*   **Execution**: **ANY** Fresh Lower Timeframe (H4/H1) Trap that forms.
+
+**Rule**:
+*   We do **NOT** wait for a W1 B2B Zone.
+*   We trust the **Freshness** of the H4/H1 Trap + The **Location** (Magnet T2/T3).
+*   **Constraint**: Standard Location Filter applies (Don't short inside Demand).
+
+---
+
+### 3. Ladder-Up Take Profit (Targets)
+**Ref**: [StrategyOrchestrator.mqh](file:///C:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/StrategyOrchestrator.mqh)
+
+Same as V5.3 Phase 2 (Target L2 of Next Structure).

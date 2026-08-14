@@ -1,0 +1,64 @@
+# Quant 4.0: Free Flow Safety Logic Implementation Plan
+
+## Goal Description
+Enhance the "Free Flow Trap" (FFT) logic to enforce a **Safety First** principle.
+Currently, the mere existence of an Outpost enables FFT trades. The new logic requires that a **Strict Safety Trade** must first be triggered on the Anchor (Origin or Outpost) itself before "unleashing" the Free Flow mode for subsequent fresh traps.
+
+## User Review Required
+> [!IMPORTANT]
+> **Safety Mode Trigger**: FFTs will now remain BLOCKED even if an Outpost exists, UNTIL the Anchor zone (Origin/Outpost) is physically traded (Price hits entry).
+> This may reduce trade frequency but increases safety by ensuring we are "paid to play."
+
+## Proposed Changes
+
+### Core Logic Update
+1.  **Strict Anchor Definition**: The Anchor (Current Origin or Outpost) is ALWAYS in Strict Mode. Trades on it must be strictly nested.
+2.  **Safety Trigger**: Detecting when the Anchor's Strict Entry requirements are met (Price touches L1/L2 or calculated entry).
+3.  **FFT Authorization**: Validating `is_free_flow` ONLY when `anchor_has_been_traded` is TRUE.
+
+### 1. [StrategyOrchestrator.mqh](file:///c:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/StrategyOrchestrator.mqh)
+
+#### [MODIFY] `FlowState` Struct
+Add a boolean flag to track if the current Anchor has been successfully engaged.
+```cpp
+struct FlowState
+{
+   // ... existing members
+   bool              anchor_is_traded;     // [NEW] Safety Trigger Flag
+   // ...
+   
+   void Reset() 
+   {
+      // ...
+      anchor_is_traded = false;
+   }
+};
+```
+
+#### [MODIFY] `UpdateTimeframeFlow`
+Update the `anchor_is_traded` flag based on price action relative to the current Anchor (Origin or Outpost).
+- If `outpost_id > 0`: Check if price touched `outpost` entry levels.
+- If `outpost_id == 0`: Check if price touched `origin` entry levels (though this is less critical for FFT as Origin doesn't trigger FFT without Outpost, but good for consistency).
+
+#### [MODIFY] `ValidateTrap`
+Update the `is_free_flow` definition to include the safety check.
+```cpp
+// OLD: bool is_free_flow = (narrative.outpost_id > 0);
+// NEW:
+bool is_free_flow = (narrative.outpost_id > 0 && narrative.anchor_is_traded);
+```
+
+## Verification Plan
+
+### Manual Verification
+1.  **Scenario A (Untouched Outpost):**
+    - Create Outpost.
+    - Price hovers *near* but does not touch Outpost.
+    - Fresh Trap forms.
+    - **Expected:** FFT Trade BLOCKED (Safety Mode ON).
+
+2.  **Scenario B (Traded Outpost):**
+    - Create Outpost.
+    - Price **touches** Outpost (triggers Strict/Safety trade).
+    - Fresh Trap forms.
+    - **Expected:** FFT Trade ALLOWED (Safety Mode OFF).

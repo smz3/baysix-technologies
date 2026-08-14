@@ -45,7 +45,7 @@ from research.code.gates import pipeline
 
 REPO      = Path(__file__).resolve().parents[3]
 DB_PATH   = REPO / "research" / "db" / "research.db"
-RUNS_DIR  = REPO / "data" / "grw_runs"
+RUNS_DIR  = REPO / "research" / "data" / "grw_runs"
 MYT       = timezone(timedelta(hours=8))
 
 # Fields a prereg MUST declare before a single pass may run. `mechanism` is here on

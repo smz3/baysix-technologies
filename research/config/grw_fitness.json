@@ -9,7 +9,7 @@
     "1.1.0 (2026-08-03) — [PARKED at 2.0.0] min_trades 30 -> 500 for the SCALP mandate (task 294). The OBJECTIVE is unchanged; only the unrankable sentinel moved. Under a mandate of hundreds of trades per day a legitimate config produces 10^4-10^5 trades over a multi-year window, so 30 had stopped being a sentinel: it would have let a swing-shaped accident that traded 40 times win a scalping sweep. New trial family — v1.0.0 passes cannot be pooled with these. Safe to do now precisely because grw_passes is still empty.",
     "1.0.0 (2026-08-03) — [PARKED at 2.0.0] first declared objective."
   ],
-  "implemented_by": "mt5/Include/grw_system/grw_fitness.mqh (GrwFitnessCompute + GrwBarrierMark)",
+  "implemented_by": "platforms/mt5/Include/grw_system/grw_fitness.mqh (GrwFitnessCompute + GrwBarrierMark)",
   "cite_as": "grw_fitness.json@<git_sha>",
 
   "parameters": {

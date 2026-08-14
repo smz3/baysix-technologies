@@ -6,7 +6,7 @@ Principle (spec docs/specs/2026-07-03_fob_payload_dataplane_split.md):
 The three raw lifecycle tables (fob_cycles / fob_zones / fob_events) are a
 TRANSIENT ingest-staging area only. After a run is ingested + rolled up, its raw
 rows are exported here to one Parquet file per (run, table) under
-`data/fob_payload/run_<id>/` (gitignored, derivable) and then cleared from the DB
+`research/data/fob_payload/run_<id>/` (gitignored, derivable) and then cleared from the DB
 (tester.clear_fob_payload_run) so research.db stays ~a few MB and the viewer opens.
 
 zones/events get a denormalised `setup_tf` column (joined from fob_cycles) at
@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 _REPO = Path(__file__).resolve().parents[3]
-PAYLOAD_DIR = _REPO / "data" / "fob_payload"
+PAYLOAD_DIR = _REPO / "research" / "data" / "fob_payload"
 
 # table -> SQL that pulls that run's rows (zones/events denormalise setup_tf from cycles)
 _EXPORT_SQL = {

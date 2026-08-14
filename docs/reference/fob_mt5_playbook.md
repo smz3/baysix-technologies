@@ -1,6 +1,6 @@
 # FOB / MT5 Playbook
 
-Split out of root [CLAUDE.md](../../CLAUDE.md) (2026-07-31) so the root file stays strategy-agnostic. Read this before touching `mt5/` or any FOB code — it is the source of truth so Syafiq doesn't re-explain.
+Split out of root [CLAUDE.md](../../CLAUDE.md) (2026-07-31) so the root file stays strategy-agnostic. Read this before touching `platforms/mt5/` or any FOB code — it is the source of truth so Syafiq doesn't re-explain.
 
 ---
 
@@ -14,17 +14,17 @@ _This section is **system-agnostic** — it is the standing MT5 workflow for wha
 - **EMIT** (default) = read-only chronological oracle: ingests **all 9 TFs**, stamps `htf_state` awareness, writes the UTF-8 lifecycle CSV → the strategy's payload tables (FOB → `fob_cycles`/`fob_events`/`fob_zones`). **NO orders — pristine + re-emittable for OOS** (the old emitter's whole reason, kept intact as a mode; order code path never runs).
 - **TRADE** = the strategy: ingests only the setup pair `{n-1, n}`, opens a market position per CF on the setup TF; hosts swappable `fob_entry/ledger` modules.
 - **STUDY** = T-170 forward-excursion measurement (no orders).
-- Active file: **[fob_baysix.mq5](../../mt5/Experts/fob_system/fob_baysix.mq5)** — the SINGLE FOB EA. (`fob_trader.mq5` RETIRED.)
+- Active file: **[fob_baysix.mq5](../../platforms/mt5/Experts/fob_system/fob_baysix.mq5)** — the SINGLE FOB EA. (`fob_trader.mq5` RETIRED.)
 
 **Iteration model (no file-copy per version):** variants flip **enum modes + numeric inputs** and save a new **`.set` preset** — code is *changed* (extend an enum branch), **never replaced/duplicated**. One file per role; versions distinguished by git sha + `.set` + version stamp, NOT by copied `.mq5`. Duplicating EAs kills the tester sweep + git lineage.
 
 **Version control / provenance (the standard):** a `<SYS>_VERSION` `#define` in `<sys>_types.mqh` + an auto-generated `<sys>_version.mqh` (git sha/branch/dirty/build-time), regenerated before every compile, so the trader EA **prints its sha + dirty flag on init** — a DIRTY-tree number is not reproducible → exploratory only. Frozen tested inputs ship as versioned `.set`.
-- **One generator: `python research/code/infra/gen_version.py <system>`** (e.g. `fob` | `brc`) → writes `mt5/Include/<sys>_system/<sys>_version.mqh` (gitignored, derivable). `gen_brc_version.py` is a back-compat shim. **Run it before every headless compile.**
+- **One generator: `python research/code/infra/gen_version.py <system>`** (e.g. `fob` | `brc`) → writes `platforms/mt5/Include/<sys>_system/<sys>_version.mqh` (gitignored, derivable). `gen_brc_version.py` is a back-compat shim. **Run it before every headless compile.**
 - **FOB is now one EA (all modes) that `#include`s `fob_version.mqh`** and prints `[FOB <MODE>] v<ver> | git <sha>-DIRTY(exploratory) | built …` on init — EMIT included (provenance on the oracle too). BRC-trader still wired the same way; the BRC emitter (read-only, re-emittable) keeps the manual `BRC_VERSION` stamp only.
 - Keep `#property version` in lockstep with `<SYS>_VERSION` (they drifted once: fob baysix `1.19.1` vs `1.20.0` — fixed). The MQL5-Market `xxx.yyy` format warning on `1.20.0` is benign; Market layer deferred.
 - Releases/`.ex5` artifacts + MQL5-Market protection layer deferred until sharing.
 
-**Build (headless):** compile via MetaEditor64 CLI; `/inc` MUST point at `mt5/` (the MQL5 root containing `Include/`), NOT `mt5/Include` — else error 106 cascade. Compile log is UTF-16. ([[brc_compile_workflow]])
+**Build (headless):** compile via MetaEditor64 CLI; `/inc` MUST point at `platforms/mt5/` (the MQL5 root containing `Include/`), NOT `platforms/mt5/Include` — else error 106 cascade. Compile log is UTF-16. ([[brc_compile_workflow]])
 
 **Deploy:** reach the JM MT5 terminal (hash E7DB) via `mklink /J` junctions in Experts + Include (no elevation; `ln -s`/symlink fail on this host). MetaEditor → Refresh to see new files. ([[brc_terminal_junction_deploy]])
 

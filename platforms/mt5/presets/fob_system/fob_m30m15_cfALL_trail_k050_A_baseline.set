@@ -1,0 +1,62 @@
+; ==========================================================================
+; FOB-001 - direction A/B, ARM A (BASELINE / continuation)
+; Setup M30 -> CF on M15 | ALL CFs | no filters | trail-only exit
+;
+; Paired with ARM B (inverted) which differs by InpInvertDir ONLY.
+; FREEZE THIS FILE. If any value below changes between arms, the A/B is
+; contaminated and the result must be discarded.
+;
+; Tester: Model=4 (every tick based on real ticks), 2016-06-01 -> present,
+;         XAUUSD, UTC offset set, InpVisualize off.
+; ==========================================================================
+
+; ---- MODE -----------------------------------------------------------------
+InpMode=1
+; 0=FOB_EMIT (oracle CSV, no orders) | 1=FOB_TRADE | 2=FOB_STUDY
+
+; ---- setup pair -----------------------------------------------------------
+InpTfPair=2
+; 0=M5_M1 1=M15_M5 2=M30_M15 3=H1_M30 4=H4_H1 5=D1_H4
+InpCfIdxFilter=0
+; 0 = ALL CFs in every cycle (population screen, NOT a deployable config)
+
+; ---- filters: all OFF (clean baseline) ------------------------------------
+InpDirFilterTf=-1
+; -1=NONE 6=D1 7=W1 8=MN1
+InpSessionFilter=false
+InpSessionStartHr=12
+InpSessionEndHr=23
+
+; ---- orders ---------------------------------------------------------------
+InpSlBufferK=0.5
+; SL = beyond zone L2 by k*band, band=|L1-L2|
+InpRMultTP=1.0
+; INERT under InpTrailStop=true (trail disables the fixed TP)
+InpFixedLot=0.01
+InpMagic=3001
+
+; ---- DIRECTION: this is the ONLY line that differs between arm A and arm B ----
+InpInvertDir=false
+; false = NORMAL (continuation, trade WITH the CF)
+
+; ---- structural exits: OFF ------------------------------------------------
+InpExitOnCfInval=false
+InpExitOnOppPbo=false
+
+; ---- trailing stop: ON (sole profit exit) ---------------------------------
+InpTrailStop=true
+InpTrailActivateR=1.0
+InpTrailDistR=1.5
+
+; ---- entry mechanic -------------------------------------------------------
+InpEntryMode=0
+; 0=CF_MARKET 1=CF_L1_LIMIT 2=PBO_LIMIT
+InpPboEntryLevel=0
+; inert under CF_MARKET
+
+; ---- STUDY-only (inert in TRADE) ------------------------------------------
+InpStudyCapBars=48
+
+; ---- LIVE-chart only (ignored in the tester) ------------------------------
+InpTickWarmDays=30
+InpDebugRt=false

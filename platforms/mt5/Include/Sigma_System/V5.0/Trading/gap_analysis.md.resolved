@@ -1,0 +1,75 @@
+# Gap Analysis: Legacy Orchestra vs. The 9-TF Context Engine
+
+To answer whether we should **merge & enhance** or **build a new strategy logic**, we must perform a rigorous Gap Analysis. 
+
+The current `StrategyOrchestrator` was built for a simpler time: it processed timeframes hierarchically, acting like a line of toll booths (D1 Latch -> W1 Alignment -> H4 Triggers). The introduction of `ContextMapper` (The 9-Timeframe Radar) breaks this paradigm entirely because it maps the market *Topographically* (spatially) over *Unix Epochs* (Month, Week, Day).
+
+---
+
+## 1. The Architectural Gap
+
+| Feature | Legacy Setup (`StrategyOrchestrator`) | New AI (`ContextMapper` Blueprint) | The Gap |
+| :--- | :--- | :--- | :--- |
+| **Zone Scanning** | **Sequential & Localized:** Checks if *current* D1 zone is valid, then W1, then if there's a roadblock. | **Omniscient & Spatial:** Scans all 9 TFs simultaneously. Knows the absolute Highest High of the Month across 4 TFs instantly. | Legacy is blind to *how far* the next wall is. It only knows if it's currently inside a single zone. |
+| **Regime Detection** | **Implicit:** Regime is assumed based on whether `is_siege_active == true` for a single localized magnet. | **Explicit Math:** `GetCurrentRegime()` mathematically calculates the void space (Pips to next Macro Wall). | Legacy treats a 500-pip trend and a 50-pip bounce with the same logic gates. |
+| **Execution Trigger**| **Binary Authorization:** `IsTradeAllowed` returns true/false based on Gate A (Fading) or Gate B (Flow). | **Parametric Authorization:** Regime (Trend vs Fade) dictates the exact *type* of trap allowed and sets dynamic targets. | Legacy is rigid; if D1 says "No," a massive M15 scalp opportunity is entirely ignored. |
+| **Target Setting** | **Myopic (L2 Boundary):** TP is hardcoded to the L2 boundary of the immediate opposing zone on the *same timeframe*. | **Macro-Aware:** If fading a Weekly wall, TP aims for the Weekly Floor, regardless of M15 turbulence in between. | Legacy leaves hundreds of pips on the table by closing out too early inside massive Voids. |
+
+---
+
+## 2. Option A: Enhance & Merge (The "Frankenstein" Approach)
+
+This involves keeping the existing `FlowState` arrays and `IsTradeAllowed` logic, but injecting `ContextMapper` checks into the existing `if` statements.
+
+*   **How it looks:** We add `if (m_context.GetCurrentRegime() == REGIME_TREND)` inside Gate B (Inertial Flow).
+*   **Pros:** 
+    *   Familiar codebase.
+    *   Keeps existing tests mostly intact.
+*   **Cons (The Danger):** 
+    *   **Logic Conflict:** Legacy logic looks at `m_d1.is_siege_active`. Flow logic looks at `REGIME_CLUSTER`. What happens when they disagree?
+    *   **Spaghetti Code:** We end up writing overrides on top of overrides (e.g., `if (legacy == false but context == true)`).
+    *   **Bloat:** [StrategyOrchestrator.mqh](file:///c:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/StrategyOrchestrator.mqh) is already 800+ lines. This will push it over 1500 lines of highly nested logic.
+
+---
+
+## 3. Option B: Build a New Strategy Logic (The "First Principles" Approach)
+
+This involves deprecating the current `IsTradeAllowed` and `ValidateTrap` functions, and replacing them with a streamlined, Regime-Driven state machine.
+
+*   **How it looks:** `IsTradeAllowed` becomes a switch statement: `switch(m_context.GetCurrentRegime())`. 
+    *   `case REGIME_TREND:` Execute `HandleTrendFlow()`.
+    *   `case REGIME_FADE:` Execute `HandleSiegeReversion()`.
+*   **Pros:**
+    *   **Mathematical Purity:** The code directly reflects the "Domino / Reverse Domino" physics thesis.
+    *   **Massive Code Reduction:** The complex legacy "Gate A" and "Gate B" logic vanishes, replaced by clean Topographical queries.
+    *   **Scalability:** When we add AI sizing (Kelly Criterion) later, it plugs directly into the Regimes.
+*   **Cons:**
+    *   Requires a near-complete rewrite of `IsTradeAllowed`.
+    *   Requires careful regression testing in the visualizer to ensure we didn't lose the core SAMTC safety mechanisms.
+
+---
+
+## 4. The Recommendation: Definite Action Plan
+
+**We must choose Option B.** 
+
+If we try to patch `ContextMapper` into the old sequential logic, we will neuter its power. The entire point of the 9-TF Radar is to stop trading reactively and start trading predictively based on structural voids.
+
+### The Phased Action Plan for the Rewrite
+
+**Step 1: Complete the Radar Intelligence ([ContextMapper.mqh](file:///c:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/ContextMapper.mqh))**
+*   *Action:* We must finish coding `DetectStrategicRegime(double current_price)`. Right now, it just builds the Map array. It must mathematically define `REGIME_TREND`, `REGIME_FADE`, and `REGIME_CLUSTER` based on the coordinates in `m_monthly_map`, `m_weekly_map`, etc.
+
+**Step 2: Strip the Brain ([StrategyOrchestrator.mqh](file:///c:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/StrategyOrchestrator.mqh))**
+*   *Action:* We deprecate the old monolithic `IsTradeAllowed`.
+*   *Action:* We create a clean routing function: `ExecuteRegimePolicy()`.
+
+**Step 3: Build the 3 Execution Protocols (The New `IsTradeAllowed`)**
+*   **Protocol A (Deep Void / Trend):** Check `m_context` for the distance to the Macro Wall. If distance is massive, authorize Tier 3 (M5/M15) pullbacks in the direction of the Macro Flow. Hold duration = Macro Target.
+*   **Protocol B (The Siege / Fade):** Check `m_context`. If price is compressed against `m_monthly_map.d1_high_price`, authorize Tier 3 Reversals (Shorts). Hold duration = Local TP.
+*   **Protocol C (The Cluster):** If `m_context` says all Tiers are overlapping, lock out all trading.
+
+**Step 4: Update the Dispatcher ([TradeSignalGenerator.mqh](file:///c:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/TradeSignalGenerator.mqh))**
+*   *Action:* Instead of the generator trying to guess which timeframe is best, the Generator asks the Orchestrator: "What Regime are we in?" and then scans *only* for setups that match that Regime's allowed Tier.
+
+If you approve this total rewrite of the execution layer, I will immediately begin coding `DetectStrategicRegime()` inside [ContextMapper.mqh](file:///c:/Users/User/Desktop/SIGMA%20System%20Anti%20Gravity/MQL5/Include/V5.0/Trading/ContextMapper.mqh) as Step 1.
