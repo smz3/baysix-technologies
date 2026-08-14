@@ -2,8 +2,8 @@
 
 **An autonomous research loop for systematic strategy discovery (currently XAUUSD/gold) — built to *falsify* trading ideas, not just showcase winners.**
 
-![Python](https://img.shields.io/badge/Python-201%20files-3776AB?logo=python&logoColor=white)
-![MQL5](https://img.shields.io/badge/MQL5-63%20files-1E88E5)
+![Python](https://img.shields.io/badge/Python-227%20files-3776AB?logo=python&logoColor=white)
+![MQL5](https://img.shields.io/badge/MQL5-73%20files-1E88E5)
 ![SQLite](https://img.shields.io/badge/research.db-SQLite-003B57?logo=sqlite&logoColor=white)
 ![ArcticDB](https://img.shields.io/badge/tick%20store-511M%20ticks-2E7D32)
 
