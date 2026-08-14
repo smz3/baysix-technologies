@@ -1,0 +1,52 @@
+# --- secrets ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- data: never in git ----------------------------------------------------
+db/*.db
+db/*.db-wal
+db/*.db-shm
+data/
+*.parquet
+*.csv
+*.pkl
+*.h5
+*.feather
+*.zst
+*.dbn
+*.dbn.zst
+
+# --- run artifacts ---------------------------------------------------------
+# prereg.json IS tracked (it is the pre-registration record and must be
+# auditable). Everything heavy beside it is derivable and is not.
+runs/**/*
+!runs/**/prereg.json
+!runs/.gitkeep
+
+# --- platform build output -------------------------------------------------
+adapters/nt8/generated/
+*.ex5
+*.dll
+*.pdb
+obj/
+bin/
+
+# --- python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# --- editors / os ----------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

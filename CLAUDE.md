@@ -31,6 +31,7 @@ Single repo · github.com/smz3/baysix-technologies. MQL5 systems live in `mt5/{E
 - **[mt5/presets/](mt5/presets/)** — single source for `.set` presets; auto-mirrors to the JM terminal via junctions. **[mt5/tester/](mt5/tester/)** holds per-trade CSV artifacts.
 - **[alhazen/](alhazen/)** — the research lab; pre-G1 exploration, own README/charter, separate foundation from the rest of this repo. Does not outrank the GRW mandate.
 - **[ibkr/](ibkr/)** — IBKR paper-account connectivity chain (TWS → API socket → `ib_async`), proven end-to-end on GLD (task 283, see [paper_trading_pipeline.md](ibkr/Documentation/paper_trading_pipeline.md)). No strategy logic wired yet.
+- **[ninjatrader/](ninjatrader/)** — NinjaTrader 8 futures/prop-firm autonomous loop (GC/MGC gold + ETFs), migrated in from the standalone `~/Desktop/baysix-factory` repo 2026-08-14. Phase 0 only (`factory/{objective,provenance,spec,venue,prereg,adjudicate,ledger}.py`). **Never write futures rows into `research.db`** — separate namespace from the MT5 $20 mission, same discipline as rule 4a. Research/plan doc: [2026-08-12_nt8_multicharts_autonomy.md](docs/plans/2026-08-12_nt8_multicharts_autonomy.md).
 
 Decoupled repos (Desktop-level, own git remotes):
 `~/Desktop/sigma-quant/` (Cloudflare Pages, deployed) · `~/Desktop/sigma-research/` (FastAPI + Qdrant/Groq) · `~/Desktop/sigma-linkedin/`
