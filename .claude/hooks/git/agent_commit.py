@@ -63,6 +63,26 @@ def repo_root() -> Path:
     return Path(out.stdout.strip())
 
 
+def common_git_dir(cwd: Path) -> Path:
+    """Resolve the shared `.git` directory, even when `cwd` is a linked worktree.
+
+    Inside a linked worktree, `.git` at the worktree root is a plain FILE
+    pointing at `<main-repo>/.git/worktrees/<name>`, not a directory — so
+    `root / ".git" / LOCK_NAME` breaks there. `--git-common-dir` always
+    resolves to the one real `.git` directory shared by every worktree, which
+    is what we want: one lock file serialising ALL worktrees, not one per
+    worktree.
+    """
+    out = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"],
+        cwd=cwd, capture_output=True, text=True, check=True,
+    )
+    p = Path(out.stdout.strip())
+    if not p.is_absolute():
+        p = (cwd / p).resolve()
+    return p
+
+
 def git(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
     proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
     if check and proc.returncode != 0:
@@ -163,7 +183,7 @@ def main() -> None:
         refuse(path_bad)
 
     root = repo_root()
-    lock_path = root / ".git" / LOCK_NAME
+    lock_path = common_git_dir(root) / LOCK_NAME
     token = f"{os.getpid()}-{time.time_ns()}"
 
     acquire(lock_path, args.agent, token, args.timeout, args.stale_secs)
