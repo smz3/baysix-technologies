@@ -7,13 +7,9 @@
 ## You're Talking To
 
 Syafiq — 7yr Quant Trader → Quant Researcher (deployable).
-Building an Autonomous Research Agent for systematic strategy discovery, trading XAUUSD live.
-Objective is a **barrier** one — P(target before floor) on a single fixed stake, not log-growth.
+Building autonomous research and live systematic strategy development across **MT5**,
+**NinjaTrader**, and **IBKR** — plus **Alhazen**, the research lab this program runs through.
 The research process must survive out-of-sample; that is the constraint, not the mission.
-
-Account size, target, and the rejected framings live in `docs/private/mandate.md` (gitignored —
-this file is public). **Read it at session start before any GRW sizing or objective work.**
-
 
 ---
 
@@ -21,6 +17,9 @@ this file is public). **Read it at session start before any GRW sizing or object
 
 Single repo · github.com/smz3/baysix-technologies. MQL5 systems live in `mt5/{Experts,Include,Scripts}/<system>_system/`; the live ones are **fob_system** and **grw_system** (brc/orb/Sigma are parked or closed).
 
+- **`docs/private/mandate.md`** (gitignored — this repo is public) — account size, target, and the
+  rejected framings for the live GRW mandate. **Read it at session start before any GRW sizing or
+  objective work.**
 - **[research/db/research.db](research/db/research.db)** — Protocol 4.0 lean, WAL. There is **NO `is_runs` table** (collapsed into `step4_results.is_run` in migration 033). Ledger DDL has ONE home: [schema_ledger.py](research/code/infra/schema_ledger.py).
 - **[research/db/execution.db](research/db/execution.db)** — live deployment ledger, 12 tables, spec at [execution_schema.md](docs/reference/execution_schema.md). Rebuild in progress.
 - **[research/code/](research/code/)** — 4 subpackages (`gates` · `lineage` · `io` · `infra`); the flat `from research.code import X` still works via `__init__` re-exports.
