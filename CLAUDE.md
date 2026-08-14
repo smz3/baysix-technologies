@@ -29,6 +29,8 @@ Single repo · github.com/smz3/baysix-technologies. MQL5 systems live in `mt5/{E
 - **[brokers/justmarkets.yaml](brokers/justmarkets.yaml)** — TCM-001 cost model, re-derived at the live stake.
 - **[docs/](docs/)** — `plans/` and `specs/` are dated; `reference/` is evergreen.
 - **[mt5/presets/](mt5/presets/)** — single source for `.set` presets; auto-mirrors to the JM terminal via junctions. **[mt5/tester/](mt5/tester/)** holds per-trade CSV artifacts.
+- **[alhazen/](alhazen/)** — the research lab; pre-G1 exploration, own README/charter, separate foundation from the rest of this repo. Does not outrank the GRW mandate.
+- **[ibkr/](ibkr/)** — IBKR paper-account connectivity chain (TWS → API socket → `ib_async`), proven end-to-end on GLD (task 283, see [paper_trading_pipeline.md](ibkr/Documentation/paper_trading_pipeline.md)). No strategy logic wired yet.
 
 Decoupled repos (Desktop-level, own git remotes):
 `~/Desktop/sigma-quant/` (Cloudflare Pages, deployed) · `~/Desktop/sigma-research/` (FastAPI + Qdrant/Groq) · `~/Desktop/sigma-linkedin/`
