@@ -27,6 +27,19 @@
       "Bash(git merge*)"
     ]
   },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Deleting untracked, regenerable artifacts INSIDE the baysix-technologies repo is allowed without further confirmation: __pycache__/ and .pytest_cache/ directories, *.log files under research/models/_archive/, research/data/parquet/, and empty directories. These are gitignored build/run byproducts with zero git impact.",
+      "Removing an empty directory inside the repo with rmdir is allowed."
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Deleting anything under research/db/ (including research.db, execution.db, and every file in research/db/_backup/) is NEVER allowed — these are the live research ledger and its only snapshots.",
+      "Deleting anything under research/data/arctic/ is NEVER allowed — canonical tick data.",
+      "Deleting git-TRACKED files is not allowed here; those go through git rm in an agent_commit.py pass, not a bare rm."
+    ]
+  },
   "enabledMcpjsonServers": [
     "playwright"
   ],
