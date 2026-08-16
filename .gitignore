@@ -50,6 +50,10 @@ research/db/agent_log.db
 # execution.db = the LIVE downstream DB (real-money fills, account/broker_login state).
 # Protocol §1 Isolation: live records stay out of git. Rebuildable anytime via
 # `python research/migrations/020_create_execution_db.py`.
+# DELETED FROM DISK 2026-08-16 (Syafiq, task 364 call 4): it was 12 tables / 0 rows,
+# schema written years ahead of use. The schema itself survives in
+# research/code/infra/execution.py — recreate the file only when a strategy passes to live.
+# This ignore line stays so a rebuild never lands in git.
 research/db/execution.db
 
 # research.db UNTRACKED 2026-07-01 (task 203): hit 675MB after run_id 18 (8yr FOB ingest)
@@ -68,6 +72,15 @@ db/*.db-wal
 db/*.db-shm
 research/db/*.db-wal
 research/db/*.db-shm
+
+# Per-platform factory ledgers (Syafiq's call 2026-08-16, task 362/364 call 1). One file
+# per platform so two agent loops never contend for the same SQLite write lock. Untracked
+# for the same reason baysix.db is: they are generated working ledgers that will run to
+# tens of thousands of candidate rows, and the CONTENT is not the deliverable — the
+# promoted result on the spine is. Schema lives in research/code/factory/ledger.py.
+platforms/*/db/*.db
+platforms/*/db/*.db-wal
+platforms/*/db/*.db-shm
 
 # Pre-rebuild full-DB backups (Protocol 4.0 capture-before-nuke, ~100MB each) — local restore points only.
 # The small human-readable BRC seed in research/db/_seed/ IS tracked.
