@@ -1,25 +1,9 @@
 # Baysix Technologies
 
-Syafiq — 7yr Quant Trader → Quant Researcher. Autonomous research + live systematic strategies on
-MT5, NinjaTrader, IBKR. The process must survive out-of-sample; that is the constraint.
+Autonomous Research Agents for multiple trading platforms. From ideation - strategy building to testing
 
-> Rules only below. Reasoning, history, full layout map:
-> **[working_agreement.md](docs/reference/working_agreement.md)** — read a section when the *why*
-> matters, never by default.
-
-## Layout gotchas (`ls` shows the rest)
-
-- **[platforms/](platforms/)** = place the order · **[research/](research/)** = decide what to
-  order. Live MQL5: `fob_system`, `grw_system`.
-- **`docs/private/mandate.md`** (gitignored) — read before ANY GRW sizing or objective work.
-- **[research/data/arctic/](research/data/arctic/)** — canonical XAUUSD ticks, read ONLY via
-  [arctic_io.py](research/code/io/arctic_io.py) (its sorting is what kills the look-ahead).
-- **[research.db](research/db/research.db)** — Protocol 4.0 ledger, untracked/local, back it up.
-- **[platforms/mt5/presets/](platforms/mt5/presets/)** mirrors to the JM terminal via junctions —
-  MT5 not seeing your edits = check the junctions, not the repo. Futures rows never go in
-  `research.db`; NinjaTrader owns its own.
-- Parked: [models/_archive/](research/models/_archive/), [models/brc/](research/models/brc/),
-  [research/b2b/](research/b2b/) (Sigma line, NOT the `baysix-ventures` repo).
+> Rules only below. The companion "why" doc was retired 2026-08-16 and has not been rebuilt yet —
+> if a rule's reasoning is unclear, ask rather than guess.
 
 ## Rules
 
@@ -35,8 +19,6 @@ MT5, NinjaTrader, IBKR. The process must survive out-of-sample; that is the cons
 6. **Token discipline** — targeted reads, greps with `head_limit`, counts over dumps, no mid-stream
    narration.
 7. **Check current Anthropic docs** before improvising a Claude Code / API workflow.
-8. Read [RESEARCH_CODE_PROTOCOL.md](research/RESEARCH_CODE_PROTOCOL.md) before touching
-   `research/models/` or `research/code/`.
 9. **`idea_cli.py next <idea_id>`** gives the ONE next legal action — use it, don't recall the gate
    sequence. `prebrief` before briefing an agent. t-stat never auto-kills; a kill needs ≥2 falsified
    hypotheses.
@@ -48,11 +30,7 @@ MT5, NinjaTrader, IBKR. The process must survive out-of-sample; that is the cons
     Vision-reading a PDF is BANNED.
 14. **Long-running commands (>10s)** → new PowerShell window via `Start-Process`, never
     `run_in_background`.
-15. **`## 🧠 Smart Summary`** is the one permitted header: 2–4 plain bullets, zero jargon, last in
-    the reply. Required on research findings + strategy decisions; skip on chores and when the reply
-    is already plain. Name any DELETED file in it.
-16. **Never caveat mid-price (HARD)** — "net" once on a G2/tester result, no spread/cost
-    disclaimers during logic work.
+
 
 ## Startup
 
