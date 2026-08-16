@@ -35,7 +35,7 @@
     ],
     "soft_deny": [
       "$defaults",
-      "Deleting anything under db/ (baysix.db, its -wal/-shm) or under research/db/ (execution.db, _seed/, and every file in research/db/_backup/) is NEVER allowed — these are the live research ledger and its only snapshots.",
+      "Deleting anything under db/ (baysix.db, its -wal/-shm) or under research/db/ (execution.db, _seed/, and every file in research/db/_backup/) is NEVER allowed — these are the live research ledger and its only snapshots. db/_snapshots/ is included: it is pruned to keep-last-N by research/code/infra/db_snapshot.py, never by hand.",
       "Deleting anything under research/data/arctic/ is NEVER allowed — canonical tick data.",
       "Deleting git-TRACKED files is not allowed here; those go through git rm in an agent_commit.py pass, not a bare rm."
     ]
@@ -70,6 +70,24 @@
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/session_brief.py\"",
             "timeout": 15,
             "statusMessage": "session brief"
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/db_snapshot_hook.py\" session_start",
+            "timeout": 20,
+            "statusMessage": "db snapshot"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/db_snapshot_hook.py\" session_end",
+            "timeout": 20,
+            "statusMessage": "db snapshot"
           }
         ]
       }

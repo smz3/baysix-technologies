@@ -72,6 +72,11 @@ research/db/*.db-shm
 # Pre-rebuild full-DB backups (Protocol 4.0 capture-before-nuke, ~100MB each) — local restore points only.
 # The small human-readable BRC seed in research/db/_seed/ IS tracked.
 research/db/_backup/
+# ROUTINE snapshots (task 350): written every session by db_snapshot.py, keep-last-10.
+# Deliberately a SEPARATE folder from research/db/_backup/ — that one is hands-off for
+# deletion by Syafiq's standing instruction, and a keep-last-N routine has to be able to
+# delete. Copies of baysix.db, so untracked for the same reason it is.
+db/_snapshots/
 
 # Stack runtime
 .gstack/

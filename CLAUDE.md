@@ -22,7 +22,9 @@ Autonomous Research Agents for multiple trading platforms. From ideation - strat
 9. **`idea_cli.py next <idea_id>`** gives the ONE next legal action — use it, don't recall the gate
    sequence. `prebrief` before briefing an agent. t-stat never auto-kills; a kill needs ≥2 falsified
    hypotheses.
-10. **Writes via the code layer only** — never raw `sqlite3` on `research.db` (hook-enforced).
+10. **Writes via the code layer only** — never raw `sqlite3` on `db/baysix.db`. The hook catches
+    the obvious route (`sqlite3` + a DB name + a write keyword in one shell command); the rule
+    covers the rest, which the hook cannot see.
 11. **Log immediately, before replying** — agent calls, results, decisions, and every
     strategy-defining change via `strategy_log.log_change()`.
 12. **Never `SELECT` text-heavy columns** into main context.
@@ -33,6 +35,14 @@ Autonomous Research Agents for multiple trading platforms. From ideation - strat
 15. **Backlog cap: 6 open tasks (HARD)** — `add_task` raises `BacklogFullError` at the cap, and so
     does reopening a resolved task. To file something new, resolve an open one first. `MAX_OPEN`
     lives in [research/code/lineage/backlog.py](research/code/lineage/backlog.py).
+16. **Output folders: `outputs/<idea_id>/<run_id>/`, created ONLY by
+    [research/code/infra/outputs.py](research/code/infra/outputs.py)** — never hardcode a path in a
+    script. Register the backtest first via `open_run()` in
+    [research/code/lineage/runs.py](research/code/lineage/runs.py); it creates the folder and stores
+    the path, so no folder exists without a row explaining it. `strays()` lists violations.
+17. **Every task carries a `stream`** (MT5 / NinjaTrader / IBKR / Research / Ops) — `add_task`
+    rejects a missing one. `idea_id` stays optional and means strictly "serves a live falsifiable
+    idea". Scope searches with `get_backlog(stream=...)`; that is rule 5 in executable form.
 
 
 ## Startup

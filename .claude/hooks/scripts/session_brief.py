@@ -54,18 +54,20 @@ def main():
     c = sqlite3.connect(str(DB))
     cur = c.cursor()
 
-    print("--- OPEN BACKLOG (research.db -> open_backlog) ---")
+    print("--- OPEN BACKLOG (baysix.db -> open_backlog) ---")
+    # stream = which system owns the task (task 358). Shown so a session can scope
+    # itself to one system on sight — CLAUDE.md rule 5.
     rows = cur.execute(
-        "SELECT task_id, priority, kind, title FROM open_backlog "
+        "SELECT task_id, priority, stream, kind, title FROM open_backlog "
         "ORDER BY priority, task_id").fetchall()
     if not rows:
         print("  (none open)")
     last_p = None
-    for tid, prio, kind, title in rows:
+    for tid, prio, stream, kind, title in rows:
         if prio != last_p:
             print(f" {prio}:")
             last_p = prio
-        print(f"   {tid:>2} {kind:8s} {title}")
+        print(f"   {tid:>2} {stream:<11s} {kind:8s} {title}")
 
     print("\n--- RECENTLY RESOLVED (last 6) ---")
     done = cur.execute(
