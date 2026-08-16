@@ -811,3 +811,21 @@ derive_fob_confirm_linkage = _fob_disabled
 derive_fob_tier_c_outcome = _fob_disabled
 derive_fob_run_stats = _fob_disabled
 clear_fob_payload_run = _fob_disabled
+
+# DISABLED by migration 039 (2026-08-16): tester_trades / tester_zones /
+# tester_run_summary were dropped — bulk per-run payload lives in files keyed by the
+# run_id in the path, not in the ledger. tester_runs (the registry) is unaffected, so
+# ingest_tester_run / get_tester_run / log_fidelity_diff still work.
+_TESTER_PAYLOAD_DISABLED = (
+    "tester payload ingest is disabled: migration 039 dropped tester_trades/tester_zones/"
+    "tester_run_summary. Write per-trade output to Parquet under a run_<id>/ path and "
+    "register the run in tester_runs instead."
+)
+
+
+def _tester_payload_disabled(*_a, **_k):
+    raise NotImplementedError(_TESTER_PAYLOAD_DISABLED)
+
+
+ingest_tester_trade = _tester_payload_disabled
+ingest_brc_zones = _tester_payload_disabled

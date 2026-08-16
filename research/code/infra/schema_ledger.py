@@ -64,93 +64,14 @@ CREATE TABLE IF NOT EXISTS tester_runs (
     updated_at      DATETIME NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS tester_trades (
-    tt_id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id           INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    zone_id          INTEGER REFERENCES fob_zones(zone_id),  -- triggering zone (nullable)
-    ticket           INTEGER,                       -- MT5 position id (unique within a run)
-    session_date     DATE,                          -- nullable convenience (daily strategies)
-    direction        TEXT CHECK(direction IS NULL OR direction IN ('long','short','flat')),
-    entry_ts         DATETIME,                      -- cross-system join key (with ticket)
-    entry_px         REAL,
-    exit_ts          DATETIME,
-    exit_px          REAL,
-    exit_reason      TEXT,
-    lots             REAL,                          -- position size
-    risk_unit        REAL,                          -- generic 1R denominator (price units)
-    realized_R       REAL,
-    gross_usd        REAL,
-    cost_usd         REAL,                          -- spread+commission+swap (TCM-001)
-    realized_pnl_usd REAL,
-    meta             TEXT CHECK(meta IS NULL OR json_valid(meta)),  -- strategy ctx (ORB: or_high/or_low/range_w)
-    created_at       DATETIME NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_tester_trades_run    ON tester_trades(run_id);
-CREATE INDEX IF NOT EXISTS ix_tester_trades_run_ts ON tester_trades(run_id, entry_ts);
 
--- BRC zone-lifecycle ledger (task 119). The BRC emitter is an observational
--- oracle, not a trade strategy, so each emit is a tester_runs header (same
--- provenance: symbol/data_source/tester_model/period) and one tester_zones row
--- per confirmed zone per TF. Source CSV = brc_csv.mqh (UTF-8, header, comma).
--- Times are normalised "YYYY-MM-DD HH:MM:SS"; the 0-sentinel blank -> NULL
--- (level never touched / zone still alive at data-end).
-CREATE TABLE IF NOT EXISTS tester_zones (
-    tz_id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    csv_zone_id       INTEGER,                       -- zone_id within the source CSV (resets per file)
-    tf                TEXT NOT NULL,                 -- M5 .. MN1
-    direction         TEXT CHECK(direction IN ('BUY','SELL')),
-    p1_time DATETIME, p1_price REAL,
-    p2_time DATETIME, p2_price REAL,
-    p3_time DATETIME, p3_price REAL,
-    p4_time DATETIME, p4_price REAL,                 -- P4 = 2nd break = confirm bar
-    p5_time DATETIME, p5_price REAL,
-    l1 REAL, l2 REAL, mid REAL,                      -- zone levels (l1=retest/entry, l2=invalidation, mid)
-    break_kind        TEXT CHECK(break_kind IS NULL OR break_kind IN ('sequential','same_bar')),
-    t1_time DATETIME, t2_time DATETIME, t3_time DATETIME,   -- L1/mid/L2 touch times (NULL = untouched)
-    confirm_time      DATETIME,                      -- == p4_time
-    invalidation_time DATETIME,                      -- close beyond L2 (NULL = never invalidated)
-    alive_at_end      INTEGER,                       -- 1 = still alive at data-end
-    continued         INTEGER,                       -- 1 = continuation past L1 in break direction
-    mfe_r REAL, mae_r REAL, realized_r REAL,         -- excursion / realized, in R (1R = entry->stop)
-    bars_alive        INTEGER,
-    seq               INTEGER,                       -- per-TF, 1-based, p4_time order (task 127 human id)
-    zone_key          TEXT,                          -- {tf}|{dir}|{p4_epoch}(+|{l2}) machine join key
-    is_primary        INTEGER,                       -- 1 unless consolidated away by a bigger overlapping same-dir zone
-    consolidated_into TEXT,                          -- survivor zone_key when is_primary=0 (else NULL)
-    created_at        DATETIME NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_tester_zones_run     ON tester_zones(run_id);
-CREATE INDEX IF NOT EXISTS ix_tester_zones_run_tf  ON tester_zones(run_id, tf);
-CREATE INDEX IF NOT EXISTS ix_tester_zones_confirm ON tester_zones(run_id, confirm_time);
-
--- ── Shared spine: trader-run scorecard (1:1, trader runs only) ────────────────
-CREATE TABLE IF NOT EXISTS tester_run_summary (
-    run_id          INTEGER PRIMARY KEY REFERENCES tester_runs(run_id),
-    n_trades        INTEGER,
-    gross_usd       REAL,
-    total_cost_usd  REAL,
-    net_profit_usd  REAL,
-    profit_factor   REAL,
-    max_dd_pct      REAL,
-    win_rate        REAL,
-    expectancy_r    REAL,
-    sharpe          REAL,
-    research_result_id   INTEGER,
-    trade_overlap_pct    REAL,
-    ER_delta_vs_research REAL,
-    R_corr               REAL,
-    fidelity_verdict     TEXT CHECK(fidelity_verdict IS NULL OR
-                            fidelity_verdict IN ('pass','fail','pending')),
-    created_at      DATETIME NOT NULL
-);
-
--- FOB payload tables (fob_cycles / fob_zones / fob_events / fob_run_stats) were
--- DROPPED by migration 038 (2026-08-16). The ledger no longer carries strategy-shaped
--- tables: every new strategy used to cost 4 tables + a migration. Raw FOB payload lives
--- as Parquet under research/data/fob_payload/run_<id>/ and is read via fob_payload.py.
--- Do NOT re-add per-strategy DDL here; a new SHAPE may earn a generic table, a new
--- STRATEGY never does.
+-- tester_trades / tester_zones / tester_run_summary were DROPPED by migration 039
+-- (2026-08-16). They were bulk per-run PAYLOAD; payload lives in files keyed by the
+-- run_id in the path, not in the ledger.
+--
+-- tester_runs above is deliberately KEPT: it is the run REGISTRY, the row that makes
+-- research/data/fob_payload/run_<id>/ identifiable instead of anonymous. Rename it to
+-- `runs` + add a `platform` column when the DB moves to baysix.db.
 """
 
 
