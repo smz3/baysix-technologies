@@ -106,6 +106,32 @@ def set_trials(run_id: int, trial_family_id: str, n_trials: int) -> None:
         conn.commit()
 
 
+def attach_results(run_id: int, result_ids: list[int]) -> int:
+    """Point existing step4_results rows at the run that produced them (migration 043).
+
+    SQLite could not add the FK constraint to an existing table, so this function IS the
+    enforcement: it refuses unknown run_ids rather than writing a dangling reference.
+    Returns the number of rows linked.
+    """
+    if get_run(run_id) is None:
+        raise ValueError(f"run_id={run_id} does not exist — refusing a dangling link")
+    if not result_ids:
+        return 0
+    with _conn() as conn:
+        marks = ",".join("?" * len(result_ids))
+        found = conn.execute(
+            f"SELECT COUNT(*) FROM step4_results WHERE result_id IN ({marks})",
+            result_ids).fetchone()[0]
+        if found != len(result_ids):
+            raise ValueError(
+                f"{len(result_ids) - found} of the given result_ids do not exist")
+        cur = conn.execute(
+            f"UPDATE step4_results SET run_id=? WHERE result_id IN ({marks})",
+            [run_id, *result_ids])
+        conn.commit()
+        return cur.rowcount
+
+
 def get_run(run_id: int) -> dict | None:
     with _conn() as conn:
         r = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
