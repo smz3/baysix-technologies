@@ -48,11 +48,18 @@ import re
 import sys
 from pathlib import Path
 
-MAX_WORDS = 350      # prose words; the 2026-08-16 violation was ~450
-MAX_SENT = 45        # words in any single sentence
-MAX_MEAN = 25        # mean words per sentence
-MAX_PARA = 90        # words in one non-bullet paragraph
-MAX_HEADS = 6        # markdown/bold section headers
+# RE-CALIBRATED 2026-08-16, second complaint. The first pass set MAX_WORDS=350
+# off one violation; a 341-word reply then passed the guard and Syafiq rejected
+# it anyway ("why are these still so long"). The limit was fitted to the bad
+# example instead of to the rule. The rule says "few bullet points" and the
+# format memory says ~150 words flexing for completeness, so 200 is the ceiling.
+MAX_WORDS = 200      # prose words
+MAX_SENT = 30        # words in any single sentence
+MAX_MEAN = 18        # mean words per sentence
+MAX_PARA = 50        # words in one non-bullet paragraph
+MAX_HEADS = 4        # markdown/bold section headers
+MIN_BULLET = 0.4     # of the lines that carry content, this fraction must be bullets
+BULLET_FLOOR = 80    # ...once the message is this long. Below it, prose is fine.
 MIN_LINT = 60        # below this many words there is nothing to judge
 MAX_BLOCKS = 2
 
@@ -186,7 +193,34 @@ def lint(text: str) -> tuple[list, list]:
             )
             break
 
-    # 4. first principle, in its only testable form
+    # 4. "few bullet points" — the format itself, not just the length.
+    #    A long answer made of paragraphs is the exact failure Syafiq named
+    #    twice on 2026-08-16, and length alone did not catch it.
+    if n > BULLET_FLOOR:
+        lines = [l for l in text.splitlines() if _words(l) >= 3]
+        if lines:
+            # headers deliberately do NOT count. A bold header followed by a
+            # paragraph is precisely the report shape being banned, and counting
+            # it as structure let the 2026-08-16 rejected reply through at 44%.
+            listy = sum(1 for l in lines
+                        if BULLET_RE.search(l) or l.lstrip().startswith("|"))
+            frac = listy / len(lines)
+            if frac < MIN_BULLET:
+                hard.append(
+                    f"NOT_BULLETS  only {frac:.0%} of content lines are bullets or "
+                    f"table rows (need {MIN_BULLET:.0%} once past {BULLET_FLOOR} words). "
+                    f"Global CLAUDE.md says 'few bullet points', not paragraphs."
+                )
+
+    # 5. section sprawl. Was a warning; promoted to HARD after Syafiq rejected a
+    #    108-word reply purely for being shaped like a report (8 headers).
+    heads = len(HEAD_RE.findall(text))
+    if heads > MAX_HEADS:
+        hard.append(
+            f"SECTIONS  {heads} headers (limit {MAX_HEADS}). This is a reply, not a report."
+        )
+
+    # 6. first principle, in its only testable form
     if RECO_RE.search(prose) and not GROUND_RE.search(text):
         hard.append(
             "NO_GROUND  A recommendation is made and nothing in the message is "
@@ -209,9 +243,6 @@ def lint(text: str) -> tuple[list, list]:
             f"BY_ANALOGY  '{m.group(0)}' with no foundational-truth basis nearby. "
             f"Global CLAUDE.md bans reasoning by analogy or convention."
         )
-    heads = len(HEAD_RE.findall(text))
-    if heads > MAX_HEADS:
-        warn.append(f"SECTIONS  {heads} headers (limit {MAX_HEADS}). This is a reply, not a report.")
     return hard, warn
 
 
