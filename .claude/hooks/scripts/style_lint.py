@@ -84,7 +84,14 @@ def _words(s: str) -> int:
 
 
 def _sentences(s: str) -> list:
-    parts = re.split(r"(?<=[.!?])\s+|\n{2,}", s)
+    """Sentence-ish units. A LINE BREAK ends a unit, same as a full stop.
+
+    Bullets do not carry terminal punctuation, so splitting on [.!?] alone
+    welded a whole bullet list into one enormous 'sentence' and LONG_SENT fired
+    on it. MEASURED 2026-08-16: this guard blocked the very reply announcing
+    this guard, on a list whose longest bullet was six words.
+    """
+    parts = re.split(r"(?<=[.!?])\s+|\n+", s)
     return [p.strip() for p in parts if _words(p) >= 3]
 
 
