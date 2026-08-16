@@ -59,6 +59,30 @@ def _git_provenance():
         return None, None
 
 
+#--- Task 309. The tick source is a PROPERTY OF THE SYMBOL, not a constant. XAUUSD_dukas is a
+#--- custom symbol built from dukascopy history; XAUUSD.s is JustMarkets' own live feed, and the
+#--- two disagree on spread, session boundaries and the min-lot arithmetic the $20 mandate lives
+#--- on. Stamping every pass "dukascopy" made a JM-fed run cite a source it never touched.
+#--- Unknown symbols RAISE rather than defaulting — a wrong provenance string is worse than a
+#--- refused ingest, because it survives into every downstream citation silently.
+_DATA_SOURCE_BY_SUFFIX = (
+    (".s",      "justmarkets"),   # JM live/demo server symbols carry the .s suffix
+    ("_dukas",  "dukascopy"),     # custom symbol imported from dukascopy ticks
+    ("_pq",     "arctic"),        # custom symbol imported from our own parquet/Arctic store
+)
+
+
+def _data_source_for(symbol: str) -> str:
+    """Derive the tick provenance from the tester symbol. Raises on an unmapped symbol."""
+    sym = (symbol or "").strip()
+    for suffix, source in _DATA_SOURCE_BY_SUFFIX:
+        if sym.endswith(suffix):
+            return source
+    raise SystemExit(
+        f"unmapped symbol {sym!r} — add its suffix to _DATA_SOURCE_BY_SUFFIX in ingest_grw.py. "
+        "Refusing to guess the tick source; a wrong data_source is unrecoverable downstream.")
+
+
 def _f(row: dict, key: str, cast=float, default=None):
     """Read a CSV cell, tolerating a blank. A missing KEY is a contract break and raises —
     the EA and this reader must agree on the schema or the pass is not ingestible."""
