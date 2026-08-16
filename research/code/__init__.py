@@ -22,14 +22,17 @@ from research.code.io import arctic_io
 # depend on the leaves above
 from research.code.io import tester                       # -> pipeline
 from research.code.infra import run_and_log, run_tracked, handover_lint  # run_and_log -> pipeline, strategy_log
-from research.code.io import ingest_brc_zones, ingest_tester_report      # -> tester
+# ingest_brc_zones / ingest_tester_report MOVED to platforms/mt5/ingest 2026-08-16
+# (task 360 layer split) and are deliberately NOT re-exported here. This package is
+# the SHARED layer; re-exporting one platform's ingest from it would make MT5 code
+# look repo-generic and invite the next platform to add its own alongside.
 from research.code.io import fetch_papers, extract_pdf, backfill_dissect_md
 
 __all__ = [
     "pipeline", "protocol",
     "strategy_log", "agent_log", "backlog",
     "db_init", "execution",
-    "arctic_io", "tester", "ingest_brc_zones", "ingest_tester_report",
+    "arctic_io", "tester",
     "fetch_papers", "extract_pdf", "backfill_dissect_md",
     "run_and_log", "run_tracked", "handover_lint",
 ]
