@@ -149,6 +149,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/style_lint.py\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "StopFailure": [
