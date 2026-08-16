@@ -228,10 +228,8 @@ column queries. QR agents query `research.db` inside the subagent, never through
    Never re-surface a resolved task or re-run logged work.
 4. Brief Syafiq: "Here's where we left off" → Claude agent decides the priority task.
 
-**Priority rule (set 2026-08-11): GRW outranks FOB.** The barrier run is the mission, so an open GRW
-task beats an open FOB task of the same P-level — always. FOB keeps running as research (it is 38
-tasks deep and feeds GRW its strategy), but it never preempts a live GRW task. Backlog volume is NOT
-a priority signal; the mandate is.
+**Priority rule: REMOVED 2026-08-16 (Syafiq's call).** There is no standing system-level priority
+rank. Priority is decided per session from the backlog and whatever is actually in flight.
 
 ---
 

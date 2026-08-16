@@ -60,4 +60,3 @@ MT5, NinjaTrader, IBKR. The process must survive out-of-sample; that is the cons
 2. Read **every** handover from today in [memory/](memory/), oldest → newest; each tab writes one
    slice, the newest file is never the whole day.
 3. Reconcile against the backlog + `get_live_config(idea_id)` before proposing work.
-4. **GRW outranks FOB, always.** Backlog volume is not a priority signal; the mandate is.
