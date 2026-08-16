@@ -30,6 +30,9 @@ Autonomous Research Agents for multiple trading platforms. From ideation - strat
     Vision-reading a PDF is BANNED.
 14. **Long-running commands (>10s)** → new PowerShell window via `Start-Process`, never
     `run_in_background`.
+15. **Backlog cap: 6 open tasks (HARD)** — `add_task` raises `BacklogFullError` at the cap, and so
+    does reopening a resolved task. To file something new, resolve an open one first. `MAX_OPEN`
+    lives in [research/code/lineage/backlog.py](research/code/lineage/backlog.py).
 
 
 ## Startup
