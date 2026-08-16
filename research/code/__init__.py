@@ -14,7 +14,7 @@ imported) and is deliberately NOT re-exported here.
 """
 
 # leaf engine + ledgers (no intra-package deps)
-from research.code.gates import pipeline, protocol, grw
+from research.code.gates import pipeline, protocol
 from research.code.lineage import strategy_log, agent_log, backlog
 from research.code.infra import db_init, execution
 from research.code.io import arctic_io
