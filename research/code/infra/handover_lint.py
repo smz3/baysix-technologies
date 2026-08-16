@@ -46,7 +46,11 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).parents[3]
-from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
+# This module is executed as a SCRIPT (by /handover and by .git/hooks/pre-commit),
+# so the repo root is not on sys.path and the package import below would fail.
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+from research.code.infra.db_path import DB_PATH  # noqa: E402,F401  (task 357: one canonical path)
 # --- result-shaped number patterns -------------------------------------------
 # Each entry: (label, compiled regex). Kept deliberately specific to avoid
 # flagging dates ($50 capital, 2026-06-12, version numbers, task IDs).

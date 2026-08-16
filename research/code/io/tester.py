@@ -31,6 +31,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root for ru
 from research.code.gates import pipeline
 from research.code.infra.schema_ledger import SCHEMA_MT5
 
+# Runnable as a SCRIPT, so the repo root is not on sys.path and the package
+# import below would fail with ModuleNotFoundError (caught 2026-08-16 when
+# handover_lint broke this way right after the task 357 repointing).
+import sys as _sys, pathlib as _pl
+_REPO = _pl.Path(__file__).resolve().parents[3]
+if str(_REPO) not in _sys.path:
+    _sys.path.insert(0, str(_REPO))
 from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
 MYT     = timezone(timedelta(hours=8))
 
