@@ -197,4 +197,4 @@ These were active in earlier phases, disabled to restore 10C Alpha:
 ## Related Pages
 
 - [b2b-overview.md](b2b-overview.md) — The B2B zones SAMTC operates on
-- [mt5-ea-architecture.md](../../mt5/Documentation/mt5-ea-architecture.md) — The MQL5 sibling (Sigma V5.0, legacy)
+- [mt5-ea-architecture.md](../../../../platforms/mt5/Documentation/mt5-ea-architecture.md) — The MQL5 sibling (Sigma V5.0, legacy)

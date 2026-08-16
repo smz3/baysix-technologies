@@ -21,7 +21,7 @@ import pandas as pd
 # self-path so `sigma_core...` resolves (b2b/ root is two levels up)
 B2B_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, B2B_ROOT)
-REPO = os.path.abspath(os.path.join(B2B_ROOT, ".."))
+REPO = os.path.abspath(os.path.join(B2B_ROOT, "..", ".."))   # research/
 
 from sigma_core.b2b.models.structures import SignalDirection           # noqa: E402
 from sigma_core.b2b.detectors.swing_points import detect_swings        # noqa: E402

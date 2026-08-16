@@ -21,7 +21,7 @@ import MetaTrader5 as mt5
 SYMBOL = "XAUUSD.s"
 TFS = {"d1": mt5.TIMEFRAME_D1, "h4": mt5.TIMEFRAME_H4, "h1": mt5.TIMEFRAME_H1}
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                   "..", "..", "data", "parquet", "bars", "mt5"))
+                                   "..", "..", "..", "data", "parquet", "bars", "mt5"))
 COUNT = 50000   # > available for D1/H4/H1, < the terminal's ~65k per-call cap
 
 

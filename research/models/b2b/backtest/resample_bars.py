@@ -28,7 +28,7 @@ except ImportError:                      # graceful fallback
     def tqdm(x, **k):
         return x
 
-REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))   # research/
 TICK_DIR = os.path.join(REPO, "data", "parquet", "CS-GOLD-DUKAS-TICK")
 OUT_DIR = os.path.join(REPO, "data", "parquet", "bars")
 
