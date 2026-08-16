@@ -35,12 +35,21 @@ WARN (surfaces, does not block) — judgement calls a regex should not arbitrate
                   foundational-truth marker nearby — reasoning by convention
   7. SECTIONS     more than MAX_HEADS headers; "few bullet points", not a report
 
-OPT-OUT, three ways, because a guard that cannot be turned off gets turned off
+WARN-ONLY SINCE 2026-08-16 — the guard never blocks, and the two tiers above differ
+only in wording. It used to exit 2 on a HARD finding, forcing a rewrite. Stop fires
+AFTER the reply has been rendered, and no exit code un-prints text, so the "block"
+could not replace the bad reply — it only appended a second, tidier one. Syafiq read
+the same explanation twice, three times in one session, and that cost more than the
+drift it was catching.
+
+The findings now aim at the NEXT reply. A guard on Stop can only shape what has not
+been written yet; stopping a bad reply from ever being shown would need a hook that
+runs before the text exists, which this event is not.
+
+OPT-OUT, two ways, because a guard that cannot be turned off gets turned off
 permanently by deleting it:
   - env STYLE_LINT=off
   - Syafiq asks for depth in his own message ("in detail", "long version", ...)
-  - MAX_BLOCKS consecutive blocks in a session, then it passes through with a
-    note. A guard that can hang the session is worse than no guard.
 """
 import json
 import os
@@ -61,9 +70,6 @@ MAX_HEADS = 4        # markdown/bold section headers
 MIN_BULLET = 0.4     # of the lines that carry content, this fraction must be bullets
 BULLET_FLOOR = 80    # ...once the message is this long. Below it, prose is fine.
 MIN_LINT = 60        # below this many words there is nothing to judge
-MAX_BLOCKS = 2
-
-STATE = Path(os.environ.get("TEMP", "/tmp")) / "style_lint_blocks.json"
 
 # ---------------------------------------------------------------- stripping
 
@@ -246,27 +252,6 @@ def lint(text: str) -> tuple[list, list]:
     return hard, warn
 
 
-# ---------------------------------------------------------------- loop guard
-
-def _blocks(sid: str) -> int:
-    try:
-        return json.loads(STATE.read_text()).get(sid, 0)
-    except Exception:
-        return 0
-
-
-def _set_blocks(sid: str, n: int) -> None:
-    try:
-        d = json.loads(STATE.read_text()) if STATE.exists() else {}
-    except Exception:
-        d = {}
-    d[sid] = n
-    try:
-        STATE.write_text(json.dumps(d)[:20000])
-    except Exception:
-        pass
-
-
 def _last_user_text(transcript_path: str) -> str:
     """Syafiq's most recent real message, or '' if it cannot be read.
 
@@ -308,7 +293,6 @@ def main() -> None:
     if data.get("hook_event_name", "") not in ("Stop", "SubagentStop"):
         sys.exit(0)
 
-    sid = str(data.get("session_id", "-"))
     text = data.get("last_assistant_message") or ""
 
     # Syafiq asked for depth -> the directive is waived by him, not by me
@@ -317,21 +301,26 @@ def main() -> None:
 
     hard, warn = lint(text)
 
-    if hard and _blocks(sid) >= MAX_BLOCKS:
-        print(f"[style_lint] {len(hard)} unresolved after {MAX_BLOCKS} attempts - "
-              "passing through. " + " | ".join(hard), file=sys.stderr)
-        _set_blocks(sid, 0)
-        sys.exit(0)
-
+    # WARN-ONLY SINCE 2026-08-16. It used to exit 2 on a hard finding, forcing a
+    # rewrite. MEASURED, and the reason for the change: Stop fires AFTER the reply is
+    # already rendered to Syafiq, and no exit code can un-print text. So blocking never
+    # replaced the bad reply — it only appended a second, tidier one, and Syafiq read
+    # the same explanation twice. It happened three times in one session.
+    #
+    # First principle: a guard can only prevent what has not happened yet. At Stop, the
+    # violation already happened; the only thing still in the future is the NEXT reply.
+    # So the feedback is aimed there. Prevention that needs to act BEFORE the text exists
+    # cannot live on this event at all.
     if hard:
-        _set_blocks(sid, _blocks(sid) + 1)
-        msg = ["[style_lint] BLOCKED - rewrite in Dumb Mode before replying:"]
+        msg = ["[style_lint] Dumb Mode violations - apply these to your NEXT reply "
+               "(not a rewrite of this one; Syafiq has already read it):"]
         msg += [f"  - {h}" for h in hard]
         msg += [f"  ~ {w}" for w in warn]
-        print("\n".join(msg), file=sys.stderr)
-        sys.exit(2)
+        body = "\n".join(msg)
+        print(json.dumps({"systemMessage": body}))
+        print(body, file=sys.stderr)
+        sys.exit(0)
 
-    _set_blocks(sid, 0)
     if warn:
         body = "[style_lint] " + " | ".join(w.split("  ", 1)[0] for w in warn)
         print(json.dumps({"systemMessage": body + "\n" + "\n".join(f"  ~ {w}" for w in warn)}))
