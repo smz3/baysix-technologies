@@ -22,7 +22,11 @@ import re
 import sys
 
 WRITE_SQL = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE|CREATE)\b", re.IGNORECASE)
-DB_NAMES = ("research.db", "execution.db")
+# baysix.db added 2026-08-16 (task 357): research.db moved to db/baysix.db, and for a
+# few commits the new path was NOT guarded — a raw write to it would have gone straight
+# through. research.db is kept in the tuple so the ban still bites on stale scripts and
+# on the backups under research/db/_backup/.
+DB_NAMES = ("baysix.db", "research.db", "execution.db")
 
 
 def _block(reason: str) -> None:
