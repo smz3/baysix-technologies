@@ -779,3 +779,35 @@ def vacuum() -> Path:
 
 if __name__ == "__main__":
     init_db()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DISABLED by migration 038 (2026-08-16). fob_cycles / fob_zones / fob_events /
+# fob_run_stats were dropped: the ledger no longer carries strategy-shaped tables.
+# These six functions staged raw FOB payload INTO those tables, so they cannot run.
+#
+# To restore FOB ingest, rewrite it to write Parquet directly into
+# research/data/fob_payload/run_<id>/ — no DB staging step at all. That is the agreed
+# direction (finished output -> files, live mutable state -> DB) and it removes the
+# export-then-clear dance these functions existed to perform.
+#
+# Already-ingested runs are UNAFFECTED: their Parquet is on disk and
+# fob_payload.read_fob_payload() still reads it.
+# ─────────────────────────────────────────────────────────────────────────────
+_FOB_INGEST_DISABLED = (
+    "FOB DB-staging ingest is disabled: migration 038 dropped fob_cycles/fob_zones/"
+    "fob_events/fob_run_stats. Rewrite this path to write Parquet directly "
+    "(research/data/fob_payload/run_<id>/) before calling it. Reading existing runs "
+    "still works via fob_payload.read_fob_payload()."
+)
+
+
+def _fob_disabled(*_a, **_k):
+    raise NotImplementedError(_FOB_INGEST_DISABLED)
+
+reset_fob_payload_tables = _fob_disabled
+ingest_fob = _fob_disabled
+derive_fob_confirm_linkage = _fob_disabled
+derive_fob_tier_c_outcome = _fob_disabled
+derive_fob_run_stats = _fob_disabled
+clear_fob_payload_run = _fob_disabled

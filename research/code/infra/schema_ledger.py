@@ -145,102 +145,12 @@ CREATE TABLE IF NOT EXISTS tester_run_summary (
     created_at      DATETIME NOT NULL
 );
 
--- ── FOB-001 payload: storyline (cycles/events) + zones (FOB owns its shape) ───
--- A cycle = PBO->VR->CF1->CF2... ; a NEW PBO starts a NEW cycle. tester_zones is
--- BRC's 5-pointer table; FOB uses fob_zones (4-pointer). See spec
--- docs/specs/2026-06-29_fob_data_capture_and_db_rebuild.md.
-CREATE TABLE IF NOT EXISTS fob_cycles (
-    cycle_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    setup_tf          TEXT NOT NULL,
-    seq               INTEGER NOT NULL,              -- per-setup_tf PBO ordinal = cycle id
-    direction         TEXT CHECK(direction IN ('BUY','SELL')),
-    pbo_time DATETIME, pbo_level REAL, pbo_swing_time DATETIME, pbo_bar_close REAL,
-    vr_time DATETIME, vr_level REAL,
-    vr_made_first_tf  TEXT,
-    n_cf              INTEGER,
-    first_cf_time DATETIME, last_cf_time DATETIME,
-    status            TEXT CHECK(status IS NULL OR status IN ('alive','invalidated','complete')),
-    invalidation_time DATETIME, invalidated_by TEXT,
-    start_time DATETIME, end_time DATETIME,
-    meta              TEXT CHECK(meta IS NULL OR json_valid(meta)),
-    created_at        DATETIME NOT NULL,
-    UNIQUE(run_id, setup_tf, seq)
-);
-CREATE INDEX IF NOT EXISTS ix_fob_cycles_run    ON fob_cycles(run_id);
-CREATE INDEX IF NOT EXISTS ix_fob_cycles_run_tf ON fob_cycles(run_id, setup_tf);
-
-CREATE TABLE IF NOT EXISTS fob_zones (
-    zone_id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    cycle_id          INTEGER REFERENCES fob_cycles(cycle_id),
-    source_label      TEXT CHECK(source_label IS NULL OR source_label IN ('PBO','VR','CF')),
-    event_tf          TEXT NOT NULL,
-    direction         TEXT CHECK(direction IN ('BUY','SELL')),
-    l1 REAL, l2 REAL, mid REAL,
-    p1_time DATETIME, p1_price REAL,
-    p3_time DATETIME, p3_price REAL,
-    t1_time DATETIME, t2_time DATETIME, t3_time DATETIME,
-    n_l1_touches INTEGER, n_mid_touches INTEGER, n_l2_touches INTEGER,
-    rt1_time DATETIME, rt2_time DATETIME, rt3_time DATETIME,
-    vr_fresh INTEGER,
-    -- FORWARD POINTER to the next same-cycle CF. Non-null iff a later CF exists, so it can
-    -- never anchor an entry or gate a filter (task 261). Anchor on fob_events.bar_time.
-    next_cf_time DATETIME, next_cf_price REAL,
-    invalidation_time DATETIME, continued INTEGER, alive_at_end INTEGER, bars_alive INTEGER,
-    mfe_r REAL, mae_r REAL, realized_r REAL,
-    zone_key TEXT, is_primary INTEGER, superseded_by TEXT, zone_valid INTEGER,
-    meta TEXT CHECK(meta IS NULL OR json_valid(meta)),
-    created_at DATETIME NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_fob_zones_run     ON fob_zones(run_id);
-CREATE INDEX IF NOT EXISTS ix_fob_zones_cycle   ON fob_zones(cycle_id);
-CREATE INDEX IF NOT EXISTS ix_fob_zones_next_cf ON fob_zones(run_id, next_cf_time);
-
-CREATE TABLE IF NOT EXISTS fob_events (
-    event_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    cycle_id          INTEGER REFERENCES fob_cycles(cycle_id),
-    zone_id           INTEGER REFERENCES fob_zones(zone_id),
-    event_tf          TEXT NOT NULL,
-    label             TEXT CHECK(label IN ('PBO','VR','HRCF','CF')),
-    cf_idx            INTEGER,
-    risk_class        TEXT CHECK(risk_class IS NULL OR risk_class IN ('LOW','HIGH')),
-    direction         TEXT CHECK(direction IN ('BUY','SELL')),
-    swing_time DATETIME, bar_time DATETIME NOT NULL,
-    level REAL, bar_close REAL,
-    body_clears       INTEGER,
-    vr_zone_broken    INTEGER,
-    htf_state         TEXT CHECK(htf_state IS NULL OR json_valid(htf_state)),
-    meta              TEXT CHECK(meta IS NULL OR json_valid(meta)),
-    created_at        DATETIME NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_fob_events_run     ON fob_events(run_id);
-CREATE INDEX IF NOT EXISTS ix_fob_events_cycle   ON fob_events(cycle_id);
-CREATE INDEX IF NOT EXISTS ix_fob_events_run_bar ON fob_events(run_id, bar_time);
-
--- ── FOB-001 rollup (task 228): one CONCLUSION row per (run_id, setup_tf) so
--- downstream screens read ~10 rows, not a ~768k raw-payload scan. Round-1 columns
--- per docs/specs/2026-07-03_fob_payload_dataplane_split.md. Derived by
--- derive_fob_run_stats() after the Tier-C derivations. research.db keeps this even
--- once the raw fob_* tables move to Parquet (Lever 2).
-CREATE TABLE IF NOT EXISTS fob_run_stats (
-    run_id            INTEGER NOT NULL REFERENCES tester_runs(run_id),
-    setup_tf          TEXT NOT NULL,
-    n_cycles          INTEGER,
-    n_zones           INTEGER,
-    n_cf              INTEGER,
-    mean_rt_count     REAL,      -- mean # of non-null rt{1,2,3}_time per zone (0-3)
-    mean_n_l2_touches REAL,
-    vr_fresh_pct      REAL,      -- 100 * AVG(vr_fresh) over zones where vr_fresh NOT NULL
-    mean_realized_r   REAL,
-    mean_mfe_r        REAL,
-    mean_mae_r        REAL,
-    win_pct           REAL,      -- 100 * AVG(continued) over resolved CF zones
-    mean_bars_alive   REAL,
-    created_at        DATETIME NOT NULL,
-    PRIMARY KEY (run_id, setup_tf)
-);
+-- FOB payload tables (fob_cycles / fob_zones / fob_events / fob_run_stats) were
+-- DROPPED by migration 038 (2026-08-16). The ledger no longer carries strategy-shaped
+-- tables: every new strategy used to cost 4 tables + a migration. Raw FOB payload lives
+-- as Parquet under research/data/fob_payload/run_<id>/ and is read via fob_payload.py.
+-- Do NOT re-add per-strategy DDL here; a new SHAPE may earn a generic table, a new
+-- STRATEGY never does.
 """
 
 
@@ -262,111 +172,12 @@ CREATE TABLE IF NOT EXISTS fob_run_stats (
 #     (db_init.py header). They come back here as a BOOKKEEPING ledger only — nothing
 #     auto-kills on them; see [[simplicity_first_protocol]] and CLAUDE.md rule 8.
 # ─────────────────────────────────────────────────────────────────────────────
-SCHEMA_GRW = """
--- One row per pre-registered batch. prereg.json on disk stays the source of truth
--- (hashed + git-committed BEFORE the batch runs); this table is the queryable index
--- so the adjudicator and the "3 batches with no promotion" hard stop can read it.
-CREATE TABLE IF NOT EXISTS grw_batches (
-    batch_id        TEXT PRIMARY KEY,               -- 'grw-2026-08-04-001'
-    idea_id         TEXT NOT NULL,                  -- soft FK into step1_ideas
-    trial_family_id TEXT NOT NULL,                  -- multiplicity key; spans batches
-    hypothesis      TEXT NOT NULL,                  -- one sentence, falsifiable
-    mechanism       TEXT NOT NULL,                  -- WHY the edge should exist (spec 3.0:
-                                                    -- no mechanism = no slot in the batch)
-    fitness_ref     TEXT,                           -- 'grw_fitness.json@<sha>'
-    is_start DATE, is_end DATE,                     -- in-sample window
-    oos_start DATE, oos_end DATE,                   -- HELD OUT — never passed to the optimizer
-    n_trials_budget INTEGER,                        -- declared BEFORE the run
-    promote_if      TEXT NOT NULL,                  -- mechanical rule, applied at S3
-    kill_if         TEXT,
-    prereg_path     TEXT,                           -- data/grw_runs/<batch_id>/prereg.json
-    prereg_sha      TEXT NOT NULL,                  -- sha256 of prereg.json minus this field
-    prereg_git_sha  TEXT,                           -- commit that froze the prereg
-    stage           TEXT CHECK(stage IS NULL OR stage IN
-                       ('S0','S1','S2','S3','S4','S5')),
-    oos_spent       INTEGER NOT NULL DEFAULT 0,     -- 1 once OOS has been looked at (spec 2.2:
-                                                    -- "looking is spending it")
-    n_promoted      INTEGER,                        -- filled at S4
-    notes           TEXT,
-    created_at      DATETIME NOT NULL,
-    updated_at      DATETIME NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_grw_batches_family ON grw_batches(trial_family_id, created_at);
-
--- One row per optimizer pass (S0). NOT a result — see the verdict column.
-CREATE TABLE IF NOT EXISTS grw_passes (
-    pass_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_id        TEXT NOT NULL REFERENCES grw_batches(batch_id),
-    trial_family_id TEXT NOT NULL,                  -- denormalised for cheap family rollups
-    idea_id         TEXT NOT NULL,
-    prereg_sha      TEXT NOT NULL,                  -- goalpost the pass was judged against
-    config_hash     TEXT,                           -- hash of params; dedupes repeat configs
-    params          TEXT CHECK(params IS NULL OR json_valid(params)),  -- EA inputs snapshot
-    -- S0/S1: in-sample --
-    is_run_id       INTEGER REFERENCES tester_runs(run_id),
-    is_fitness      REAL,                           -- OnTester() custom fitness. v2.0.0 =
-                                                    -- barrier outcome: 1.0 target / 0.0 floor
-                                                    -- / -1e9 CENSORED (grw_fitness.json)
-    is_growth       REAL,                           -- log-growth over the IS window. PARKED
-                                                    -- objective, kept as a diagnostic only —
-                                                    -- never rank on it (fitness v2.0.0)
-    is_n_trades     INTEGER,
-    is_net_usd      REAL,
-    is_max_dd_pct   REAL,                           -- REPORTED, never a constraint (spec 0/§2)
-    rank            INTEGER,                        -- S1 rank by fitness within the batch
-    -- S2: held-out --
-    oos_run_id      INTEGER REFERENCES tester_runs(run_id),
-    oos_fitness     REAL,
-    oos_growth      REAL,
-    oos_n_trades    INTEGER,
-    oos_net_usd     REAL,
-    oos_max_dd_pct  REAL,
-    -- S3/S4: adjudication (mechanical — the agent gets no vote) --
-    stage           TEXT CHECK(stage IS NULL OR stage IN ('S0','S1','S2','S3','S4')),
-    verdict         TEXT CHECK(verdict IS NULL OR verdict IN
-                       ('PENDING','PROMOTED','FALSIFIED','KILLED')),
-    verdict_reason  TEXT,                           -- which clause of promote_if/kill_if fired
-    adjudicated_at  DATETIME,
-    result_id       INTEGER,                        -- soft ref to step4_results once promoted
-    git_sha         TEXT,
-    git_dirty       INTEGER,
-    created_at      DATETIME NOT NULL,
-    updated_at      DATETIME NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_grw_passes_batch   ON grw_passes(batch_id, rank);
-CREATE INDEX IF NOT EXISTS ix_grw_passes_family  ON grw_passes(trial_family_id);
-CREATE INDEX IF NOT EXISTS ix_grw_passes_verdict ON grw_passes(verdict);
-
--- The multiplicity ledger, as a view so it can never fall out of sync with the passes.
--- "A growth rate without its trial count is not a finding" (spec 2.3).
-DROP VIEW IF EXISTS grw_family_trials;
-CREATE VIEW grw_family_trials AS
-SELECT p.trial_family_id,
-       COUNT(*)                                             AS n_trials_cum,
-       COUNT(DISTINCT p.batch_id)                           AS n_batches,
-       COUNT(DISTINCT p.config_hash)                        AS n_distinct_configs,
-       SUM(CASE WHEN p.verdict = 'PROMOTED'  THEN 1 ELSE 0 END) AS n_promoted,
-       SUM(CASE WHEN p.verdict = 'FALSIFIED' THEN 1 ELSE 0 END) AS n_falsified,
-       MIN(p.created_at)                                    AS first_pass_at,
-       MAX(p.created_at)                                    AS last_pass_at
-FROM grw_passes p
-GROUP BY p.trial_family_id;
-
--- Batch scoreboard: drives the spec-3.3 hard stop (3 consecutive no-promotion batches).
-DROP VIEW IF EXISTS grw_batch_scoreboard;
-CREATE VIEW grw_batch_scoreboard AS
-SELECT b.batch_id, b.idea_id, b.trial_family_id, b.stage, b.oos_spent,
-       b.hypothesis, b.n_trials_budget,
-       COUNT(p.pass_id)                                         AS n_passes_run,
-       SUM(CASE WHEN p.verdict = 'PROMOTED'  THEN 1 ELSE 0 END) AS n_promoted,
-       SUM(CASE WHEN p.verdict = 'FALSIFIED' THEN 1 ELSE 0 END) AS n_falsified,
-       SUM(CASE WHEN p.verdict IS NULL OR p.verdict = 'PENDING'
-                THEN 1 ELSE 0 END)                              AS n_pending,
-       MAX(p.is_growth)                                         AS best_is_growth,
-       MAX(p.oos_growth)                                        AS best_oos_growth,
-       b.created_at
-FROM grw_batches b
-LEFT JOIN grw_passes p ON p.batch_id = b.batch_id
-GROUP BY b.batch_id
-ORDER BY b.created_at DESC;
-"""
+# SCHEMA_GRW is intentionally empty. grw_batches / grw_passes and their two views were
+# DROPPED by migration 038 (2026-08-16) under the same no-per-strategy-tables rule; both
+# were empty (GRW-001 had never run). The constant is kept so existing imports
+# (db_init.py, migration 037) keep resolving — it now creates nothing.
+#
+# STILL OWED before GRW-001 starts: grw_passes carried `trial_family_id`, the multiplicity
+# ledger that raises the bar as the search widens. It needs a GENERIC home in the spine —
+# trial counting is a spine concern (how much did we search), not strategy data.
+SCHEMA_GRW = ""

@@ -51,6 +51,18 @@ def _git_provenance():
 
 
 def main():
+    # DISABLED by migration 038 (2026-08-16). This ingests INTO fob_cycles/fob_zones/
+    # fob_events, which were dropped when the ledger stopped carrying strategy-shaped
+    # tables. Fail here rather than three layers down on "no such table: fob_cycles".
+    # Restore path: write Parquet straight to research/data/fob_payload/run_<id>/ and
+    # delete the DB-staging step entirely. Existing runs still read fine via
+    # fob_payload.read_fob_payload().
+    raise SystemExit(
+        "ingest_fob is disabled: migration 038 dropped the fob_* staging tables.\n"
+        "Rewrite this to write Parquet directly before using it. See "
+        "research/migrations/038_drop_strategy_tables.py."
+    )
+
     ap = argparse.ArgumentParser(description="Ingest a FOB capture CSV into research.db")
     ap.add_argument("--csv", required=True, help="path to fob_capture_*.csv (UTF-8)")
     ap.add_argument("--idea-id", default="FOB-001")

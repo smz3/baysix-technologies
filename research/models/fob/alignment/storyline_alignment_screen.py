@@ -107,6 +107,15 @@ def _two_prop_z(c1, n1, c0, n0):
 
 
 def main():
+    # DISABLED by migration 038 (2026-08-16): this reads fob_events/fob_zones/fob_cycles,
+    # which were dropped when the ledger stopped carrying strategy-shaped tables. The same
+    # payload is still on disk as Parquet — port the query to
+    # fob_payload.read_fob_payload(run_id, table, setup_tf=..., cols=[...]) to revive it.
+    raise SystemExit(
+        "disabled: migration 038 dropped the fob_* tables. Port this screen to read "
+        "Parquet via research/code/io/fob_payload.py."
+    )
+
     ap = argparse.ArgumentParser(description="FOB storyline-alignment exploratory screen (task 192)")
     ap.add_argument("--run-id", type=int, default=None, help="default = newest FOB-001 emitter run")
     ap.add_argument("--idea-id", default="FOB-001")
