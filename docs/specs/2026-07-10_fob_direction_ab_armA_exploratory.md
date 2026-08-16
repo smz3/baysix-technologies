@@ -20,7 +20,9 @@ Setup M30 → CF on M15 · ALL CFs (`InpCfIdxFilter=0`) · no filters · trail-o
 (`InpTrailStop=true`, activate 1.0R, dist 1.5R) · `InpSlBufferK=0.5` · `CF_MARKET` · real ticks (Model=4) ·
 deposit $10,000 · lot 0.01 · magic 3001.
 
-Ledger archived (gitignored): `research/outputs/fob_ab_direction/armA_M30M15_cfALL_trail_k050_FULLSPAN_a025224DIRTY.csv`
+Trade-by-trade ledger DELETED 2026-08-16 (outputs/ purge, was gitignored — no copy exists).
+It was armA_M30M15_cfALL_trail_k050_FULLSPAN_a025224DIRTY.csv; the summary tables below are all
+that survives of it.
 
 ## Arm A result (exploratory)
 
@@ -81,8 +83,10 @@ sense at M30-M15, and arm A's loss is spread, not signal.
 # VERDICT — 2026-07-10, same day: **PREDICTION FALSIFIED. BOTH DIRECTIONS LOSE.**
 
 Both arms re-run on ONE clean binary (**v1.40.0, git `46216a0`, `FOB_GIT_DIRTY=false`**), presets differing by
-`InpInvertDir` **only**. `strategy_log` **112** (FALSIFIED). Ledgers archived to
-`research/outputs/fob_ab_direction/armA_normal_*.csv` / `armB_inverted_*.csv`.
+`InpInvertDir` **only**. `strategy_log` **112** (FALSIFIED). Both trade-by-trade ledgers
+(armA_normal / armB_inverted, v1.40.0 `46216a0`) DELETED 2026-08-16 in the outputs/ purge —
+they were gitignored, so no copy exists. The tables below and `strategy_log` 112 are the record;
+`result_id` 52/53/54 hold the IS numbers.
 
 | arm | n | net $/trade | SE | t | R/trade | win-rate | maxDD |
 |---|---|---|---|---|---|---|---|
