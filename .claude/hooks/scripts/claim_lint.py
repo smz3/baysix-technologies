@@ -42,7 +42,7 @@ from pathlib import Path
 
 MAX_BLOCKS = 2
 REPO = Path(__file__).resolve().parents[3]
-DB = REPO / "research" / "db" / "research.db"
+DB = Path(os.environ.get("BAYSIX_DB") or (REPO / "db" / "baysix.db"))
 STATE = Path(os.environ.get("TEMP", "/tmp")) / "claim_lint_blocks.json"
 
 # ---------------------------------------------------------------- detectors

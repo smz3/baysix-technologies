@@ -23,9 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root for run-as-script
 from research.code.infra.schema_ledger import SCHEMA_MT5, SCHEMA_GRW
 
-DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
-
-
+from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
 def init():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")

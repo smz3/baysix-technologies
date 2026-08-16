@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root for ru
 from research.code.gates import pipeline
 from research.code.infra.schema_ledger import SCHEMA_MT5
 
-DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
+from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
 MYT     = timezone(timedelta(hours=8))
 
 # Provenance enums — where the ticks came from + how MT5 modelled them.

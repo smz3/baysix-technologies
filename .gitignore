@@ -58,8 +58,14 @@ research/db/execution.db
 # up off-disk). Was tracked through HEAD 78d8f12 (88MB); history left intact (all ≤88MB,
 # already pushed). Local space reclaim: `git gc --prune=now`.
 research/db/research.db
+# MOVED 2026-08-16 (task 357): research/db/research.db -> db/baysix.db. One canonical
+# absolute path via $BAYSIX_DB so every worktree shares ONE ledger instead of silently
+# creating its own empty copy. Same reason for staying untracked.
+db/baysix.db
 # WAL sidecars (migration 037 switched journal_mode delete->wal). SQLite removes them on a
 # clean close, so they only appear mid-session — but they MUST never be committable.
+db/*.db-wal
+db/*.db-shm
 research/db/*.db-wal
 research/db/*.db-shm
 

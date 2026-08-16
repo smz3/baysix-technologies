@@ -46,8 +46,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).parents[3]
-DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
-
+from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
 # --- result-shaped number patterns -------------------------------------------
 # Each entry: (label, compiled regex). Kept deliberately specific to avoid
 # flagging dates ($50 capital, 2026-06-12, version numbers, task IDs).

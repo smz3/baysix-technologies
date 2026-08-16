@@ -24,7 +24,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
+from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
 MYT     = timezone(timedelta(hours=8))
 
 GATE_QUESTIONS = {

@@ -22,9 +22,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-DB_PATH = Path(__file__).parents[2] / "db" / "research.db"
-
-
+from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row

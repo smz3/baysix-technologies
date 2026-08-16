@@ -1,12 +1,13 @@
 """SessionStart briefing — prints the live research backlog + recent results so every
 new agent sees what's open and what's already been tested, without relying on memory.
-Wired into the SessionStart hook (.claude/settings.json). Read-only on research.db."""
+Wired into the SessionStart hook (.claude/settings.json). Read-only on baysix.db."""
+import os
 import sqlite3
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-DB = REPO / "research" / "db" / "research.db"
+DB = Path(os.environ.get("BAYSIX_DB") or (REPO / "db" / "baysix.db"))
 MEM = REPO / "memory"
 
 

@@ -35,7 +35,7 @@
     ],
     "soft_deny": [
       "$defaults",
-      "Deleting anything under research/db/ (including research.db, execution.db, and every file in research/db/_backup/) is NEVER allowed — these are the live research ledger and its only snapshots.",
+      "Deleting anything under db/ (baysix.db, its -wal/-shm) or under research/db/ (execution.db, _seed/, and every file in research/db/_backup/) is NEVER allowed — these are the live research ledger and its only snapshots.",
       "Deleting anything under research/data/arctic/ is NEVER allowed — canonical tick data.",
       "Deleting git-TRACKED files is not allowed here; those go through git rm in an agent_commit.py pass, not a bare rm."
     ]
@@ -48,7 +48,8 @@
     "SIGMA_BRAIN": "C:\\Users\\User\\Desktop\\baysix-technologies",
     "SIGMA_QUANT": "C:\\Users\\User\\Desktop\\sigma-quant",
     "SIGMA_LINKEDIN": "C:\\Users\\User\\Desktop\\sigma-linkedin",
-    "SIGMA_RESEARCH": "C:\\Users\\User\\Desktop\\sigma-research"
+    "SIGMA_RESEARCH": "C:\\Users\\User\\Desktop\\sigma-research",
+    "BAYSIX_DB": "C:\\Users\\User\\Desktop\\baysix-technologies\\db\\baysix.db"
   },
   "hooks": {
     "SessionStart": [
