@@ -21,58 +21,15 @@ Everything is CREATE ... IF NOT EXISTS, so executing either constant is idempote
 # SCHEMA_MT5 — the MT5 run ledger: shared spine + FOB payload.
 # Verbatim carry-over of tester.py's former _SCHEMA (which matched the live DB).
 # ─────────────────────────────────────────────────────────────────────────────
-SCHEMA_MT5 = """
--- G4 (Live/FIDELITY) evidence — lives in research.db next to step4_results.
-CREATE TABLE IF NOT EXISTS tester_runs (
-    run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    idea_id         TEXT NOT NULL,                 -- soft FK into step1_ideas (same DB)
-    run_role        TEXT CHECK(run_role IS NULL OR run_role IN ('emitter','trader')),
-    ea_name         TEXT,                          -- 'baysix_orb_001'
-    ea_version      TEXT,
-    git_sha         TEXT,                          -- provenance (DIRTY tree = exploratory only)
-    git_dirty       INTEGER,
-    symbol          TEXT NOT NULL,                 -- e.g. 'XAUUSD_dukas'
-    data_source     TEXT NOT NULL CHECK(data_source IN
-                       ('dukascopy','broker_history','custom')),
-    model_quality   TEXT,                          -- MT5 history quality, e.g. '100% real ticks'
-    tester_model    TEXT CHECK(tester_model IS NULL OR tester_model IN
-                       ('real_ticks','every_tick','1min_ohlc','open_only')),
-    timeframe       TEXT,                          -- 'M1'
-    period_start    DATE,
-    period_end      DATE,
-    tz_offset_hours INTEGER,                        -- tester server->UTC offset (0 = UTC dukas)
-    magic_number    INTEGER,
-    initial_deposit REAL,                           -- fair deposit (cap non-binding)
-    leverage        INTEGER,
-    spread_setting  TEXT,                           -- 'real' | 'fixed:N'
-    params          TEXT CHECK(params IS NULL OR json_valid(params)),  -- EA inputs snapshot
-    -- run-level summary --
-    n_trades        INTEGER,
-    net_profit_usd  REAL,
-    profit_factor   REAL,
-    max_dd_pct      REAL,
-    win_rate        REAL,
-    -- FIDELITY diff vs Python research (filled by log_fidelity_diff) --
-    research_result_id   INTEGER,                   -- soft ref to step4_results
-    trade_overlap_pct    REAL,                      -- same session_date+direction
-    ER_delta_vs_research REAL,
-    R_corr               REAL,
-    fidelity_verdict     TEXT CHECK(fidelity_verdict IS NULL OR
-                            fidelity_verdict IN ('pass','fail','pending')),
-    notes           TEXT,
-    created_at      DATETIME NOT NULL,
-    updated_at      DATETIME NOT NULL
-);
-
-
--- tester_trades / tester_zones / tester_run_summary were DROPPED by migration 039
--- (2026-08-16). They were bulk per-run PAYLOAD; payload lives in files keyed by the
--- run_id in the path, not in the ledger.
---
--- tester_runs above is deliberately KEPT: it is the run REGISTRY, the row that makes
--- research/data/fob_payload/run_<id>/ identifiable instead of anonymous. Rename it to
--- `runs` + add a `platform` column when the DB moves to baysix.db.
-"""
+# SCHEMA_MT5 is intentionally empty. tester_runs was DROPPED by migration 040
+# (2026-08-16), completing 038/039: research.db is now a pure spine — ideas, papers,
+# gates, results, three logs, four views. Nothing named after a strategy OR a platform.
+# The constant is kept so existing imports (db_init.py) keep resolving.
+#
+# When the DB moves to baysix.db, a GENERIC `runs` registry (one row per backtest, with
+# a `platform` column) is still the right thing to build — it is what makes an output
+# folder identifiable. It just starts empty rather than carrying superseded FOB history.
+SCHEMA_MT5 = ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -829,3 +829,25 @@ def _tester_payload_disabled(*_a, **_k):
 
 ingest_tester_trade = _tester_payload_disabled
 ingest_brc_zones = _tester_payload_disabled
+
+# Migration 040 dropped tester_runs, the last table this module wrote to. Every remaining
+# entry point below depended on it, so the whole ingest/fidelity surface is now inert.
+# It is kept (not deleted) because the SHAPE is worth reusing: a generic `runs` registry
+# with a `platform` column is the agreed design for baysix.db. Port these then, against
+# that table, with per-trade output going to Parquet instead of the ledger.
+_TESTER_RUNS_GONE = (
+    "tester_runs was dropped by migration 040 — research.db is a pure spine now. "
+    "Rebuild against the generic `runs` registry when it lands in baysix.db."
+)
+
+
+def _tester_runs_gone(*_a, **_k):
+    raise NotImplementedError(_TESTER_RUNS_GONE)
+
+
+init_db = _tester_runs_gone
+ingest_tester_run = _tester_runs_gone
+get_tester_run = _tester_runs_gone
+delete_run = _tester_runs_gone
+log_fidelity_diff = _tester_runs_gone
+gate4_passed = _tester_runs_gone
