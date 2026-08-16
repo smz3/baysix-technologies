@@ -18,7 +18,10 @@ def tmp_db(tmp_path, monkeypatch):
     db_init.init()
     # spec requires a parent idea (FK)
     import sqlite3
+    from research.code.infra import db_guard
     conn = sqlite3.connect(db)
+    # Seeding a fixture IS a legitimate write, so it says so (migration 045).
+    db_guard.arm(conn, reason="test fixture")
     conn.execute(
         "INSERT INTO step1_ideas (idea_id, name, created_at, updated_at) "
         "VALUES ('T-001','Test idea','2026-01-01 00:00:00','2026-01-01 00:00:00')"

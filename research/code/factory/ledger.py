@@ -1,5 +1,19 @@
 """factory.db — the ledger, and the ONLY place its DDL is written.
 
+ONE SCHEMA, ONE FILE PER PLATFORM
+`Ledger("mt5")` and `Ledger("ninjatrader")` open different files with identical
+DDL. The factory core never knew which platform it was running (a venue is six
+verbs, see `venue.py`), so serving both cost a path argument, not a fork.
+See `db_path.py` for why the files are separate.
+
+WHY THE SWEEP TABLES CARRY A PREFIX (task 362)
+`sweep_runs`, `sweep_verdicts` and `sweep_claims` were plain `runs`, `verdicts`
+and `claims` until 2026-08-16. The spine grew its own `runs` table in migration
+042, and two tables with one name and two meanings is a bug waiting for the first
+person to read the wrong one. The prefix says which layer a row belongs to:
+`sweep_*` is the workshop, one row per candidate tried; the spine's `runs` is the
+notebook, one row per registered backtest that earned a name.
+
 Two lessons from the MT5 side are baked in rather than re-learned:
 
 *   **One DDL home.** Over there the `tester_runs` DDL was duplicated between the
@@ -32,16 +46,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
-from factory.adjudicate import Verdict as RuleVerdict
-from factory.objective import BarrierOutcome
-from factory.prereg import Prereg
-from factory.provenance import Claim
-from factory.spec import StrategySpec
-from factory.venue import AgreementReport, RunResult, Window
+from research.code.factory.adjudicate import Verdict as RuleVerdict
+from research.code.factory.db_path import (
+    PLATFORMS, assert_not_spine, factory_db_path, repo_root,
+)
+from research.code.factory.objective import BarrierOutcome
+from research.code.factory.prereg import Prereg
+from research.code.factory.provenance import Claim
+from research.code.factory.spec import StrategySpec
+from research.code.factory.venue import AgreementReport, RunResult, Window
 
-__all__ = ["Ledger", "LedgerError", "SCHEMA", "DEFAULT_DB"]
-
-DEFAULT_DB = Path(__file__).resolve().parents[1] / "db" / "factory.db"
+__all__ = ["Ledger", "LedgerError", "SCHEMA", "PLATFORMS"]
 
 
 class LedgerError(RuntimeError):
@@ -94,8 +109,8 @@ SCHEMA: dict[str, str] = {
     """,
     # One row per execution. A run IS one episode, i.e. ONE Bernoulli draw — the
     # probability lives at aggregate level, never here.
-    "runs": """
-        CREATE TABLE IF NOT EXISTS runs (
+    "sweep_runs": """
+        CREATE TABLE IF NOT EXISTS sweep_runs (
             run_id             INTEGER PRIMARY KEY AUTOINCREMENT,
             candidate_id       INTEGER NOT NULL REFERENCES candidates(candidate_id),
             batch_id           TEXT NOT NULL REFERENCES batches(batch_id),
@@ -127,7 +142,7 @@ SCHEMA: dict[str, str] = {
     "trades": """
         CREATE TABLE IF NOT EXISTS trades (
             trade_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id      INTEGER NOT NULL REFERENCES runs(run_id),
+            run_id      INTEGER NOT NULL REFERENCES sweep_runs(run_id),
             entry_ts    TEXT NOT NULL,
             exit_ts     TEXT NOT NULL,
             direction   INTEGER NOT NULL,
@@ -144,8 +159,8 @@ SCHEMA: dict[str, str] = {
         CREATE TABLE IF NOT EXISTS agreements (
             agreement_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             candidate_id    INTEGER NOT NULL REFERENCES candidates(candidate_id),
-            search_run_id   INTEGER NOT NULL REFERENCES runs(run_id),
-            arbiter_run_id  INTEGER NOT NULL REFERENCES runs(run_id),
+            search_run_id   INTEGER NOT NULL REFERENCES sweep_runs(run_id),
+            arbiter_run_id  INTEGER NOT NULL REFERENCES sweep_runs(run_id),
             agree           INTEGER NOT NULL,
             lines_json      TEXT NOT NULL,
             created_at      TEXT NOT NULL
@@ -153,8 +168,8 @@ SCHEMA: dict[str, str] = {
     """,
     # Every verdict carries the prereg_sha it was judged against, so a decision
     # reached under a moved goalpost is self-evident from the row alone.
-    "verdicts": """
-        CREATE TABLE IF NOT EXISTS verdicts (
+    "sweep_verdicts": """
+        CREATE TABLE IF NOT EXISTS sweep_verdicts (
             verdict_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             batch_id      TEXT NOT NULL REFERENCES batches(batch_id),
             candidate_id  INTEGER NOT NULL REFERENCES candidates(candidate_id),
@@ -169,8 +184,8 @@ SCHEMA: dict[str, str] = {
             UNIQUE (batch_id, candidate_id)
         )
     """,
-    "claims": """
-        CREATE TABLE IF NOT EXISTS claims (
+    "sweep_claims": """
+        CREATE TABLE IF NOT EXISTS sweep_claims (
             claim_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             scope       TEXT NOT NULL,
             scope_id    TEXT,
@@ -210,8 +225,8 @@ SCHEMA: dict[str, str] = {
 }
 
 INDEXES: tuple[str, ...] = (
-    "CREATE INDEX IF NOT EXISTS ix_runs_candidate ON runs (candidate_id, leg)",
-    "CREATE INDEX IF NOT EXISTS ix_runs_batch ON runs (batch_id, leg)",
+    "CREATE INDEX IF NOT EXISTS ix_sweep_runs_candidate ON sweep_runs (candidate_id, leg)",
+    "CREATE INDEX IF NOT EXISTS ix_sweep_runs_batch ON sweep_runs (batch_id, leg)",
     "CREATE INDEX IF NOT EXISTS ix_trades_run ON trades (run_id)",
     "CREATE INDEX IF NOT EXISTS ix_cand_batch ON candidates (batch_id)",
     "CREATE INDEX IF NOT EXISTS ix_events_batch ON events (batch_id, event_id)",
@@ -240,7 +255,7 @@ VIEWS: dict[str, str] = {
                SUM(CASE WHEN v.ruling = 'FALSIFIED' THEN 1 ELSE 0 END) AS n_falsified
         FROM batches b
         LEFT JOIN candidates c ON c.batch_id = b.batch_id
-        LEFT JOIN verdicts  v ON v.candidate_id = c.candidate_id
+        LEFT JOIN sweep_verdicts  v ON v.candidate_id = c.candidate_id
         GROUP BY b.batch_id
     """,
 }
@@ -266,11 +281,33 @@ def _git(repo: Path) -> tuple[str | None, int | None]:
 
 
 class Ledger:
-    """The write layer. Nothing else opens a cursor on factory.db."""
+    """The write layer. Nothing else opens a cursor on a factory.db.
 
-    def __init__(self, path: str | Path = DEFAULT_DB, *, repo: Path | None = None):
-        self.path = Path(path)
-        self.repo = repo or self.path.resolve().parents[1]
+    Normal use names a platform and lets `db_path` resolve the file:
+
+        Ledger("mt5")           -> platforms/mt5/db/factory.db
+        Ledger("ninjatrader")   -> platforms/ninjatrader/db/factory.db
+
+    `path=` overrides that and exists for tests, which need a tmp file. It is
+    NOT the way production code should open a ledger: a hand-built path is how
+    a worktree ends up counting its trials in a second file (see db_path.py).
+    """
+
+    def __init__(
+        self,
+        platform: str | None = None,
+        *,
+        path: str | Path | None = None,
+        repo: Path | None = None,
+    ):
+        if (platform is None) == (path is None):
+            raise LedgerError(
+                "give exactly one of platform= or path=. `Ledger(\"mt5\")` for real "
+                "work; `Ledger(path=tmp)` only in tests."
+            )
+        self.platform = platform.strip().lower() if platform else None
+        self.path = Path(path) if path is not None else factory_db_path(self.platform)
+        self.repo = repo or repo_root()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
@@ -289,6 +326,10 @@ class Ledger:
 
     def _init_schema(self) -> None:
         with self._conn() as conn:
+            # Checked BEFORE the DDL runs: if this file has grown a spine table,
+            # the answer is to find out who wrote it, not to add more tables
+            # alongside it.
+            assert_not_spine(conn)
             for ddl in SCHEMA.values():
                 conn.execute(ddl)
             for ddl in INDEXES:
@@ -399,7 +440,7 @@ class Ledger:
         sha, dirty = _git(self.repo)
         with self._conn() as conn:
             cur = conn.execute(
-                """INSERT INTO runs (candidate_id, batch_id, venue, venue_role, leg,
+                """INSERT INTO sweep_runs (candidate_id, batch_id, venue, venue_role, leg,
                        window_start, window_end, data_ref, objective_ref, verdict,
                        fitness, n_trades, net_usd, days_traded, best_day_profit,
                        effective_target, floor_at_end, peak_equity, trough_equity,
@@ -492,7 +533,7 @@ class Ledger:
             if batch is None:
                 raise LedgerError(f"no such batch {batch_id!r}")
             existing = conn.execute(
-                "SELECT ruling FROM verdicts WHERE batch_id = ? AND candidate_id = ?",
+                "SELECT ruling FROM sweep_verdicts WHERE batch_id = ? AND candidate_id = ?",
                 (batch_id, candidate_id),
             ).fetchone()
             if existing:
@@ -502,7 +543,7 @@ class Ledger:
                     f"batch if the bar was wrong."
                 )
             cur = conn.execute(
-                """INSERT INTO verdicts (batch_id, candidate_id, prereg_sha, ruling,
+                """INSERT INTO sweep_verdicts (batch_id, candidate_id, prereg_sha, ruling,
                        promote_rule, kill_rule, inputs_json, n_trials, detail, created_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (batch_id, candidate_id, batch["prereg_sha"], verdict.ruling.value,
@@ -516,7 +557,7 @@ class Ledger:
         row = claim.to_row()
         with self._conn() as conn:
             cur = conn.execute(
-                """INSERT INTO claims (scope, scope_id, name, value, unit,
+                """INSERT INTO sweep_claims (scope, scope_id, name, value, unit,
                                        provenance, source, claimed_at)
                    VALUES (?,?,?,?,?,?,?,?)""",
                 (scope, scope_id, row["name"], str(row["value"]), row["unit"],
@@ -562,14 +603,14 @@ class Ledger:
             (batch_id,),
         )
 
-    def runs(self, candidate_id: int, leg: str | None = None) -> list[sqlite3.Row]:
+    def sweep_runs(self, candidate_id: int, leg: str | None = None) -> list[sqlite3.Row]:
         if leg:
             return self.query(
-                "SELECT * FROM runs WHERE candidate_id = ? AND leg = ? ORDER BY run_id",
+                "SELECT * FROM sweep_runs WHERE candidate_id = ? AND leg = ? ORDER BY run_id",
                 (candidate_id, leg),
             )
         return self.query(
-            "SELECT * FROM runs WHERE candidate_id = ? ORDER BY run_id", (candidate_id,)
+            "SELECT * FROM sweep_runs WHERE candidate_id = ? ORDER BY run_id", (candidate_id,)
         )
 
     def consecutive_batches_without_promotion(self, family: str) -> int:

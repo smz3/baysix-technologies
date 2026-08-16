@@ -31,9 +31,21 @@ _REPO = _pl.Path(__file__).resolve().parents[3]
 if str(_REPO) not in _sys.path:
     _sys.path.insert(0, str(_REPO))
 from research.code.infra.db_path import DB_PATH  # noqa: F401  (task 357: one canonical path)
+from research.code.infra import db_guard
+
+GUARD_MESSAGE = (
+    "raw write refused (CLAUDE.md rule 10) - open the connection through "
+    "research/code/ (pipeline / strategy_log / backlog / agent_log / runs), or "
+    "call db_guard.arm(conn) if you are a migration"
+)
+
+
 def init():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
+    # Creating the guard triggers below references baysix_writer() by name; arming
+    # keeps the whole build on one connection that can also seed if it needs to.
+    db_guard.arm(conn, reason="db_init bootstrap")
     cur = conn.cursor()
 
     cur.executescript("""
@@ -106,7 +118,10 @@ def init():
             cost_adjusted   INTEGER NOT NULL DEFAULT 0
                             CHECK(cost_adjusted IN (0,1)),
             period          TEXT CHECK(period IN ('per_trade','daily','annualised')),
-            n_obs           INTEGER,
+            -- NOT NULL since migration 044: log_result() has always required both,
+            -- and a metric with no sample size or no commit cannot be sized or
+            -- reproduced by a reader.
+            n_obs           INTEGER NOT NULL,
             is_run          TEXT,                   -- 4.0 IS run label (IS-01, IS-02…); count shots via DISTINCT is_run
             what_changed    TEXT,                   -- what was swept on this IS run (was is_runs.what_changed)
             -- GRW-001 multiplicity ledger (task 289, migration 037). BOOKKEEPING ONLY —
@@ -117,12 +132,39 @@ def init():
             data_start      DATE,
             data_end        DATE,
             parameters      TEXT,
-            git_sha         TEXT,
+            git_sha         TEXT NOT NULL,
             data_hash       TEXT,
             seed            INTEGER,
             code_path       TEXT,
             notes           TEXT,
-            logged_at       DATETIME NOT NULL
+            logged_at       DATETIME NOT NULL,
+            -- migration 043 added the column, 044's rebuild made it a real FK.
+            -- Nullable on purpose: rows can predate the registry, and inventing a
+            -- run for them would be a fabricated owner.
+            run_id          INTEGER REFERENCES runs(run_id)
+        );
+
+        -- The generic run registry (migration 042). `platform` is a COLUMN, not a
+        -- table name: MT5, NinjaTrader and IBKR all file here, and a new strategy
+        -- files a row rather than getting a migration.
+        CREATE TABLE IF NOT EXISTS runs (
+            run_id          INTEGER PRIMARY KEY,
+            platform        TEXT NOT NULL
+                              CHECK(platform IN ('MT5','NinjaTrader','IBKR')),
+            idea_id         TEXT,
+            stage           TEXT NOT NULL
+                              CHECK(stage IN ('IS','OOS','WF','smoke')),
+            symbol          TEXT NOT NULL,
+            version         TEXT,
+            data_start      DATE,
+            data_end        DATE,
+            git_sha         TEXT NOT NULL,
+            output_dir      TEXT,
+            trial_family_id TEXT,
+            n_trials        INTEGER,
+            notes           TEXT,
+            created_at      DATETIME NOT NULL,
+            FOREIGN KEY (idea_id) REFERENCES step1_ideas(idea_id)
         );
 
         CREATE TABLE IF NOT EXISTS log_agent (
@@ -155,7 +197,11 @@ def init():
             created_at  DATETIME NOT NULL,
             updated_at  DATETIME NOT NULL,
             resolved_at DATETIME,
-            resolution  TEXT
+            resolution  TEXT,
+            -- CLAUDE.md rule 17 in the schema (migration 044). A typo'd stream mints
+            -- a silent bucket, and rule 5's scoped search then misses those rows.
+            stream      TEXT NOT NULL DEFAULT 'Research'
+                          CHECK(stream IN ('MT5','NinjaTrader','IBKR','Research','Ops'))
         );
 
         CREATE TABLE IF NOT EXISTS log_strategy (
@@ -273,6 +319,18 @@ def init():
     cur.executescript(SCHEMA_MT5)
     cur.executescript(SCHEMA_GRW)
 
+    # The rule-10 write guard (migration 045). Built here too, so a database created
+    # from scratch is born guarded instead of acquiring the rule four migrations
+    # later — an unguarded fresh DB is exactly the copy a shortcut gets written to.
+    for table in db_guard.GUARDED_TABLES:
+        for op in ("INSERT", "UPDATE", "DELETE"):
+            cur.execute(
+                f"CREATE TRIGGER IF NOT EXISTS guard_{table}_{op.lower()} "
+                f"BEFORE {op} ON {table} "
+                f"WHEN {db_guard.GUARD_FN}() IS NOT 1 "
+                f"BEGIN SELECT RAISE(ABORT, '{GUARD_MESSAGE}'); END"
+            )
+
     # WAL (task 289): Loop C writes on a timer while Syafiq queries interactively, and
     # the default rollback journal takes an exclusive lock -> 'database is locked'.
     # journal_mode is persisted in the DB file, so this survives every reconnect.
@@ -280,7 +338,7 @@ def init():
 
     conn.commit()
     conn.close()
-    print(f"research.db ready (Protocol 4.0 lean schema) -> {DB_PATH}")
+    print(f"baysix.db ready (Protocol 4.0 lean schema, guarded) -> {DB_PATH}")
 
 
 if __name__ == "__main__":

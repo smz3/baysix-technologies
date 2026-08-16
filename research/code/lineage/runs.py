@@ -30,6 +30,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from research.code.infra.db_path import DB_PATH
+from research.code.infra import db_guard
 from research.code.infra import outputs
 
 MYT = timezone(timedelta(hours=8))
@@ -43,7 +44,9 @@ def _conn():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
-    return conn
+    # Declares this a legitimate writer to the spine tables (migration 045).
+    # Without it every INSERT/UPDATE/DELETE here fails to compile.
+    return db_guard.arm(conn, reason=__name__)
 
 
 def _now() -> str:

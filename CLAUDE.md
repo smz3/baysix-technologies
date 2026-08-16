@@ -22,9 +22,12 @@ Autonomous Research Agents for multiple trading platforms. From ideation - strat
 9. **`idea_cli.py next <idea_id>`** gives the ONE next legal action — use it, don't recall the gate
    sequence. `prebrief` before briefing an agent. t-stat never auto-kills; a kill needs ≥2 falsified
    hypotheses.
-10. **Writes via the code layer only** — never raw `sqlite3` on `db/baysix.db`. The hook catches
-    the obvious route (`sqlite3` + a DB name + a write keyword in one shell command); the rule
-    covers the rest, which the hook cannot see.
+10. **Writes via the code layer only** — never raw `sqlite3` on `db/baysix.db`. Enforced by the
+    DATABASE since 2026-08-16 (migration 045): the 8 spine tables carry triggers that refuse any
+    write from a connection which has not called
+    [db_guard.arm()](research/code/infra/db_guard.py) — `no such function: baysix_writer`. Reads
+    are untouched. A migration arms itself; there is no other hatch. The shell hook stays as the
+    early warning, but it is no longer the thing holding the rule up.
 11. **Log immediately, before replying** — agent calls, results, decisions, and every
     strategy-defining change via `strategy_log.log_change()`.
 12. **Never `SELECT` text-heavy columns** into main context.

@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from factory.adjudicate import (
+from research.code.factory.adjudicate import (
     ADJUDICATION_VARS,
     RuleError,
     Ruling,
     adjudicate,
     eval_rule,
 )
-from factory.prereg import PreregError, load, prereg_sha, register
-from factory.provenance import (
+from research.code.factory.prereg import PreregError, load, prereg_sha, register
+from research.code.factory.provenance import (
     Claim,
     Provenance,
     assumed,
@@ -29,8 +29,8 @@ from factory.provenance import (
     measured,
     require_evidence,
 )
-from factory.spec import SpecError, StrategySpec
-from factory.venue import Window
+from research.code.factory.spec import SpecError, StrategySpec
+from research.code.factory.venue import Window
 
 
 # --------------------------------------------------------------------------- #

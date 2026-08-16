@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from factory.objective import (
+from research.code.factory.objective import (
     EquityPoint,
     FixedBarrierRules,
     PHat,

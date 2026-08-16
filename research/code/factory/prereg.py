@@ -34,7 +34,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-from factory.adjudicate import ADJUDICATION_VARS, RuleError, _names_in
+from research.code.factory.adjudicate import ADJUDICATION_VARS, RuleError, _names_in
 
 __all__ = ["Prereg", "PreregError", "register", "load", "prereg_sha"]
 

@@ -34,8 +34,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, Sequence, runtime_checkable
 
-from factory.objective import BarrierOutcome, EquityPoint
-from factory.spec import StrategySpec
+from research.code.factory.objective import BarrierOutcome, EquityPoint
+from research.code.factory.spec import StrategySpec
 
 __all__ = [
     "Venue",
