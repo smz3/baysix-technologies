@@ -6,7 +6,7 @@ MT5 always exports the report as 'ReportTester-<login>.xlsx' (same name every ru
 each export overwrites the last). This tool:
   1. parses the report header (Expert, Symbol, Period, Inputs, Deposit, History Quality)
      + the run-level Results summary (net profit, PF, max DD%, win-rate, n_trades),
-  2. writes a tester_runs row via research.code.tester.ingest_tester_run() -> run_id,
+  2. writes a tester_runs row via core.tester.ingest_tester_run() -> run_id,
   3. renames/moves the file to  run{run_id:03d}_{idea}_{source}_dep{dep}_{start}_{end}.xlsx
      under platforms/mt5/strategy_tester_xlsx/  (preserving it before the next run overwrites it).
 
@@ -15,9 +15,9 @@ section has price/time/PnL but NOT range_w (the 1R unit), so realized_R needs th
 to export a per-trade CSV (or_high/or_low/range_w). That hook is left as ingest_trades().
 
 Usage:
-    python research/code/io/ingest_tester_report.py --dry-run         # parse + show, no write
-    python research/code/io/ingest_tester_report.py                   # ingest newest + rename
-    python research/code/io/ingest_tester_report.py --src <file.xlsx> # explicit file
+    python core/io/ingest_tester_report.py --dry-run         # parse + show, no write
+    python core/io/ingest_tester_report.py                   # ingest newest + rename
+    python core/io/ingest_tester_report.py --src <file.xlsx> # explicit file
 """
 import re
 import sys
@@ -30,7 +30,7 @@ warnings.filterwarnings("ignore")  # openpyxl default-style noise
 import openpyxl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from research.code.io import tester
+from core.io import tester
 
 REPORT_DIR = Path(__file__).resolve().parents[2].parent / "platforms" / "mt5" / "strategy_tester_xlsx"
 RAW_GLOB = "ReportTester-*.xlsx"

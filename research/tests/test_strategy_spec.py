@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from research.code import strategy_log, db_init
+from core import strategy_log, db_init
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def tmp_db(tmp_path, monkeypatch):
     db_init.init()
     # spec requires a parent idea (FK)
     import sqlite3
-    from research.code.infra import db_guard
+    from core.infra import db_guard
     conn = sqlite3.connect(db)
     # Seeding a fixture IS a legitimate write, so it says so (migration 045).
     db_guard.arm(conn, reason="test fixture")

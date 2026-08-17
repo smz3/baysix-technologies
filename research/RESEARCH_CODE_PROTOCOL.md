@@ -1,6 +1,6 @@
 # Research Code Protocol
 
-Rules for writing and modifying code in `research/models/` and `research/code/`.
+Rules for writing and modifying code in `research/models/` and `core/`.
 Each rule exists because a real failure happened. No rule is hypothetical.
 
 ---

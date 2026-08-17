@@ -23,7 +23,7 @@ _tmp = Path(tempfile.mkdtemp(prefix="exec_smoke_")) / "execution_test.db"
 os.environ["EXECUTION_DB_PATH"] = str(_tmp)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from research.code import execution
+from core import execution
 
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"

@@ -7,7 +7,7 @@
 //| validated on (a VALID Gate-7 FIDELITY test).                       |
 //|                                                                    |
 //| Reads Common\Files\baysix_XAUUSD_pq_ticks.bin (written by          |
-//| research/code/export_ticks_mt5.py):                                |
+//| core/export_ticks_mt5.py):                                |
 //|   header int64 n; then n records of int64 time_msc, double bid,    |
 //|   double ask, int64 volume  (little-endian, 32 bytes each).        |
 //|                                                                    |

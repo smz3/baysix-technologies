@@ -4,11 +4,11 @@ Task 119 — ingest a BRC zone-lifecycle CSV into research.db.
 The BRC emitter (brc_baysix.mq5 + brc_csv.mqh) writes one UTF-8 CSV per run:
 one row per confirmed zone per TF. This script opens a tester_runs header
 (provenance: symbol / data_source / tester_model / period) and bulk-loads every
-zone into tester_zones under that run_id. All writes go through research.code.tester
+zone into tester_zones under that run_id. All writes go through core.tester
 (CLAUDE.md rule 10 — never raw sqlite3).
 
 Usage:
-    python research/code/io/ingest_brc_zones.py \
+    python core/io/ingest_brc_zones.py \
         --csv "<...>/brc_zones_XAUUSD_dukas_v1.0.0_20240101_0000.csv" \
         --period-start 2024-01-01 --period-end 2024-12-31
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from research.code.io import tester
+from core.io import tester
 
 
 def _parse_filename(name: str):

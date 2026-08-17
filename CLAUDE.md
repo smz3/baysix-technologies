@@ -25,7 +25,7 @@ Autonomous Research Agents for multiple trading platforms. From ideation - strat
 10. **Writes via the code layer only** — never raw `sqlite3` on `db/baysix.db`. Enforced by the
     DATABASE since 2026-08-16 (migration 045): the 8 spine tables carry triggers that refuse any
     write from a connection which has not called
-    [db_guard.arm()](research/code/infra/db_guard.py) — `no such function: baysix_writer`. Reads
+    [db_guard.arm()](core/infra/db_guard.py) — `no such function: baysix_writer`. Reads
     are untouched. A migration arms itself; there is no other hatch. The shell hook stays as the
     early warning, but it is no longer the thing holding the rule up.
 11. **Log immediately, before replying** — agent calls, results, decisions, and every
@@ -37,11 +37,11 @@ Autonomous Research Agents for multiple trading platforms. From ideation - strat
     `run_in_background`.
 15. **Backlog cap: 6 open tasks (HARD)** — `add_task` raises `BacklogFullError` at the cap, and so
     does reopening a resolved task. To file something new, resolve an open one first. `MAX_OPEN`
-    lives in [research/code/lineage/backlog.py](research/code/lineage/backlog.py).
+    lives in [core/lineage/backlog.py](core/lineage/backlog.py).
 16. **Output folders: `outputs/<idea_id>/<run_id>/`, created ONLY by
-    [research/code/infra/outputs.py](research/code/infra/outputs.py)** — never hardcode a path in a
+    [core/infra/outputs.py](core/infra/outputs.py)** — never hardcode a path in a
     script. Register the backtest first via `open_run()` in
-    [research/code/lineage/runs.py](research/code/lineage/runs.py); it creates the folder and stores
+    [core/lineage/runs.py](core/lineage/runs.py); it creates the folder and stores
     the path, so no folder exists without a row explaining it. `strays()` lists violations.
 17. **Every task carries a `stream`** (MT5 / NinjaTrader / IBKR / Research / Ops) — `add_task`
     rejects a missing one. `idea_id` stays optional and means strictly "serves a live falsifiable

@@ -11,7 +11,7 @@ research lineage (`strategy_log`) where relevant. See CLAUDE.md → MT5 / EA Wor
     builds a level-based limit-entry plan (SL = invalidation L2, R from actual entry). Fade unspecified (task 131).
   - `brc_exit.mqh` — `BRC_EXIT_MODE {TIME,TIME_TP}` + `max_hold` + `tp_mult`; native SL, clock exit, optional TP.
   - `brc_sizing.mqh` — `BRC_SIZE_MODE {FIXED_LOT,FIXED_FRAC}`; rounds DOWN to broker step, floors to min-lot.
-- **New: `brc_version.mqh`** (auto-gen via `research/code/infra/gen_brc_version.py`) — git sha/branch/dirty/build,
+- **New: `brc_version.mqh`** (auto-gen via `core/infra/gen_brc_version.py`) — git sha/branch/dirty/build,
   printed on init. DIRTY-tree runs = exploratory, not reproducible.
 - **IS-01 atom** (strategy_log #55, PROPOSED): H1 · enter T1=L1 first-retest continuation ·
   SL=invalidation(L2) · close at 6 H1 bars · no TP · one position · fixed 0.01 lot.

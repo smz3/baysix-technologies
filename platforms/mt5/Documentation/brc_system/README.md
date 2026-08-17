@@ -17,7 +17,7 @@ Break–Retest–Continuation on XAUUSD. Two EAs, shared detection includes.
 | `brc_sizing.mqh` | `InpSizeMode` (FIXED_LOT/FIXED_FRAC), `InpFixedLot`, `InpRiskPct` | FIXED_LOT, 0.01 |
 
 ## Build (headless)
-1. `python research/code/infra/gen_brc_version.py`   (stamps git sha → `brc_version.mqh`)
+1. `python core/infra/gen_brc_version.py`   (stamps git sha → `brc_version.mqh`)
 2. MetaEditor64 `/compile:...brc_trader.mq5 /inc:<repo>/mt5` — `/inc` is the MQL5 root (has `Include/`), NOT `mt5/Include`.
 3. Compile log is UTF-16.
 

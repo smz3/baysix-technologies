@@ -42,7 +42,7 @@ You dissect a paper by reading its **Docling-extracted `.md`** — never the raw
 
 ```bash
 # idempotent — produces research/papers/<family>/<stem>.md (skips if present)
-python research/code/io/extract_pdf.py <pdf_path>
+python core/io/extract_pdf.py <pdf_path>
 ```
 
 Then `Read` the resulting `.md`.
@@ -113,7 +113,7 @@ Then `Read` the resulting `.md`.
 ---
 
 > **Orchestrator write checklist (Claude, not the agent)** — after every dissect run:
-> 1. **DB:** call `agent_log.log_dissect_result(...)` via the `research/code/` layer only (CLAUDE.md rule 10 — never raw sqlite3) — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `log_agent` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call. Confirm the `step2_papers` row exists for that `idea_id` first; the code layer handles FK + timestamps.
+> 1. **DB:** call `agent_log.log_dissect_result(...)` via the `core/` layer only (CLAUDE.md rule 10 — never raw sqlite3) — atomic: updates `step2_papers` (sets `dissected=1`, populates `key_equations`, `empirical_findings`, `context_fit`, `limitations`) AND inserts the `log_agent` row (`idea_id`, `gear='DISSECT'`, `paper_id`, `model`) in one call. Confirm the `step2_papers` row exists for that `idea_id` first; the code layer handles FK + timestamps.
 > 2. **Artifact:** save the agent's returned dissection narrative to `research/papers/<family>/<stem>.dissect.md` (git-tracked, browsable record). The Docling source `.md` stays gitignored (derivable); the `.dissect.md` is the keeper.
 
 ---

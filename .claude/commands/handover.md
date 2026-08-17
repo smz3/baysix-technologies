@@ -43,7 +43,7 @@ Every handover MUST leave `log_tasks` reflecting reality. The SessionStart brief
 `log_tasks`, NOT this prose — an un-synced task rots silently (the seam that cost 4
 sessions: [[handover_nextsteps_must_be_tasks]]).
 
-Writes go through the code layer ONLY ([research/code/lineage/backlog.py](research/code/lineage/backlog.py) — never raw sqlite3, rule 10).
+Writes go through the code layer ONLY ([core/lineage/backlog.py](core/lineage/backlog.py) — never raw sqlite3, rule 10).
 
 **2a. Pre-flight — how many slots do you actually have?**
 
@@ -52,7 +52,7 @@ The open backlog is capped at 6 (rule 15, `MAX_OPEN`). `add_task` raises
 
 ```bash
 python -c "
-from research.code.lineage.backlog import get_backlog, MAX_OPEN
+from core.lineage.backlog import get_backlog, MAX_OPEN
 rows=[r for r in get_backlog() if r['status'] in ('open','in_progress')]
 print(f'OPEN {len(rows)}/{MAX_OPEN} — slots free: {MAX_OPEN-len(rows)}')
 for r in rows: print(' ', r['task_id'], r['priority'], r['stream'], r['title'][:60])
@@ -63,13 +63,13 @@ for r in rows: print(' ', r['task_id'], r['priority'], r['stream'], r['title'][:
 completed or dropped this session:
 
 ```bash
-python -c "from research.code.lineage.backlog import resolve_task; resolve_task(<task_id>, '<one-line resolution>', status='done')"   # or status='dropped'
+python -c "from core.lineage.backlog import resolve_task; resolve_task(<task_id>, '<one-line resolution>', status='done')"   # or status='dropped'
 ```
 
 **2c. Open a task for every `## Next` line you intend to write.**
 
 ```bash
-python -c "from research.code.lineage.backlog import add_task; add_task('<title>', '<kind>', detail='<detail>', priority='P1', stream='<stream>')"
+python -c "from core.lineage.backlog import add_task; add_task('<title>', '<kind>', detail='<detail>', priority='P1', stream='<stream>')"
 ```
 
 - `stream` is **REQUIRED** (rule 17) — one of `MT5` · `NinjaTrader` · `IBKR` · `Research` · `Ops`.
@@ -155,7 +155,7 @@ The lint enforces three things, all blocking:
    bug (task 50).
 
 ```bash
-python research/code/infra/handover_lint.py <the-handover-path-you-just-wrote>
+python core/infra/handover_lint.py <the-handover-path-you-just-wrote>
 ```
 
 If it prints **BLOCKED**, the handover is NOT done: add the missing citation

@@ -6,13 +6,13 @@ unskippable and cost zero tokens (they run outside the model context).
 
 HARD BLOCKS (exit 2):
   1. Raw sqlite3 WRITE to research.db / execution.db via Bash
-     (CLAUDE.md rule 10 — all DB writes go through the research/code/ layer).
+     (CLAUDE.md rule 10 — all DB writes go through the core/ layer).
      SELECT-only reads pass through.
   2. Edit / Write whose target path ends in .db — never hand-edit a database.
 
 Anything else passes. Gate-state checks for model code are intentionally NOT
 here (can't be inferred cheaply without false positives) — that path is covered
-by `research/code/gates/idea_cli.py gatecheck` + `... next`.
+by `core/gates/idea_cli.py gatecheck` + `... next`.
 
 Convention matches playwright_guard.py: print {"decision":"block","reason":...}
 then exit 2 to deny; exit 0 to allow.
@@ -48,7 +48,7 @@ def main() -> None:
         if "sqlite3" in cmd and any(db in cmd for db in DB_NAMES) and WRITE_SQL.search(cmd):
             _block(
                 "[protocol_guard] Raw sqlite3 WRITE to a research DB is banned "
-                "(CLAUDE.md rule 10). Route it through the research/code/ layer: "
+                "(CLAUDE.md rule 10). Route it through the core/ layer: "
                 "pipeline.* (gates/results), strategy_log.log_change (lineage), "
                 "backlog.* (tasks), agent_log.* (QR/human calls). SELECT reads are fine."
             )
@@ -59,7 +59,7 @@ def main() -> None:
         if path.endswith(".db"):
             _block(
                 "[protocol_guard] Never hand-edit a .db file — it corrupts "
-                "timestamps/constraints. Use the research/code/ write layer (rule 10)."
+                "timestamps/constraints. Use the core/ write layer (rule 10)."
             )
 
     sys.exit(0)

@@ -22,7 +22,7 @@ on it but never leak logic back into it.
 4. **TRADE**: opens a market position per CF on the setup TF, SL beyond zone L2 by
    `k*band`, TP = `RR*risk`. Higher-TF alignment is awareness, never a gate.
 5. **STUDY**: T-170 forward-excursion (MFE/MAE/terminal) per CF, no orders.
-6. Ingest via `research/code/io/ingest_fob.py` / `ingest_fob_phase2.py` → `research.db`
+6. Ingest via `core/io/ingest_fob.py` / `ingest_fob_phase2.py` → `research.db`
    `fob_*` tables. Never hand-write those tables.
 
 ## Outputs

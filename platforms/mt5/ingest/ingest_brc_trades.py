@@ -14,7 +14,7 @@ This tool:
   4. prints a time-to-exit + exit-reason breakdown (the immediate-vs-hours answer).
 
 Usage:
-    python research/code/io/ingest_brc_trades.py --idea BRC-001 --tf H1 \
+    python core/io/ingest_brc_trades.py --idea BRC-001 --tf H1 \
         --period 2016-01-01:2024-06-30 --data-source dukascopy
     # --src <file> to pick an explicit CSV (default: newest brc_trades_*.csv)
 """
@@ -26,7 +26,7 @@ from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from research.code.io import tester
+from core.io import tester
 
 COMMON_BRC = Path.home() / "AppData" / "Roaming" / "MetaQuotes" / "Terminal" / "Common" / "Files" / "BRC"
 

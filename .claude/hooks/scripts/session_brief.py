@@ -83,7 +83,7 @@ def main():
     for idea, stage, key, val in res:
         print(f"   {idea} {stage:4s} {key} = {val}")
 
-    print("\n--- DB WRITE CONTRACT (research/code/ ONLY — never raw sqlite3) ---")
+    print("\n--- DB WRITE CONTRACT (core/ ONLY — never raw sqlite3) ---")
     print("  gate open/pass/block/kill -> pipeline.open_gate/pass_gate/block_gate/kill_idea")
     print("  metric result             -> pipeline.log_result()  (n_obs+git_sha required)")
     print("  strategy lineage event    -> strategy_log.log_change(component/from/to/verdict)")
@@ -93,7 +93,7 @@ def main():
     print("  GATING: Protocol 4.0 = 4 gates (G1 Premise / G2 Edge+Survival / G3 Robustness / G4 Live).")
     print("          t-stat is REPORTED, never an auto-kill; OOS/WF persistence is the luck-test.")
     print("  KILL:   needs >=2 FALSIFIED hypotheses (rule 8b) — kill_idea blocks otherwise.")
-    print("  DRIVER: python research/code/gates/idea_cli.py next <idea_id> -> the ONE next legal")
+    print("  DRIVER: python core/gates/idea_cli.py next <idea_id> -> the ONE next legal")
     print("          protocol action, computed from DB. Use it instead of recalling gates.")
 
     print("\nBefore proposing work: check open_backlog (P1 first) + log_agent "

@@ -19,8 +19,8 @@ import sqlite3
 
 import pytest
 
-from research.code.infra import db_guard
-from research.code.infra.db_path import db_path
+from core.infra import db_guard
+from core.infra.db_path import db_path
 
 pytestmark = pytest.mark.skipif(
     not db_path(warn=False).exists(), reason="baysix.db not available"

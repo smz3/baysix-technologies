@@ -22,7 +22,7 @@ tester is the arbiter):
 Idempotent: overwrites mfe_r/mae_r in data/fob_payload/run_<id>/zones.parquet in place.
 
 Usage (long-run — launch in a new PowerShell window):
-    python research/code/io/derive_fob_excursion.py --run-id 19
+    python core/io/derive_fob_excursion.py --run-id 19
 """
 import argparse
 import sys
@@ -58,7 +58,7 @@ def _derive_excursion_QUARANTINED(run_id: int, idea_id: str = "FOB-001") -> dict
     import pandas as pd
     from numba import njit
 
-    from research.code.io import arctic_io, fob_payload, tester
+    from core.io import arctic_io, fob_payload, tester
 
     hdr = tester.get_tester_run(run_id)
     if not hdr:

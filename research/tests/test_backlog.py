@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from research.code import backlog, db_init
+from core import backlog, db_init
 
 
 @pytest.fixture

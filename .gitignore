@@ -41,18 +41,18 @@ memory/
 memory.db
 *.sqlite3
 
-# Dead legacy research DBs (superseded by research.db via migrations 010/011).
-# Migration 011_migrate_data.py re-creates these 0-byte husks if run/imported — ignore so they never reappear in git.
+# Dead legacy research DBs (superseded by baysix.db via db/migrations/010/011).
+# db/migrations/011_migrate_data.py re-creates these 0-byte husks if run/imported — ignore so they never reappear in git.
 research/db/ideas_log.db
 research/db/research_log.db
 research/db/agent_log.db
 
 # execution.db = the LIVE downstream DB (real-money fills, account/broker_login state).
 # Protocol §1 Isolation: live records stay out of git. Rebuildable anytime via
-# `python research/migrations/020_create_execution_db.py`.
+# `python db/migrations/020_create_execution_db.py`.
 # DELETED FROM DISK 2026-08-16 (Syafiq, task 364 call 4): it was 12 tables / 0 rows,
 # schema written years ahead of use. The schema itself survives in
-# research/code/infra/execution.py — recreate the file only when a strategy passes to live.
+# core/infra/execution.py — recreate the file only when a strategy passes to live.
 # This ignore line stays so a rebuild never lands in git.
 research/db/execution.db
 
@@ -77,7 +77,7 @@ research/db/*.db-shm
 # per platform so two agent loops never contend for the same SQLite write lock. Untracked
 # for the same reason baysix.db is: they are generated working ledgers that will run to
 # tens of thousands of candidate rows, and the CONTENT is not the deliverable — the
-# promoted result on the spine is. Schema lives in research/code/factory/ledger.py.
+# promoted result on the spine is. Schema died with the factory (2026-08-17); the rebuild picks its own.
 platforms/*/db/*.db
 platforms/*/db/*.db-wal
 platforms/*/db/*.db-shm

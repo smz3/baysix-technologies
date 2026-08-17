@@ -30,7 +30,7 @@ USAGE
     python .claude/hooks/git/agent_commit.py \
         -m "fix(fob): correct CF band width" \
         --agent claude-code \
-        research/models/fob/foo.py docs/specs/bar.md
+        research/models/_archive/fob/foo.py docs/specs/bar.md
 
     # commit only, leave the push for later
     ... --no-push

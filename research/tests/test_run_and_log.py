@@ -9,7 +9,7 @@ Covers the four locked design guarantees:
 """
 import pytest
 
-from research.code import pipeline, strategy_log, db_init, run_and_log
+from core import pipeline, strategy_log, db_init, run_and_log
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def tmp_db(tmp_path, monkeypatch):
         monkeypatch.setattr(mod, "DB_PATH", db)
     db_init.init()
     import sqlite3
-    from research.code.infra import db_guard
+    from core.infra import db_guard
     conn = sqlite3.connect(db)
     # Seeding a fixture IS a legitimate write, so it says so (migration 045).
     db_guard.arm(conn, reason="test fixture")

@@ -10,7 +10,7 @@ trader's real SL rule) walked forward from arctic ticks. Heavier + the magnitude
 known-confounded by the 2016-24 secular bull, so it's secondary to the hit-rate finding.
 
 Usage:
-    python research/code/io/ingest_fob_phase2.py --run-id 18
+    python core/io/ingest_fob_phase2.py --run-id 18
 """
 import argparse
 import sqlite3
@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from research.code.io import tester
+from core.io import tester
 
 
 def main():

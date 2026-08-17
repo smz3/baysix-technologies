@@ -6,11 +6,11 @@ one row per classified event (PBO/VR/CF), each carrying its FobZone (event<->zon
 1:1 at emit). This script opens a tester_runs header (run_role='emitter', symbol /
 data_source / tester_model / period / git provenance) and derives all three FOB
 payload tables under that run_id via tester.ingest_fob. Cycles are reconstructed
-by grouping on (setup_tf, seq). All writes go through research.code.io.tester
+by grouping on (setup_tf, seq). All writes go through core.io.tester
 (CLAUDE.md rule 10 — never raw sqlite3). Mirrors the retired ingest_brc_zones.
 
 Usage:
-    python research/code/io/ingest_fob.py \
+    python core/io/ingest_fob.py \
         --csv "<...>/fob_capture_XAUUSD_dukas_v1.24.0_20220101_0000.csv" \
         --period-start 2022-01-01 --period-end 2022-04-01
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from research.code.io import tester
+from core.io import tester
 
 _REPO = Path(__file__).resolve().parents[3]
 
@@ -60,7 +60,7 @@ def main():
     raise SystemExit(
         "ingest_fob is disabled: migration 038 dropped the fob_* staging tables.\n"
         "Rewrite this to write Parquet directly before using it. See "
-        "research/migrations/038_drop_strategy_tables.py."
+        "db/migrations/038_drop_strategy_tables.py."
     )
 
     ap = argparse.ArgumentParser(description="Ingest a FOB capture CSV into research.db")
@@ -165,7 +165,7 @@ def main():
     if args.keep_raw:
         print("--keep-raw: leaving raw fob_* rows in research.db (file will be large)")
     else:
-        from research.code.io import fob_payload
+        from core.io import fob_payload
         pq = fob_payload.export_run(run_id)
         db = {"cycles": counts["cycles"], "zones": counts["zones"], "events": counts["events"]}
         if pq != db:
