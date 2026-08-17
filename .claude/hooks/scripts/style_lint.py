@@ -6,8 +6,8 @@ followed for a few turns and then quietly abandoned — most recently 2026-08-16
 when a task-360 answer came back at ~450 prose words across 8 sections with a
 table, and Syafiq had to ask why the format rule was not being applied. That is
 the third documented failure mode of a prose-only rule in this repo (see
-claim_lint.py's docstring for the first two), so the rule becomes executable or
-it is nothing.
+the deleted claim_lint.py for the first two — killed 2026-08-17, see git history),
+so the rule becomes executable or it is nothing.
 
 THE TWO DIRECTIVES BEING ENFORCED
   1. DUMB MODE      "Always output explanation in Dumb Mode version. few bullet

@@ -1,6 +1,5 @@
 {
-  "disableStopHook": false,
-  "disableStopFailureHook": false,
+  "disableSubagentStartHook": false,
   "disableTaskCompletedHook": false,
   "disableLogging": true
 }

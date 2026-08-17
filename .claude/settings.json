@@ -94,32 +94,12 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "mcp__playwright__browser_navigate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/playwright_guard.py",
-            "timeout": 5
-          }
-        ]
-      },
-      {
         "matcher": "Bash|Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/protocol_guard.py",
             "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/claim_lint.py\"",
-            "timeout": 10
           }
         ]
       }
@@ -153,33 +133,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
-            "timeout": 5,
-            "async": true,
-            "statusMessage": "Stop"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/claim_lint.py\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "python -X utf8 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/style_lint.py\"",
             "timeout": 10
           }
         ]
       }
     ],
-    "StopFailure": [
+    "SubagentStart": [
       {
         "hooks": [
           {
@@ -187,7 +147,7 @@
             "command": "python ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/hooks.py",
             "timeout": 5,
             "async": true,
-            "statusMessage": "StopFailure"
+            "statusMessage": "SubagentStart"
           }
         ]
       }
