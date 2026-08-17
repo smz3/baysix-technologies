@@ -42,7 +42,7 @@ mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null
 
 # --- GUARD 2: handover lint (task 50) ------------------------------------------
 echo "[pre-commit] handover-lint on ${#FILES[@]} staged handover file(s)…"
-if ! $PY "$REPO/research/code/infra/handover_lint.py" "${FILES[@]}"; then
+if ! $PY "$REPO/core/infra/handover_lint.py" "${FILES[@]}"; then
   echo ""
   echo "[pre-commit] COMMIT BLOCKED. Cite each result number, or 'git commit --no-verify' to override (logged to your conscience)."
   exit 1

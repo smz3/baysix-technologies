@@ -21,12 +21,12 @@ You deep-read **one** paper and return a structured dissection. You are the **to
 
 ## Step 0 — Confirm not already dissected (MANDATORY)
 
-All context lives in the single unified **`research/db/research.db`**. There is NO `ideas_log.db` / `research_log.db` / `agent_log.db` — connecting to those paths silently creates an empty husk. Read-only, lean columns only (CLAUDE.md rule 9 — never SELECT text-heavy columns like `key_equations`, `empirical_findings`, `context_fit`, `limitations`).
+All context lives in the single unified **`db/baysix.db`**. There is NO `ideas_log.db` / `research_log.db` / `agent_log.db` — connecting to those paths silently creates an empty husk. Read-only, lean columns only (CLAUDE.md rule 12 — never SELECT text-heavy columns like `key_equations`, `empirical_findings`, `context_fit`, `limitations`).
 
 ```bash
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/research.db')
+conn = sqlite3.connect('db/baysix.db')
 print(pd.read_sql_query('SELECT paper_id, idea_id, title, source, dissected FROM step2_papers ORDER BY paper_id DESC LIMIT 15', conn).to_string())
 conn.close()
 "

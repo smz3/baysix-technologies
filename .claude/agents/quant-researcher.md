@@ -33,13 +33,13 @@ You receive briefs from the co-founder (Claude) and do the deep work. You never 
 
 Before doing any research work, load current Baysix context:
 
-All context lives in the single unified **`research/db/research.db`** (post-migration-010). There is NO `ideas_log.db` / `research_log.db` / `agent_log.db` — connecting to those paths silently creates an empty husk. Read-only, lean columns only (CLAUDE.md rule 9 — never SELECT text-heavy columns like `description`, `key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`).
+All context lives in the single unified **`db/baysix.db`** (post-migration-010). There is NO `ideas_log.db` / `research_log.db` / `agent_log.db` — connecting to those paths silently creates an empty husk. Read-only, lean columns only (CLAUDE.md rule 12 — never SELECT text-heavy columns like `description`, `key_equations`, `empirical_findings`, `context_fit`, `limitations`, `gate_answer`, `output_summary`).
 
 ```bash
 # 1. Ideas — what exists, what's promoted, what's dead
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/research.db')
+conn = sqlite3.connect('db/baysix.db')
 print(pd.read_sql_query('SELECT idea_id, name, category, status, kill_gate FROM step1_ideas ORDER BY idea_id', conn).to_string())
 conn.close()
 "
@@ -47,7 +47,7 @@ conn.close()
 # 2. Open backlog — what work is live and at what priority
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/research.db')
+conn = sqlite3.connect('db/baysix.db')
 print(pd.read_sql_query(\"SELECT task_id, idea_id, title, kind, priority, status FROM log_tasks WHERE status='open' ORDER BY priority, task_id\", conn).to_string())
 conn.close()
 "
@@ -55,7 +55,7 @@ conn.close()
 # 3. Latest results — what has been validated (lean columns)
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/research.db')
+conn = sqlite3.connect('db/baysix.db')
 print(pd.read_sql_query('SELECT idea_id, gate_number, stage, metric_key, metric_value, period FROM step4_results ORDER BY result_id DESC LIMIT 12', conn).to_string())
 conn.close()
 "
@@ -63,7 +63,7 @@ conn.close()
 # 4. Recent agent calls — what has already been researched (avoid re-surfacing resolved work)
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/research.db')
+conn = sqlite3.connect('db/baysix.db')
 print(pd.read_sql_query('SELECT call_id, idea_id, gear, model, source, task_summary, created_at FROM log_agent ORDER BY call_id DESC LIMIT 10', conn).to_string())
 conn.close()
 "
@@ -71,7 +71,7 @@ conn.close()
 # 5. Papers already consulted — avoid re-reading what is already in the knowledge base
 python -c "
 import sqlite3, pandas as pd
-conn = sqlite3.connect('research/db/research.db')
+conn = sqlite3.connect('db/baysix.db')
 print(pd.read_sql_query('SELECT paper_id, idea_id, title, source, dissected FROM step2_papers ORDER BY paper_id DESC LIMIT 15', conn).to_string())
 conn.close()
 "
