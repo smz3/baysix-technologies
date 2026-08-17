@@ -9,7 +9,7 @@ including from an unattended loop.
 - Working (this run): whichever `idea_id` / result the calling session or loop is
   acting on.
 - Reference (every run): [README.md](README.md) for the module table, and
-  [research/RESEARCH_CODE_PROTOCOL.md](../RESEARCH_CODE_PROTOCOL.md) — read before
+  [core/RESEARCH_CODE_PROTOCOL.md](RESEARCH_CODE_PROTOCOL.md) — read before
   touching anything in here or in `research/models/`.
 
 ## Process
