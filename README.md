@@ -2,10 +2,23 @@
 
 **Research infrastructure for systematic trading — built to *falsify* trading ideas, not just showcase winners.**
 
+[![Project Status: Suspended](https://www.repostatus.org/badges/latest/suspended.svg)](https://www.repostatus.org/#suspended)
 ![Python](https://img.shields.io/badge/Python-223%20files-3776AB?logo=python&logoColor=white)
 ![MQL5](https://img.shields.io/badge/MQL5-63%20files-1E88E5)
 ![SQLite](https://img.shields.io/badge/ledger-baysix.db-003B57?logo=sqlite&logoColor=white)
 ![ArcticDB](https://img.shields.io/badge/tick%20store-XAUUSD%202016--2026-2E7D32)
+
+> ### 📦 Status: paused — August 2026
+>
+> **This repository is a completed research record, not an actively developed system.**
+> It is preserved as-is because the falsification history below is the deliverable.
+>
+> Active development has moved to a successor project that rebuilds the
+> strategy-generation layer from scratch. What is here — the tick-data layer, the MQL5
+> verifier, the gated protocol, and the record of what was killed and why — remains
+> accurate and readable.
+>
+> Issues and PRs are not being monitored. Read it as a portfolio of research process.
 
 This is a working, single-operator quant-research program: a disciplined pipeline that turns published ideas into testable hypotheses, runs them against a tick-accurate market simulator, and **kills the ones that don't survive** — with the reasons recorded. The rare thing on display here isn't a profitable strategy; it's a documented record of *how ideas were killed*, which is the harder and scarcer skill.
 
@@ -67,9 +80,10 @@ core/              ← the spine. Everything that runs.
   └── tests/         pytest suites
 db/                ← baysix.db (untracked) + versioned migrations
 platforms/         ← execution venues
-  ├── mt5/           MQL5 Expert Advisors + Strategy Tester exports (the verifier)
-  ├── ninjatrader/   NT8 futures seam
-  └── ibkr/          IB gateway seam
+  ├── mt5/           MQL5 Expert Advisors + Strategy Tester exports (the verifier) — the only
+  │                  venue that ever produced a logged result
+  ├── ninjatrader/   NT8 futures seam — reserved, never implemented
+  └── ibkr/          IB gateway connection probes
 research/          ← evidence only. Nothing here executes.
   ├── papers/        dissected literature
   ├── models/        archived idea lines, kept greppable and out of the live path
@@ -94,6 +108,10 @@ docs/              ← design specs, plans, protocol notes
 
 ## Status & honesty note
 
-This is an **active, independent research program**, not a productized or profitable system. No idea has yet cleared Gate 2; two earlier lines are documented dead-ends, killed or parked on the record above rather than deleted. The strategy-generation layer was torn down in August 2026 after review found it had never produced a measured result, and is being rebuilt from scratch — that teardown is itself on the record.
+This was an **independent research program**, never a productized or profitable system, and it is now paused. No idea cleared Gate 2. Two earlier lines are documented dead-ends — killed or parked on the record above rather than quietly deleted.
 
-The point of the repository is to demonstrate a **credible, falsifiable research process** — the ability to generate ideas, test them honestly against a tick-accurate simulator, and *reject* the ones that don't hold up. In a world where AI makes strategy *generation* nearly free, the scarce skill is *killing the fake ones*. That record is what this repo is.
+The strategy-generation layer was torn down in August 2026 after review found it had never produced a measured result: ~2,300 lines of well-formed contracts, ledgers and adjudicators with no engine attached. That teardown is itself on the record, and the decision to rebuild rather than patch it is why this repository is paused rather than extended.
+
+What did work is still here and still true: a sealed tick store, a causal MQL5 verifier, a gated protocol that an idea cannot skip a step in, and a ledger whose integrity is enforced by database triggers rather than good intentions.
+
+The point of the repository is to demonstrate a **credible, falsifiable research process** — the ability to generate ideas, test them honestly against a tick-accurate simulator, and *reject* the ones that don't hold up. In a world where AI makes strategy *generation* nearly free, the scarce skill is *killing the fake ones*. That record is what this repo is, and it does not expire because development moved elsewhere.
